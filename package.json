@@ -35,7 +35,7 @@
 		"@effect/platform-node": "catalog:silk",
 		"@effect/rpc": "catalog:silk",
 		"@effect/sql": "catalog:silk",
-		"@savvy-web/github-action-effects": "^0.11.12",
+		"@savvy-web/github-action-effects": "^1.2.0",
 		"effect": "catalog:silk",
 		"fast-glob": "^3.3.3",
 		"jsonc-effect": "^0.2.0"
