@@ -304,7 +304,7 @@ jobs:
             expected-bun-enabled: "false"
             expected-deno-enabled: "false"
             expected-biome-enabled: "true"
-            expected-biome-version: 2.4.5
+            expected-biome-version: 2.4.9
             expected-turbo-enabled: "false"
             test-command: node --version && npm --version
             title: 🔧 Biome Auto-Detect
@@ -387,22 +387,10 @@ jobs:
               **/build
               **/dist
             title: 📝 Additional Inputs (Newlines)
-          - format: bullets
-            additional-lockfiles: |
-              * **/custom.lock
-              * **/vendor.lock
-            additional-cache-paths: |
-              * **/build
-              * **/dist
-            title: 📝 Additional Inputs (Bullets)
-          - format: comma
-            additional-lockfiles: "**/custom.lock, **/vendor.lock"
-            additional-cache-paths: "**/build, **/dist"
-            title: 📝 Additional Inputs (Comma)
-          - format: json
-            additional-lockfiles: '["**/custom.lock", "**/vendor.lock"]'
-            additional-cache-paths: '["**/build", "**/dist"]'
-            title: 📝 Additional Inputs (JSON)
+          # NOTE: bullets, comma, and JSON formats were dropped in the v2
+          # migration. ActionInput.multiline from @savvy-web/github-action-effects
+          # splits on \n only — it does not strip bullet prefixes, split on
+          # commas, or parse JSON arrays. Use newline-separated input.
     steps:
       - name: Checkout
         uses: actions/checkout@v6
