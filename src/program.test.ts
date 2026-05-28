@@ -1,154 +1,28 @@
 import { FileSystem } from "@effect/platform";
+import { ActionCache, ActionLogger, ActionOutputs } from "@savvy-web/github-action-effects";
 import {
-	ActionCache,
-	ActionEnvironment,
-	ActionLogger,
-	ActionOutputs,
-	ActionState,
-	CommandRunner,
-	ToolInstaller,
-} from "@savvy-web/github-action-effects";
-import type { Context as ContextType } from "effect";
+	ActionCacheError,
+	ActionEnvironmentTest,
+	ActionLoggerTest,
+	ActionOutputsTest,
+	ActionStateTest,
+	CommandRunnerTest,
+	GlobTest,
+	ToolInstallerTest,
+} from "@savvy-web/github-action-effects/testing";
 import { Config, ConfigProvider, Effect, Exit, Layer, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
-
-// ---------------------------------------------------------------------------
-// Mock service factories
-// ---------------------------------------------------------------------------
-
-type OutputsRecord = Record<string, string>;
-type ExportedVars = Record<string, string>;
-
-const makeOutputsLayer = (store: OutputsRecord, exportedVars: ExportedVars = {}) =>
-	Layer.succeed(ActionOutputs, {
-		set: (name: string, value: string) => {
-			store[name] = value;
-			return Effect.void;
-		},
-		setJson: () => Effect.void,
-		summary: () => Effect.void,
-		exportVariable: (name: string, value: string) => {
-			exportedVars[name] = value;
-			return Effect.void;
-		},
-		addPath: () => Effect.void,
-		setFailed: () => Effect.void,
-		setSecret: () => Effect.void,
-	} as unknown as ContextType.Tag.Service<typeof ActionOutputs>);
-
-const makeLoggerLayer = () =>
-	Layer.succeed(ActionLogger, {
-		group: <A, E, R>(_name: string, effect: Effect.Effect<A, E, R>) => effect,
-		withBuffer: <A, E, R>(_label: string, effect: Effect.Effect<A, E, R>) => effect,
-		annotationError: () => Effect.void,
-		annotationWarning: () => Effect.void,
-		annotationNotice: () => Effect.void,
-	} as unknown as ContextType.Tag.Service<typeof ActionLogger>);
-
-const makeCacheLayer = (hitType: "exact" | "partial" | "none" = "none") =>
-	Layer.succeed(ActionCache, {
-		save: () => Effect.void,
-		restore: (_paths: readonly string[], key: string) => {
-			if (hitType === "exact") return Effect.succeed(Option.some(key));
-			if (hitType === "partial") return Effect.succeed(Option.some(`${key}-partial`));
-			return Effect.succeed(Option.none());
-		},
-	} as unknown as ContextType.Tag.Service<typeof ActionCache>);
-
-const makeFailingCacheLayer = () =>
-	Layer.succeed(ActionCache, {
-		save: () => Effect.fail({ _tag: "ActionCacheError", key: "test", operation: "save", reason: "save failed" }),
-		restore: () =>
-			Effect.fail({ _tag: "ActionCacheError", key: "test", operation: "restore", reason: "restore failed" }),
-	} as unknown as ContextType.Tag.Service<typeof ActionCache>);
-
-const makeStateLayer = () => {
-	const store = new Map<string, string>();
-	return Layer.succeed(ActionState, {
-		save: (key: string, value: unknown) => {
-			store.set(key, JSON.stringify(value));
-			return Effect.void;
-		},
-		get: (key: string) => {
-			const raw = store.get(key);
-			if (raw === undefined) return Effect.die(`State key not found: ${key}`);
-			return Effect.succeed(JSON.parse(raw) as unknown);
-		},
-		getOptional: (key: string) => {
-			const raw = store.get(key);
-			if (raw === undefined) return Effect.succeed(Option.none());
-			return Effect.succeed(Option.some(JSON.parse(raw) as unknown));
-		},
-	} as unknown as ContextType.Tag.Service<typeof ActionState>);
-};
-
-const makeEnvironmentLayer = (env: Record<string, string> = {}) =>
-	Layer.succeed(ActionEnvironment, {
-		get: (name: string) => {
-			const val = env[name];
-			if (val === undefined) return Effect.die(`Env var not found: ${name}`);
-			return Effect.succeed(val);
-		},
-		getOptional: (name: string) => Effect.succeed(env[name] !== undefined ? Option.some(env[name]) : Option.none()),
-		github: Effect.die("not implemented"),
-		runner: Effect.die("not implemented"),
-	} as unknown as ContextType.Tag.Service<typeof ActionEnvironment>);
-
-const makeCommandRunnerLayer = (
-	responses: Map<string, { exitCode: number; stdout: string; stderr: string }> = new Map(),
-) => {
-	const lookup = (
-		command: string,
-		args: ReadonlyArray<string>,
-	): { exitCode: number; stdout: string; stderr: string } => {
-		const key = args.length > 0 ? `${command} ${[...args].join(" ")}` : command;
-		return responses.get(key) ?? responses.get(command) ?? { exitCode: 0, stdout: "", stderr: "" };
-	};
-
-	const failOnNonZero = (
-		command: string,
-		_args: ReadonlyArray<string>,
-		response: { exitCode: number; stdout: string; stderr: string },
-	): Effect.Effect<{ exitCode: number; stdout: string; stderr: string }, Error> => {
-		if (response.exitCode === 0) {
-			return Effect.succeed(response);
-		}
-		return Effect.fail(new Error(`Command "${command}" exited with code ${response.exitCode}`));
-	};
-
-	return Layer.succeed(CommandRunner, {
-		exec: (command: string, args: ReadonlyArray<string> = []) =>
-			failOnNonZero(command, args, lookup(command, args)).pipe(
-				Effect.map((r: { exitCode: number; stdout: string; stderr: string }) => r.exitCode),
-			),
-		execCapture: (command: string, args: ReadonlyArray<string> = []) =>
-			failOnNonZero(command, args, lookup(command, args)),
-		execJson: (command: string, args: ReadonlyArray<string> | undefined) => {
-			const resolvedArgs = args ?? [];
-			return failOnNonZero(command, resolvedArgs, lookup(command, resolvedArgs)) as never;
-		},
-		execLines: (command: string, args: ReadonlyArray<string> = []) =>
-			failOnNonZero(command, args, lookup(command, args)).pipe(
-				Effect.map((r: { exitCode: number; stdout: string; stderr: string }) =>
-					r.stdout
-						.split("\n")
-						.map((l: string) => l.trim())
-						.filter((l: string) => l.length > 0),
-				),
-			),
-	} as unknown as ContextType.Tag.Service<typeof CommandRunner>);
-};
-
-const makeToolInstallerLayer = () =>
-	Layer.succeed(ToolInstaller, {
-		find: (_tool: string, _version: string) => Effect.succeed(Option.none()),
-		download: (_url: string) => Effect.succeed("/tmp/downloaded-file"),
-		extractTar: (_file: string) => Effect.succeed("/tmp/extracted"),
-		extractZip: (_file: string) => Effect.succeed("/tmp/extracted"),
-		cacheDir: (_sourceDir: string, tool: string, version: string) => Effect.succeed(`/tools/${tool}/${version}`),
-		cacheFile: (_sourceFile: string, _targetFile: string, tool: string, version: string) =>
-			Effect.succeed(`/tools/${tool}/${version}`),
-	} as unknown as ContextType.Tag.Service<typeof ToolInstaller>);
+import {
+	getActivePackageManagers,
+	installBiome,
+	installDependencies,
+	setOutputs,
+	setupPackageManager,
+} from "./program.js";
+import type { PackageManager } from "./services/cache.js";
+import { findLockFiles, getCombinedCacheConfig, restoreCache } from "./services/cache.js";
+import { detectBiome, detectTurbo, loadPackageJson, parseDevEngines } from "./services/config-loader.js";
+import { RuntimeInstaller, installerLayerFor } from "./services/runtime-installer.js";
 
 // ---------------------------------------------------------------------------
 // FileSystem mock helpers
@@ -191,40 +65,20 @@ const makeFileSystemLayer = (
 	);
 
 // ---------------------------------------------------------------------------
-// Import the module-under-test pieces (config, cache, etc.) which are
-// what main.ts composes. We test the pipeline by importing those modules
-// directly and composing them the same way main.ts does.
+// Helper to find the last output value by name from ActionOutputsTestState
 // ---------------------------------------------------------------------------
 
-import type { PackageManager } from "../src/cache.js";
-import { findLockFiles, getCombinedCacheConfig, restoreCache } from "../src/cache.js";
-import { detectBiome, detectTurbo, loadPackageJson, parseDevEngines } from "../src/config.js";
-import {
-	getActivePackageManagers,
-	installBiome,
-	installDependencies,
-	parseMultiValueInput,
-	setOutputs,
-	setupPackageManager,
-} from "../src/main.js";
-import { RuntimeInstaller, installerLayerFor } from "../src/runtime-installer.js";
+const getOutput = (state: ReturnType<typeof ActionOutputsTest.empty>, name: string): string | undefined =>
+	[...state.outputs].reverse().find((o) => o.name === name)?.value;
 
-/**
- * Build the full pipeline Effect the same way main.ts does,
- * allowing us to provide test layers.
- *
- * We use `as never` for service tag yields because in test context
- * the mock implementations don't match the exact service type signatures.
- */
+// ---------------------------------------------------------------------------
+// The test pipeline (mirrors main.ts logic, reads services from context)
+// ---------------------------------------------------------------------------
+
 // biome-ignore lint/suspicious/noExplicitAny: test mock type erasure at service boundary
-const buildPipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
-	const outputs = (yield* ActionOutputs) as unknown as {
-		set: (name: string, value: string) => Effect.Effect<void>;
-		exportVariable: (name: string, value: string) => Effect.Effect<void>;
-	};
-	const logger = (yield* ActionLogger) as unknown as {
-		group: <A, E, R>(name: string, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
-	};
+const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
+	const outputsSvc = yield* ActionOutputs;
+	const logger = yield* ActionLogger;
 
 	// 1. Parse configuration
 	const config = yield* logger.group(
@@ -262,10 +116,10 @@ const buildPipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 		const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
 		const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
 		if (turboToken !== "") {
-			yield* outputs.exportVariable("TURBO_TOKEN", turboToken);
+			yield* outputsSvc.exportVariable("TURBO_TOKEN", turboToken);
 		}
 		if (turboTeam !== "") {
-			yield* outputs.exportVariable("TURBO_TEAM", turboTeam);
+			yield* outputsSvc.exportVariable("TURBO_TEAM", turboTeam);
 		}
 	}
 
@@ -291,13 +145,10 @@ const buildPipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 		),
 	);
 
-	// 4. Install dependencies
-	const shouldInstallDeps = true; // Default in tests — overridden by ConfigProvider
-	if (shouldInstallDeps) {
-		yield* logger.group("Install dependencies", installDependencies(pmName));
-	}
+	// 4. Install dependencies (always in tests — overridden by ConfigProvider in specific tests)
+	yield* logger.group("Install dependencies", installDependencies(pmName));
 
-	// 5. Install Biome (non-fatal) — in the test we just log success
+	// 5. Install Biome (non-fatal)
 	if (Option.isSome(config.biome)) {
 		yield* logger
 			.group("Install Biome", Effect.log(`Biome ${config.biome.value} (test stub)`))
@@ -305,11 +156,11 @@ const buildPipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	}
 
 	// 6. Set outputs
-	yield* setOutputs(outputs as never, installed, config, cacheResult, lockfiles, finalCachePaths);
+	yield* setOutputs(outputsSvc as never, installed, config, cacheResult, lockfiles, finalCachePaths);
 });
 
 // ---------------------------------------------------------------------------
-// Test helpers
+// Test data constants
 // ---------------------------------------------------------------------------
 
 const VALID_PACKAGE_JSON = JSON.stringify({
@@ -331,12 +182,12 @@ const MULTI_RUNTIME_PACKAGE_JSON = JSON.stringify({
 	},
 });
 
-/**
- * Build a ConfigProvider that maps input names directly.
- * This simulates how ActionsConfigProvider resolves Config.string("input-name").
- */
 const makeConfigProvider = (inputs: Record<string, string> = {}) =>
 	ConfigProvider.fromMap(new Map(Object.entries(inputs)));
+
+// ---------------------------------------------------------------------------
+// Base layer builder
+// ---------------------------------------------------------------------------
 
 const buildBaseLayer = (opts: {
 	files?: FsFiles;
@@ -346,32 +197,55 @@ const buildBaseLayer = (opts: {
 	cmdResponses?: Map<string, { exitCode: number; stdout: string; stderr: string }>;
 	env?: Record<string, string>;
 }) => {
-	const outputStore: OutputsRecord = {};
-	const exportedVars: ExportedVars = {};
+	const outputsState = ActionOutputsTest.empty();
+	const stateState = ActionStateTest.empty();
 
 	const fsLayer = makeFileSystemLayer(
 		opts.files ?? { "package.json": VALID_PACKAGE_JSON },
 		new Set(Object.keys(opts.files ?? { "package.json": VALID_PACKAGE_JSON })),
 	);
 
+	const hitType = opts.cacheHit ?? "none";
+	// biome-ignore lint/suspicious/noExplicitAny: test layer type erasure at service boundary
+	const cacheLayer: Layer.Layer<any> = opts.failCache
+		? Layer.succeed(ActionCache, {
+				save: () => Effect.fail(new ActionCacheError({ key: "test", operation: "save", reason: "save failed" })),
+				restore: () =>
+					Effect.fail(new ActionCacheError({ key: "test", operation: "restore", reason: "restore failed" })),
+			})
+		: Layer.succeed(ActionCache, {
+				save: () => Effect.void,
+				restore: (_paths: readonly string[], key: string) => {
+					if (hitType === "exact") return Effect.succeed(Option.some(key));
+					if (hitType === "partial") return Effect.succeed(Option.some(`${key}-partial`));
+					return Effect.succeed(Option.none());
+				},
+			});
+
 	const layer = Layer.mergeAll(
-		makeOutputsLayer(outputStore, exportedVars),
-		makeLoggerLayer(),
-		opts.failCache ? makeFailingCacheLayer() : makeCacheLayer(opts.cacheHit ?? "none"),
-		makeStateLayer(),
-		makeEnvironmentLayer(opts.env ?? { GITHUB_REF: "refs/heads/main" }),
-		makeCommandRunnerLayer(opts.cmdResponses),
-		makeToolInstallerLayer(),
+		ActionOutputsTest.layer(outputsState),
+		ActionLoggerTest.layer(ActionLoggerTest.empty()),
+		cacheLayer,
+		ActionStateTest.layer(stateState),
+		ActionEnvironmentTest.layer(opts.env ?? { GITHUB_REF: "refs/heads/main" }),
+		opts.cmdResponses ? CommandRunnerTest.layer(opts.cmdResponses) : CommandRunnerTest.empty(),
+		ToolInstallerTest.layer(ToolInstallerTest.empty()),
+		GlobTest.layer(GlobTest.empty()),
 		fsLayer,
 	);
 
-	return { layer, outputStore, exportedVars, configProvider: makeConfigProvider(opts.inputs ?? {}) };
+	return {
+		layer,
+		outputsState,
+		configProvider: makeConfigProvider(opts.inputs ?? {}),
+	};
 };
 
-/** Run the pipeline with given layers and config provider, erasing the R parameter for test. */
-const runPipeline = (layer: Layer.Layer<never>, configProvider: ConfigProvider.ConfigProvider) =>
+/** Run the pipeline with given layers and config provider. */
+// biome-ignore lint/suspicious/noExplicitAny: test layer type erasure at service boundary
+const runPipeline = (layer: Layer.Layer<any>, configProvider: ConfigProvider.ConfigProvider) =>
 	Effect.runPromise(
-		(buildPipeline as Effect.Effect<void, never, never>).pipe(
+		(pipeline as Effect.Effect<void, never, never>).pipe(
 			Effect.withConfigProvider(configProvider),
 			Effect.provide(layer),
 			Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
@@ -379,10 +253,11 @@ const runPipeline = (layer: Layer.Layer<never>, configProvider: ConfigProvider.C
 	);
 
 /** Run the pipeline and return its Exit for failure assertions. */
-const runPipelineExit = (layer: Layer.Layer<never>, configProvider: ConfigProvider.ConfigProvider) =>
+// biome-ignore lint/suspicious/noExplicitAny: test layer type erasure at service boundary
+const runPipelineExit = (layer: Layer.Layer<any>, configProvider: ConfigProvider.ConfigProvider) =>
 	Effect.runPromise(
 		Effect.exit(
-			(buildPipeline as Effect.Effect<void, never, never>).pipe(
+			(pipeline as Effect.Effect<void, never, never>).pipe(
 				Effect.withConfigProvider(configProvider),
 				Effect.provide(layer),
 				Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
@@ -396,34 +271,33 @@ const runPipelineExit = (layer: Layer.Layer<never>, configProvider: ConfigProvid
 
 describe("main pipeline", () => {
 	it("full pipeline with valid config sets all outputs correctly", async () => {
-		const { layer, outputStore, configProvider } = buildBaseLayer({
+		const { layer, outputsState, configProvider } = buildBaseLayer({
 			cacheHit: "exact",
 		});
 
-		await runPipeline(layer as Layer.Layer<never>, configProvider);
+		await runPipeline(layer, configProvider);
 
-		expect(outputStore["node-version"]).toBe("24.11.0");
-		expect(outputStore["node-enabled"]).toBe("true");
-		expect(outputStore["bun-version"]).toBe("");
-		expect(outputStore["bun-enabled"]).toBe("false");
-		expect(outputStore["deno-version"]).toBe("");
-		expect(outputStore["deno-enabled"]).toBe("false");
-		expect(outputStore["package-manager"]).toBe("pnpm");
-		expect(outputStore["package-manager-version"]).toBe("10.20.0");
-		expect(outputStore["biome-enabled"]).toBe("false");
-		expect(outputStore["turbo-enabled"]).toBe("false");
+		expect(getOutput(outputsState, "node-version")).toBe("24.11.0");
+		expect(getOutput(outputsState, "node-enabled")).toBe("true");
+		expect(getOutput(outputsState, "bun-version")).toBe("");
+		expect(getOutput(outputsState, "bun-enabled")).toBe("false");
+		expect(getOutput(outputsState, "deno-version")).toBe("");
+		expect(getOutput(outputsState, "deno-enabled")).toBe("false");
+		expect(getOutput(outputsState, "package-manager")).toBe("pnpm");
+		expect(getOutput(outputsState, "package-manager-version")).toBe("10.20.0");
+		expect(getOutput(outputsState, "biome-enabled")).toBe("false");
+		expect(getOutput(outputsState, "turbo-enabled")).toBe("false");
 	});
 
 	it("install-deps=false skips dependency installation", async () => {
-		const { layer, outputStore, configProvider } = buildBaseLayer({
+		const { layer, outputsState, configProvider } = buildBaseLayer({
 			inputs: { "install-deps": "false" },
 		});
 
-		await runPipeline(layer as Layer.Layer<never>, configProvider);
+		await runPipeline(layer, configProvider);
 
-		// Pipeline should complete successfully with outputs set
-		expect(outputStore["node-version"]).toBe("24.11.0");
-		expect(outputStore["package-manager"]).toBe("pnpm");
+		expect(getOutput(outputsState, "node-version")).toBe("24.11.0");
+		expect(getOutput(outputsState, "package-manager")).toBe("pnpm");
 	});
 
 	it("biome install failure does not fail the action (non-fatal)", async () => {
@@ -431,31 +305,29 @@ describe("main pipeline", () => {
 			$schema: "https://biomejs.dev/schemas/2.3.14/schema.json",
 		});
 
-		const { layer, outputStore, configProvider } = buildBaseLayer({
+		const { layer, outputsState, configProvider } = buildBaseLayer({
 			files: {
 				"package.json": VALID_PACKAGE_JSON,
 				"biome.jsonc": biomeConfig,
 			},
 		});
 
-		await runPipeline(layer as Layer.Layer<never>, configProvider);
+		await runPipeline(layer, configProvider);
 
-		// Pipeline completed - biome was detected
-		expect(outputStore["biome-enabled"]).toBe("true");
-		expect(outputStore["biome-version"]).toBe("2.3.14");
-		expect(outputStore["node-version"]).toBe("24.11.0");
+		expect(getOutput(outputsState, "biome-enabled")).toBe("true");
+		expect(getOutput(outputsState, "biome-version")).toBe("2.3.14");
+		expect(getOutput(outputsState, "node-version")).toBe("24.11.0");
 	});
 
 	it("cache restore failure does not fail the action (non-fatal)", async () => {
-		const { layer, outputStore, configProvider } = buildBaseLayer({
+		const { layer, outputsState, configProvider } = buildBaseLayer({
 			failCache: true,
 		});
 
-		await runPipeline(layer as Layer.Layer<never>, configProvider);
+		await runPipeline(layer, configProvider);
 
-		// Pipeline completed despite cache failure
-		expect(outputStore["cache-hit"]).toBe("false");
-		expect(outputStore["node-version"]).toBe("24.11.0");
+		expect(getOutput(outputsState, "cache-hit")).toBe("false");
+		expect(getOutput(outputsState, "node-version")).toBe("24.11.0");
 	});
 
 	it("missing package.json fails with ConfigError", async () => {
@@ -463,56 +335,56 @@ describe("main pipeline", () => {
 			files: {},
 		});
 
-		const exit = await runPipelineExit(layer as Layer.Layer<never>, configProvider);
+		const exit = await runPipelineExit(layer, configProvider);
 
 		expect(Exit.isFailure(exit)).toBe(true);
 	});
 
 	describe("outputs map cache hit correctly", () => {
 		it("exact cache hit maps to 'true'", async () => {
-			const { layer, outputStore, configProvider } = buildBaseLayer({
+			const { layer, outputsState, configProvider } = buildBaseLayer({
 				cacheHit: "exact",
 			});
 
-			await runPipeline(layer as Layer.Layer<never>, configProvider);
-			expect(outputStore["cache-hit"]).toBe("true");
+			await runPipeline(layer, configProvider);
+			expect(getOutput(outputsState, "cache-hit")).toBe("true");
 		});
 
 		it("partial cache hit maps to 'partial'", async () => {
-			const { layer, outputStore, configProvider } = buildBaseLayer({
+			const { layer, outputsState, configProvider } = buildBaseLayer({
 				cacheHit: "partial",
 			});
 
-			await runPipeline(layer as Layer.Layer<never>, configProvider);
-			expect(outputStore["cache-hit"]).toBe("partial");
+			await runPipeline(layer, configProvider);
+			expect(getOutput(outputsState, "cache-hit")).toBe("partial");
 		});
 
 		it("no cache hit maps to 'false'", async () => {
-			const { layer, outputStore, configProvider } = buildBaseLayer({
+			const { layer, outputsState, configProvider } = buildBaseLayer({
 				cacheHit: "none",
 			});
 
-			await runPipeline(layer as Layer.Layer<never>, configProvider);
-			expect(outputStore["cache-hit"]).toBe("false");
+			await runPipeline(layer, configProvider);
+			expect(getOutput(outputsState, "cache-hit")).toBe("false");
 		});
 	});
 
 	it("multi-runtime config installs all runtimes and sets outputs", async () => {
-		const { layer, outputStore, configProvider } = buildBaseLayer({
+		const { layer, outputsState, configProvider } = buildBaseLayer({
 			files: { "package.json": MULTI_RUNTIME_PACKAGE_JSON },
 		});
 
-		await runPipeline(layer as Layer.Layer<never>, configProvider);
+		await runPipeline(layer, configProvider);
 
-		expect(outputStore["node-version"]).toBe("24.11.0");
-		expect(outputStore["node-enabled"]).toBe("true");
-		expect(outputStore["bun-version"]).toBe("1.3.3");
-		expect(outputStore["bun-enabled"]).toBe("true");
-		expect(outputStore["package-manager"]).toBe("pnpm");
+		expect(getOutput(outputsState, "node-version")).toBe("24.11.0");
+		expect(getOutput(outputsState, "node-enabled")).toBe("true");
+		expect(getOutput(outputsState, "bun-version")).toBe("1.3.3");
+		expect(getOutput(outputsState, "bun-enabled")).toBe("true");
+		expect(getOutput(outputsState, "package-manager")).toBe("pnpm");
 	});
 
 	it("turbo detection sets TURBO_TOKEN and TURBO_TEAM env vars", async () => {
-		const { layer, outputStore, exportedVars, configProvider } = buildBaseLayer({
+		const { layer, outputsState, configProvider } = buildBaseLayer({
 			files: {
 				"package.json": VALID_PACKAGE_JSON,
 				"turbo.json": "{}",
@@ -523,11 +395,13 @@ describe("main pipeline", () => {
 			},
 		});
 
-		await runPipeline(layer as Layer.Layer<never>, configProvider);
+		await runPipeline(layer, configProvider);
 
-		expect(outputStore["turbo-enabled"]).toBe("true");
-		expect(exportedVars.TURBO_TOKEN).toBe("my-token");
-		expect(exportedVars.TURBO_TEAM).toBe("my-team");
+		expect(getOutput(outputsState, "turbo-enabled")).toBe("true");
+		const turboToken = outputsState.variables.find((v) => v.name === "TURBO_TOKEN")?.value;
+		const turboTeam = outputsState.variables.find((v) => v.name === "TURBO_TEAM")?.value;
+		expect(turboToken).toBe("my-token");
+		expect(turboTeam).toBe("my-team");
 	});
 });
 
@@ -570,47 +444,16 @@ describe("getActivePackageManagers", () => {
 });
 
 // ---------------------------------------------------------------------------
-// parseMultiValueInput tests
-// ---------------------------------------------------------------------------
-
-describe("parseMultiValueInput", () => {
-	it("returns empty array for empty string", () => {
-		expect(parseMultiValueInput("")).toEqual([]);
-		expect(parseMultiValueInput("   ")).toEqual([]);
-	});
-
-	it("parses comma-separated values", () => {
-		expect(parseMultiValueInput("a, b, c")).toEqual(["a", "b", "c"]);
-	});
-
-	it("parses newline-separated values", () => {
-		expect(parseMultiValueInput("a\nb\nc")).toEqual(["a", "b", "c"]);
-	});
-
-	it("parses bullet list values", () => {
-		expect(parseMultiValueInput("* a\n* b\n* c")).toEqual(["a", "b", "c"]);
-	});
-
-	it("parses JSON array values", () => {
-		expect(parseMultiValueInput('["a", "b", "c"]')).toEqual(["a", "b", "c"]);
-	});
-
-	it("filters out comment lines in newline format", () => {
-		expect(parseMultiValueInput("a\n# comment\nb")).toEqual(["a", "b"]);
-	});
-
-	it("handles invalid JSON gracefully by falling through", () => {
-		expect(parseMultiValueInput("[not valid json")).toEqual(["[not valid json"]);
-	});
-});
-
-// ---------------------------------------------------------------------------
 // installDependencies branch coverage
 // ---------------------------------------------------------------------------
 
 describe("installDependencies", () => {
-	const runInstallDeps = (pm: PackageManager, files: Record<string, boolean>, responses: Map<string, unknown>) => {
-		const cmdLayer = makeCommandRunnerLayer(responses as never);
+	const runInstallDeps = (
+		pm: PackageManager,
+		files: Record<string, boolean>,
+		responses: Map<string, { exitCode: number; stdout: string; stderr: string }>,
+	) => {
+		const cmdLayer = CommandRunnerTest.layer(responses);
 		const fsLayer = Layer.succeed(FileSystem.FileSystem, {
 			access: (path: string) => (files[path] ? Effect.void : Effect.fail("not found")),
 		} as unknown as FileSystem.FileSystem);
@@ -681,20 +524,24 @@ describe("installDependencies", () => {
 // ---------------------------------------------------------------------------
 
 describe("setupPackageManager", () => {
-	const runSetup = (pm: PackageManager, version: string, cmdLayer: Layer.Layer<never>) =>
+	const runSetup = (
+		pm: PackageManager,
+		version: string,
+		responses: Map<string, { exitCode: number; stdout: string; stderr: string }>,
+	) =>
 		Effect.runPromise(
 			(setupPackageManager(pm, version) as Effect.Effect<void, unknown, never>).pipe(
-				Effect.provide(cmdLayer as never),
+				Effect.provide(CommandRunnerTest.layer(responses) as never),
 				Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
 			),
 		);
 
 	it("skips setup for bun", async () => {
-		await runSetup("bun", "1.3.3", makeCommandRunnerLayer());
+		await runSetup("bun", "1.3.3", new Map());
 	});
 
 	it("skips setup for deno", async () => {
-		await runSetup("deno", "2.5.6", makeCommandRunnerLayer());
+		await runSetup("deno", "2.5.6", new Map());
 	});
 
 	it("runs corepack for pnpm", async () => {
@@ -704,7 +551,7 @@ describe("setupPackageManager", () => {
 			["corepack prepare pnpm@10.20.0 --activate", { exitCode: 0, stdout: "", stderr: "" }],
 			["pnpm --version", { exitCode: 0, stdout: "10.20.0\n", stderr: "" }],
 		]);
-		await runSetup("pnpm", "10.20.0", makeCommandRunnerLayer(responses));
+		await runSetup("pnpm", "10.20.0", responses);
 	});
 
 	it("runs corepack for yarn", async () => {
@@ -714,7 +561,7 @@ describe("setupPackageManager", () => {
 			["corepack prepare yarn@4.6.0 --activate", { exitCode: 0, stdout: "", stderr: "" }],
 			["yarn --version", { exitCode: 0, stdout: "4.6.0\n", stderr: "" }],
 		]);
-		await runSetup("yarn", "4.6.0", makeCommandRunnerLayer(responses));
+		await runSetup("yarn", "4.6.0", responses);
 	});
 
 	it("runs npm install -g for npm when version differs", async () => {
@@ -723,12 +570,12 @@ describe("setupPackageManager", () => {
 			["sudo npm install -g npm@11.6.0", { exitCode: 0, stdout: "", stderr: "" }],
 			["sudo chown -R", { exitCode: 0, stdout: "", stderr: "" }],
 		]);
-		await runSetup("npm", "11.6.0", makeCommandRunnerLayer(responses));
+		await runSetup("npm", "11.6.0", responses);
 	});
 
 	it("skips npm install when version already matches", async () => {
 		const responses = new Map([["npm --version", { exitCode: 0, stdout: "11.6.0\n", stderr: "" }]]);
-		await runSetup("npm", "11.6.0", makeCommandRunnerLayer(responses));
+		await runSetup("npm", "11.6.0", responses);
 	});
 
 	it("runs npm install -g without sudo on windows", async () => {
@@ -739,7 +586,7 @@ describe("setupPackageManager", () => {
 				["npm --version", { exitCode: 0, stdout: "10.8.2\n", stderr: "" }],
 				["npm install -g npm@11.6.0", { exitCode: 0, stdout: "", stderr: "" }],
 			]);
-			await runSetup("npm", "11.6.0", makeCommandRunnerLayer(responses));
+			await runSetup("npm", "11.6.0", responses);
 		} finally {
 			Object.defineProperty(process, "platform", { value: origPlatform, writable: true });
 		}
@@ -753,7 +600,7 @@ describe("setupPackageManager", () => {
 			["corepack prepare pnpm@10.20.0 --activate", { exitCode: 0, stdout: "", stderr: "" }],
 			["pnpm --version", { exitCode: 0, stdout: "10.20.0\n", stderr: "" }],
 		]);
-		await runSetup("pnpm", "10.20.0", makeCommandRunnerLayer(responses));
+		await runSetup("pnpm", "10.20.0", responses);
 	});
 });
 

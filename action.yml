@@ -25,7 +25,7 @@ inputs:
     required: false
     default: "false"
   additional-lockfiles:
-    description: Additional lockfile patterns to include in cache key generation. Supports glob patterns. Multiline or comma-separated (e.g., 'deno.lock', '**/yarn.lock').
+    description: Additional lockfile patterns to include in cache key generation. Supports glob patterns. One pattern per line (e.g., 'deno.lock', '**/yarn.lock').
     required: false
     default: ""
   additional-cache-paths:

@@ -37,8 +37,7 @@
 		"@effect/sql": "catalog:silk",
 		"@savvy-web/github-action-effects": "^2.0.0",
 		"effect": "catalog:silk",
-		"fast-glob": "^3.3.3",
-		"jsonc-effect": "^0.2.0"
+		"jsonc-effect": "^0.2.1"
 	},
 	"devDependencies": {
 		"@savvy-web/changesets": "^0.10.0",

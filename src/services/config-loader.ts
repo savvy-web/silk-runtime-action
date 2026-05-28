@@ -1,8 +1,8 @@
 import { FileSystem } from "@effect/platform";
 import { Config, Effect, Option, Schema } from "effect";
 import { parse as parseJsonc } from "jsonc-effect";
-import { ConfigError } from "./errors.js";
-import { DevEngines } from "./schemas.js";
+import { ConfigError } from "../errors/errors.js";
+import { DevEngines } from "../schemas/domain.js";
 
 /**
  * Reads and parses package.json, decoding the devEngines field.

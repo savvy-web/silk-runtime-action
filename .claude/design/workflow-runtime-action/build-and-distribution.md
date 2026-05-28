@@ -3,92 +3,82 @@ status: current
 module: workflow-runtime-action
 category: integration
 created: 2026-03-21
-updated: 2026-03-21
-last-synced: 2026-03-21
-completeness: 85
+updated: 2026-05-28
+last-synced: 2026-05-28
+completeness: 88
 related:
   - ./architecture.md
   - ./testing-strategy.md
 dependencies: []
 ---
 
-# Build and Distribution
+# Build and distribution
 
-Build pipeline, bundle configuration, distribution strategy, and the local testing copy.
+Build pipeline, bundle configuration, distribution strategy and the local testing copy.
 
-## Table of Contents
+## Table of contents
 
 1. [Overview](#overview)
-2. [Current State](#current-state)
+2. [Current state](#current-state)
 3. [Rationale](#rationale)
-4. [Implementation Details](#implementation-details)
-5. [Testing Strategy](#testing-strategy)
-6. [Future Enhancements](#future-enhancements)
-7. [Related Documentation](#related-documentation)
+4. [Implementation details](#implementation-details)
+5. [Related documentation](#related-documentation)
 
 ---
 
 ## Overview
 
-The action is built using `@savvy-web/github-action-builder` (rsbuild-based) and produces compiled
-JavaScript bundles that are committed to git. GitHub Actions requires the compiled output to be
-present in the repository because it runs actions directly from the checked-out source.
+The action is built using `@savvy-web/github-action-builder` (^0.7.1, rsbuild-based) and produces compiled JavaScript bundles that are committed to git. GitHub Actions runs the action from the checked-out source -- there is no build step in the Actions runtime -- so the compiled output must be present in the repo.
 
-**Key Features:**
+**Key features:**
 
-- Two entry points compiled to ES module bundles (`main.js`, `post.js`)
-- Minification enabled for production bundles
-- Automatic local testing copy at `.github/actions/local/`
-- ES module marker (`package.json` with `"type": "module"`)
-- Source maps for debugging
+- Two entry points compiled to ES module bundles (`main.js`, `post.js`).
+- Minification enabled.
+- Automatic local testing copy at `.github/actions/local/`.
+- ES module marker (`dist/package.json` with `"type": "module"`).
+- `ignore` list in `action.config.ts` for optional cyclonedx plugins that ship with `@cyclonedx/cyclonedx-library` (transitive via `@savvy-web/github-action-effects`).
 
-**When to reference this document:**
+**When to load this doc:**
 
-- When modifying the build configuration
-- When debugging bundle issues in CI
-- When understanding why `dist/` is committed to git
-- When adding new entry points
+- Modifying build configuration.
+- Debugging bundle issues in CI.
+- Understanding why `dist/` is committed.
+- Adding new entry points.
 
 ---
 
-## Current State
+## Current state
 
-### Build Configuration (`action.config.ts`)
+### Build configuration
 
-```typescript
-import { defineConfig } from "@savvy-web/github-action-builder"
+See `action.config.ts`:
 
+```ts
 export default defineConfig({
-  entries: {
-    main: "src/main.ts",
-    post: "src/post.ts",
-  },
+  entries: { main: "src/main.ts", post: "src/post.ts" },
   build: {
     minify: true,
+    ignore: ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"],
   },
-  persistLocal: {
-    enabled: true,
-    path: ".github/actions/local",
-  },
-})
+  persistLocal: { enabled: true, path: ".github/actions/local" },
+});
 ```
 
-### Build Output
+### Build output
 
 ```text
-dist/                            # Production build (committed to git)
-  main.js                        # Bundled main action
-  post.js                        # Bundled post action
+dist/                            # Production build (committed)
+  main.js
+  post.js
   package.json                   # { "type": "module" }
 
-.github/actions/local/           # Local testing copy (committed to git)
-  dist/
-    main.js
-    post.js
-    package.json
+.github/actions/local/dist/      # Local testing copy (committed)
+  main.js
+  post.js
+  package.json
 ```
 
-### Build Commands
+### Build commands
 
 | Command | Purpose |
 | --- | --- |
@@ -96,7 +86,7 @@ dist/                            # Production build (committed to git)
 | `pnpm build:prod` | Direct `github-action-builder build` |
 | `pnpm ci:build` | CI build with full output logs |
 
-### Action Runtime Configuration (`action.yml`)
+### Action runtime configuration (`action.yml`)
 
 ```yaml
 runs:
@@ -109,130 +99,85 @@ runs:
 
 ## Rationale
 
-### Why Commit dist/ to Git
+### Commit `dist/` to git
 
-GitHub Actions loads the action directly from the repository at the specified ref. There is no
-build step in the Actions runtime. The compiled JavaScript must be present in the repository for
-the action to work. This is a fundamental requirement of all JavaScript GitHub Actions.
+GitHub Actions loads the action directly from the repository at the specified ref. There is no build step in the Actions runtime, so the compiled JavaScript must be present in the repository. This applies to every JavaScript GitHub Action.
 
-### Why rsbuild via github-action-builder
+### Builder version (^0.7.1)
 
-The `@savvy-web/github-action-builder` package wraps rsbuild with sensible defaults for GitHub
-Actions:
+The builder was upgraded from 0.5.0 to ^0.7.1 as part of the v2 standardization. 0.7.1 supports the `build.ignore` list and matches the rsbuild plugin contract expected by the rest of the savvy-web action stack.
 
-- Automatic tree shaking and dead code elimination
-- ES module output compatible with Node.js 24
-- Entry point configuration via `defineConfig`
-- Local copy generation for testing workflows
-- Clean builds (removes output directories before building)
+### `ignore` list for cyclonedx optional plugins
 
-### Why a Local Testing Copy
+`@savvy-web/github-action-effects` pulls in `@cyclonedx/cyclonedx-library` transitively. That library ships optional plugins -- XML serializers and validators (`xmlbuilder2`, `libxmljs2`) and a draft-2019 JSON validator (`ajv-formats-draft2019`) -- that the action never invokes. They are not installed in production (declared as `optionalDependencies`), so the bundler must not try to resolve them.
 
-The `.github/actions/local/` copy exists to separate test artifacts from the production build.
-The `test-fixture` composite action references `.github/actions/local` instead of the repo root,
-allowing tests to run against the built action without interfering with the production `dist/`.
+`ignore` is the right knob here, not `externals`. `ignore` rewrites the import to a throwing stub; cyclonedx's `_optPlug` wrapper try/catches that throw and falls through to its non-XML/non-draft-2019 code path. `externals` would mean "available at runtime" -- which is the opposite of true.
 
-### Why Minification Is Enabled
+### rsbuild via `github-action-builder`
 
-Minification reduces bundle size, which improves action load time in CI. The bundles are compiled
-output and not intended for human reading. Source maps are available for debugging when needed.
+rsbuild gives tree shaking, dead code elimination and ES module output compatible with Node 24. The builder wraps it with sensible defaults: entry point configuration via `defineConfig`, automatic local-copy generation and clean builds.
+
+### Local testing copy
+
+`.github/actions/local/` separates test artifacts from the production build. The `test-fixture` composite action references `.github/actions/local` rather than the repo root, letting fixture tests run against the built action without interfering with `dist/`.
 
 ---
 
-## Implementation Details
+## Implementation details
 
-### Build Process
+### Build process
 
-1. `github-action-builder build` reads `action.config.ts`
-2. Cleans `dist/` and `.github/actions/local/dist/`
-3. Compiles TypeScript via rsbuild with two entry points
-4. Writes bundles to `dist/`
-5. Creates `dist/package.json` with `{ "type": "module" }`
-6. Copies bundles to `.github/actions/local/dist/`
-7. Creates `.github/actions/local/dist/package.json`
+1. `github-action-builder build` reads `action.config.ts`.
+2. Cleans `dist/` and `.github/actions/local/dist/`.
+3. Compiles TypeScript via rsbuild with two entry points.
+4. Applies the `ignore` list (stubs the three cyclonedx optional plugins).
+5. Writes minified bundles to `dist/`.
+6. Creates `dist/package.json` with `{ "type": "module" }`.
+7. Copies bundles to `.github/actions/local/dist/` (per `persistLocal`).
 
 ### Dependencies
 
-**Production dependencies** (bundled into output):
+Production (bundled):
 
-- `@savvy-web/github-action-effects` - GitHub Actions runtime protocol
-- `effect`, `@effect/platform`, `@effect/platform-node` - Effect framework
-- Related Effect packages (`@effect/cluster`, `@effect/rpc`, `@effect/sql` - transitive)
+- `@savvy-web/github-action-effects` ^2.0.0 -- GitHub Actions runtime protocol.
+- `effect`, `@effect/platform`, `@effect/platform-node` -- Effect framework.
+- `jsonc-effect` -- Biome config parsing.
+- Related Effect packages transitively.
 
-**Dev dependencies** (not in bundle):
+Dev (not bundled):
 
-- `@savvy-web/github-action-builder` - Build tool
-- `@savvy-web/vitest` - Test runner configuration
-- `@savvy-web/changesets` - Release management
-- Biome, TypeScript, lint-staged, husky - Development tooling
+- `@savvy-web/github-action-builder` ^0.7.1 -- build tool.
+- `@savvy-web/vitest`, `@savvy-web/changesets`, `@savvy-web/commitlint`, `@savvy-web/lint-staged` -- tooling.
 
-### TypeScript Configuration
+Optional (declared in `optionalDependencies`, never installed and ignored at build time):
 
-- `module: "ESNext"`, `moduleResolution: "bundler"`, `target: "ES2022"`
-- `strict: true`, `noEmit: true` (type checking only, no emit)
-- Uses `@typescript/native-preview` (tsgo) for fast type checking
-- All imports require `.js` extensions (enforced by Biome)
-- Node.js imports require `node:` protocol (enforced by Biome)
+- `xmlbuilder2`, `libxmljs2`, `ajv-formats-draft2019`.
 
-### Release Process
+### TypeScript configuration
 
-Uses Changesets for versioning:
+- `module: "ESNext"`, `moduleResolution: "bundler"`, `target: "ES2022"`, `strict: true`, `noEmit: true`.
+- All imports require `.js` extensions (enforced by Biome).
+- `node:` protocol required for built-in modules (enforced by Biome).
+- Type checking via `@typescript/native-preview` (tsgo).
 
-1. Create changeset: `pnpm changeset`
-2. Changesets workflow creates release PR
-3. PR updates `package.json` version and `CHANGELOG.md`
-4. Merge creates GitHub release with tags
-5. Users reference by tag: `savvy-web/workflow-runtime-action@v1`
+### Release process
 
----
-
-## Testing Strategy
-
-### Build Verification
-
-The CI workflow (`pnpm ci:build`) builds the action and verifies:
-
-- Build succeeds without errors
-- `dist/main.js` and `dist/post.js` exist
-- `.github/actions/local/dist/` is populated
-- `package.json` module markers are present
-
-### Fixture Tests Use Local Copy
-
-All fixture tests reference `.github/actions/local` via the `test-fixture` composite action,
-ensuring tests run against the same build output that will be distributed.
+1. `pnpm changeset` to record changes.
+2. Changesets workflow opens a release PR.
+3. Merging the PR bumps `package.json` and `CHANGELOG.md`, then creates a GitHub release with tags.
+4. Users reference by tag (e.g., `savvy-web/workflow-runtime-action@v1`).
 
 ---
 
-## Future Enhancements
+## Related documentation
 
-### Short-term
+**Internal:**
 
-- Add bundle size reporting to CI
-- Add source map validation
+- [Architecture](./architecture.md) -- entry topology.
+- [Testing strategy](./testing-strategy.md) -- how the local copy is exercised by fixture tests.
 
-### Medium-term
+**Source files:**
 
-- Explore pre-bundled dependency caching for faster CI builds
-- Add bundle analysis (tree map of included dependencies)
-
----
-
-## Related Documentation
-
-**Internal Design Docs:**
-
-- [Architecture](./architecture.md) - Overall system design
-- [Testing Strategy](./testing-strategy.md) - Test infrastructure
-
-**Source Files:**
-
-- `action.config.ts` - Build configuration
-- `action.yml` - Action definition
-- `package.json` - Dependencies and scripts
-
----
-
-**Document Status:** Current -- reflects the implemented build pipeline.
-
-**Next Steps:** Update when build configuration changes or new entry points are added.
+- `action.config.ts` -- build configuration including the `ignore` list.
+- `action.yml` -- action definition.
+- `package.json` -- dependencies and scripts.

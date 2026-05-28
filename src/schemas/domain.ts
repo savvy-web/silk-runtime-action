@@ -70,13 +70,3 @@ export const DevEngines = Schema.Struct({
 	runtime: Schema.Union(RuntimeEntry, Schema.Array(RuntimeEntry)),
 });
 export type DevEngines = typeof DevEngines.Type;
-
-/**
- * Cache state schema
- */
-export const CacheStateSchema = Schema.Struct({
-	hit: Schema.Literal("exact", "partial", "none"),
-	key: Schema.optional(Schema.String),
-	paths: Schema.optional(Schema.Array(Schema.String)),
-});
-export type CacheState = typeof CacheStateSchema.Type;

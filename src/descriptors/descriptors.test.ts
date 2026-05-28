@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { binaryMap as biomeBinaryMap } from "../src/descriptors/biome.js";
-import { descriptor as bun } from "../src/descriptors/bun.js";
-import { descriptor as deno } from "../src/descriptors/deno.js";
-import { descriptor as node } from "../src/descriptors/node.js";
+import { binaryMap as biomeBinaryMap } from "./biome.js";
+import { descriptor as bun } from "./bun.js";
+import { descriptor as deno } from "./deno.js";
+import { descriptor as node } from "./node.js";
 
 // These are pure functions — no mocks, no Effect layers needed.
 

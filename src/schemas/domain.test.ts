@@ -1,11 +1,10 @@
 import { Either, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { AbsoluteVersion, CacheStateSchema, DevEngineEntry, DevEngines } from "../src/schemas.js";
+import { AbsoluteVersion, DevEngineEntry, DevEngines } from "./domain.js";
 
 const decodeAbsoluteVersion = Schema.decodeUnknownEither(AbsoluteVersion);
 const decodeDevEngineEntry = Schema.decodeUnknownEither(DevEngineEntry);
 const decodeDevEngines = Schema.decodeUnknownEither(DevEngines);
-const decodeCacheState = Schema.decodeUnknownEither(CacheStateSchema);
 
 describe("AbsoluteVersion", () => {
 	describe("valid versions", () => {
@@ -152,61 +151,6 @@ describe("DevEngines", () => {
 				runtime: { name: "node", version: "~24.0.0" },
 				packageManager: { name: "pnpm", version: "10.20.0" },
 			});
-			expect(Either.isLeft(result)).toBe(true);
-		});
-	});
-});
-
-describe("CacheStateSchema", () => {
-	describe("valid cache states", () => {
-		it("accepts exact hit", () => {
-			const result = decodeCacheState({ hit: "exact" });
-			expect(Either.isRight(result)).toBe(true);
-			if (Either.isRight(result)) {
-				expect(result.right.hit).toBe("exact");
-			}
-		});
-
-		it("accepts partial hit", () => {
-			const result = decodeCacheState({ hit: "partial" });
-			expect(Either.isRight(result)).toBe(true);
-			if (Either.isRight(result)) {
-				expect(result.right.hit).toBe("partial");
-			}
-		});
-
-		it("accepts none hit", () => {
-			const result = decodeCacheState({ hit: "none" });
-			expect(Either.isRight(result)).toBe(true);
-			if (Either.isRight(result)) {
-				expect(result.right.hit).toBe("none");
-			}
-		});
-
-		it("round-trips with key and paths", () => {
-			const input = {
-				hit: "exact" as const,
-				key: "pnpm-linux-x64-abc123",
-				paths: ["/home/runner/.local/share/pnpm/store", "**/node_modules"],
-			};
-			const result = decodeCacheState(input);
-			expect(Either.isRight(result)).toBe(true);
-			if (Either.isRight(result)) {
-				expect(result.right.hit).toBe("exact");
-				expect(result.right.key).toBe("pnpm-linux-x64-abc123");
-				expect(result.right.paths).toEqual(["/home/runner/.local/share/pnpm/store", "**/node_modules"]);
-			}
-		});
-	});
-
-	describe("invalid cache states", () => {
-		it("rejects invalid hit value", () => {
-			const result = decodeCacheState({ hit: "miss" });
-			expect(Either.isLeft(result)).toBe(true);
-		});
-
-		it("rejects missing hit field", () => {
-			const result = decodeCacheState({});
 			expect(Either.isLeft(result)).toBe(true);
 		});
 	});

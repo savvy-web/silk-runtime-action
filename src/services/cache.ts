@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 import { homedir, platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileSystem } from "@effect/platform";
-import { ActionCache, ActionEnvironment, ActionState, CommandRunner } from "@savvy-web/github-action-effects";
+import { ActionCache, ActionEnvironment, ActionState, CommandRunner, Glob } from "@savvy-web/github-action-effects";
 import { Effect, Option } from "effect";
-import { CacheError } from "./errors.js";
-import type { PackageManagerName } from "./schemas.js";
-import { CacheStateSchema } from "./schemas.js";
+import { CacheError } from "../errors/errors.js";
+import type { PackageManagerName } from "../schemas/domain.js";
+import { CacheState, STATE_KEYS } from "../state.js";
 
 /**
  * Supported package managers for caching.
@@ -246,36 +245,35 @@ export const getCombinedCacheConfig = (
 	});
 
 /**
- * Finds lockfiles matching glob patterns using fast-glob.
+ * Finds lockfiles matching glob patterns using the Glob service.
  * Supports simple filenames and glob patterns. Excludes node_modules and .git.
  */
 export const findLockFiles = (patterns: string[]) =>
-	Effect.tryPromise({
-		try: async () => {
-			const fg = await import("fast-glob");
-			const matches = await fg.default(patterns, {
-				ignore: ["**/node_modules/**", "**/.git/**"],
-				dot: false,
-			});
-			return matches.sort();
-		},
-		catch: () => [] as string[],
-	}).pipe(Effect.catchAll(() => Effect.succeed([] as string[])));
+	Effect.gen(function* () {
+		const glob = yield* Glob;
+		// Build a single patterns string: include patterns + exclude patterns using ! prefix
+		const excludes = "!**/node_modules/**\n!**/.git/**";
+		const patternsStr = [...patterns, excludes].join("\n");
+		const matches = yield* glob
+			.glob(patternsStr)
+			.pipe(Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<string>)));
+		return [...matches].sort();
+	});
 
 /**
- * Read file contents and produce a combined SHA256 hash (truncated to 8 chars).
+ * Hash a list of files using Glob.hashFiles, truncated to 8 hex chars.
+ * Returns "" when the files list is empty.
  */
 const hashFiles = (files: string[]) =>
 	Effect.gen(function* () {
-		const fs = yield* FileSystem.FileSystem;
-		const hash = createHash("sha256");
-
-		for (const file of files) {
-			const content = yield* fs.readFileString(file, "utf-8").pipe(Effect.orElse(() => Effect.succeed("")));
-			hash.update(content);
-		}
-
-		return hash.digest("hex").substring(0, 8);
+		if (files.length === 0) return "";
+		const glob = yield* Glob;
+		// Join file paths as a newline-separated pattern string for Glob.hashFiles
+		const patternsStr = files.join("\n");
+		const result = yield* glob
+			.hashFiles(patternsStr)
+			.pipe(Effect.catchAll(() => Effect.succeed(Option.none<string>())));
+		return Option.getOrElse(result, () => "").substring(0, 8);
 	});
 
 /**
@@ -416,13 +414,13 @@ export const restoreCache = (config: {
 
 		// Save state for post action
 		yield* state.save(
-			"CACHE_STATE",
-			{
-				hit,
+			STATE_KEYS.cacheState,
+			new CacheState({
 				key: primaryKey,
 				paths: config.cachePaths,
-			},
-			CacheStateSchema,
+				restored: hit === "exact",
+			}),
+			CacheState,
 		);
 
 		return hit;
@@ -437,7 +435,7 @@ export const saveCache = () =>
 		const cache = yield* ActionCache;
 		const state = yield* ActionState;
 
-		const cacheState = yield* state.get("CACHE_STATE", CacheStateSchema).pipe(
+		const cacheState = yield* state.get(STATE_KEYS.cacheState, CacheState).pipe(
 			Effect.mapError(
 				(cause) =>
 					new CacheError({
@@ -449,11 +447,11 @@ export const saveCache = () =>
 		);
 
 		yield* Effect.log(
-			`Cache state from main: hit=${cacheState.hit}, key=${cacheState.key ?? "(none)"}, paths=${cacheState.paths?.length ?? 0}`,
+			`Cache state from main: restored=${cacheState.restored}, key=${cacheState.key}, paths=${cacheState.paths.length}`,
 		);
 
 		// Skip save on exact hit — cache is already up to date
-		if (cacheState.hit === "exact") {
+		if (cacheState.restored) {
 			yield* Effect.log("Cache exact hit — skipping save");
 			return;
 		}
@@ -461,8 +459,8 @@ export const saveCache = () =>
 		const key = cacheState.key;
 		const paths = cacheState.paths;
 
-		if (!key || !paths || paths.length === 0) {
-			yield* Effect.log("No cache key or paths — skipping save");
+		if (paths.length === 0) {
+			yield* Effect.log("No cache paths — skipping save");
 			return;
 		}
 

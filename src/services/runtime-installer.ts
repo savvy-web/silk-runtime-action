@@ -1,9 +1,9 @@
 import { ActionOutputs, CommandRunner, ToolInstaller } from "@savvy-web/github-action-effects";
 import { Context, Effect, Layer } from "effect";
-import { descriptor as bunDescriptor } from "./descriptors/bun.js";
-import { descriptor as denoDescriptor } from "./descriptors/deno.js";
-import { descriptor as nodeDescriptor } from "./descriptors/node.js";
-import { RuntimeInstallError } from "./errors.js";
+import { descriptor as bunDescriptor } from "../descriptors/bun.js";
+import { descriptor as denoDescriptor } from "../descriptors/deno.js";
+import { descriptor as nodeDescriptor } from "../descriptors/node.js";
+import { RuntimeInstallError } from "../errors/errors.js";
 
 /**
  * Extract a human-readable reason from an error.
@@ -59,23 +59,24 @@ export interface InstalledRuntime {
 }
 
 /**
- * Service interface for installing a specific runtime.
+ * Service tag for installing a specific runtime.
+ *
+ * Context.Tag class form so callers can `yield* RuntimeInstaller` and
+ * downstream typing resolves through the static tag identity.
  */
-export interface RuntimeInstaller {
-	readonly install: (
-		version: string,
-	) => Effect.Effect<InstalledRuntime, RuntimeInstallError, ToolInstaller | CommandRunner | ActionOutputs>;
-}
-
-/**
- * Service tag for RuntimeInstaller.
- */
-export const RuntimeInstaller = Context.GenericTag<RuntimeInstaller>("RuntimeInstaller");
+export class RuntimeInstaller extends Context.Tag("RuntimeInstaller")<
+	RuntimeInstaller,
+	{
+		readonly install: (
+			version: string,
+		) => Effect.Effect<InstalledRuntime, RuntimeInstallError, ToolInstaller | CommandRunner | ActionOutputs>;
+	}
+>() {}
 
 /**
  * Factory: creates a RuntimeInstaller from a descriptor.
  */
-export const makeRuntimeInstaller = (descriptor: RuntimeDescriptor): RuntimeInstaller => ({
+export const makeRuntimeInstaller = (descriptor: RuntimeDescriptor): Context.Tag.Service<typeof RuntimeInstaller> => ({
 	install: (version) =>
 		Effect.gen(function* () {
 			const toolInstaller = yield* ToolInstaller;

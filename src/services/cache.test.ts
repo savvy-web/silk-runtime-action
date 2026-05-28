@@ -1,6 +1,12 @@
 import { platform } from "node:os";
-import { FileSystem } from "@effect/platform";
-import { ActionCache, ActionEnvironment, ActionState, CommandRunner } from "@savvy-web/github-action-effects";
+import { ActionCache } from "@savvy-web/github-action-effects";
+import {
+	ActionCacheTest,
+	ActionEnvironmentTest,
+	ActionStateTest,
+	CommandRunnerTest,
+	GlobTest,
+} from "@savvy-web/github-action-effects/testing";
 import { Effect, Layer, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,7 +19,7 @@ import {
 	getLockfilePatterns,
 	restoreCache,
 	saveCache,
-} from "../src/cache.js";
+} from "./cache.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — cast all layers to Layer.Layer<never> so Effect.provide is happy
@@ -33,133 +39,47 @@ const run = <A>(effect: Effect.Effect<A, any, any>, layer: AnyLayer): Promise<A>
 	);
 
 // ---------------------------------------------------------------------------
-// Service layer factories
+// Glob mock helper
 // ---------------------------------------------------------------------------
 
-type FsFiles = Record<string, string>;
-
-const makeFileSystemLayer = (files: FsFiles = {}): AnyLayer =>
-	Layer.succeed(
-		FileSystem.FileSystem,
-		FileSystem.makeNoop({
-			readFileString: (path) => {
-				const content = files[path];
-				if (content === undefined) {
-					return Effect.fail(
-						new (class extends Error {
-							readonly _tag = "SystemError";
-							readonly reason = "NotFound";
-						})() as never,
-					);
-				}
-				return Effect.succeed(content);
-			},
-			access: (path) => {
-				if (path in files) {
-					return Effect.succeed(undefined);
-				}
-				return Effect.fail(
-					new (class extends Error {
-						readonly _tag = "SystemError";
-						readonly reason = "NotFound";
-					})() as never,
-				);
-			},
-		}),
-	);
-
-const makeEnvironmentLayer = (env: Record<string, string> = {}): AnyLayer =>
-	Layer.succeed(ActionEnvironment, {
-		get: (name: string) => {
-			const v = env[name];
-			if (v === undefined) return Effect.fail({ _tag: "ActionEnvironmentError", variable: name, reason: "Missing" });
-			return Effect.succeed(v);
-		},
-		getOptional: (name: string) => {
-			const v = env[name];
-			if (v === undefined || v === "") return Effect.succeed(Option.none());
-			return Effect.succeed(Option.some(v));
-		},
-		github: Effect.fail({ _tag: "ActionEnvironmentError", variable: "GITHUB_*", reason: "Not implemented in test" }),
-		runner: Effect.fail({ _tag: "ActionEnvironmentError", variable: "RUNNER_*", reason: "Not implemented in test" }),
-	} as never);
-
-const makeCommandRunnerLayer = (
-	handler: (cmd: string, args?: readonly string[]) => { exitCode: number; stdout: string; stderr: string },
-): AnyLayer =>
-	Layer.succeed(CommandRunner, {
-		exec: (cmd: string, args?: readonly string[]) => Effect.succeed(handler(cmd, args).exitCode),
-		execCapture: (cmd: string, args?: readonly string[]) => Effect.succeed(handler(cmd, args)),
-		execJson: () => Effect.fail({ _tag: "CommandRunnerError", reason: "Not implemented" }),
-		execLines: () => Effect.fail({ _tag: "CommandRunnerError", reason: "Not implemented" }),
-	} as never);
-
-const makeFailingCommandRunnerLayer = (): AnyLayer =>
-	Layer.succeed(CommandRunner, {
-		exec: () => Effect.fail({ _tag: "CommandRunnerError", command: "test", args: [], reason: "Command failed" }),
-		execCapture: () => Effect.fail({ _tag: "CommandRunnerError", command: "test", args: [], reason: "Command failed" }),
-		execJson: () => Effect.fail({ _tag: "CommandRunnerError", reason: "Not implemented" }),
-		execLines: () => Effect.fail({ _tag: "CommandRunnerError", reason: "Not implemented" }),
-	} as never);
-
-interface CacheSaveCall {
-	paths: readonly string[];
-	key: string;
-}
-
-interface CacheRestoreCall {
-	paths: readonly string[];
-	key: string;
-	restoreKeys?: readonly string[];
-}
-
-const makeCacheLayer = (opts: {
-	restoreResult?: Option.Option<string>;
-	saveCalls?: CacheSaveCall[];
-	restoreCalls?: CacheRestoreCall[];
-}): AnyLayer => {
-	const saveCalls = opts.saveCalls ?? [];
-	const restoreCalls = opts.restoreCalls ?? [];
-	const restoreResult = opts.restoreResult ?? Option.none();
-
-	return Layer.succeed(ActionCache, {
-		save: (paths: readonly string[], key: string) => {
-			saveCalls.push({ paths, key });
-			return Effect.succeed(undefined);
-		},
-		restore: (paths: readonly string[], key: string, restoreKeys: readonly string[] = []) => {
-			restoreCalls.push({ paths, key, restoreKeys });
-			return Effect.succeed(restoreResult);
-		},
-	} as never);
+/**
+ * Build the exact patterns string that findLockFiles passes to glob.glob.
+ * Mirrors the implementation in cache.ts.
+ */
+const findLockFilesGlobKey = (patterns: string[]): string => {
+	const excludes = "!**/node_modules/**\n!**/.git/**";
+	return [...patterns, excludes].join("\n");
 };
 
-interface StateSaveCall {
-	key: string;
-	value: unknown;
-}
+/**
+ * Build the exact patterns string that hashFiles passes to glob.hashFiles.
+ * Mirrors the implementation in cache.ts.
+ */
+const hashFilesGlobKey = (files: string[]): string => files.join("\n");
 
-const makeStateLayer = (opts: { saved?: StateSaveCall[]; stored?: Record<string, unknown> }): AnyLayer => {
-	const saved = opts.saved ?? [];
-	const stored = opts.stored ?? {};
-
-	return Layer.succeed(ActionState, {
-		save: (key: string, value: unknown) => {
-			saved.push({ key, value });
-			return Effect.succeed(undefined);
-		},
-		get: (key: string) => {
-			const v = stored[key];
-			if (v === undefined) return Effect.fail({ _tag: "ActionStateError", key, reason: "Not found" });
-			return Effect.succeed(v);
-		},
-		getOptional: (key: string) => {
-			const v = stored[key];
-			if (v === undefined) return Effect.succeed(Option.none());
-			return Effect.succeed(Option.some(v));
-		},
-	} as never);
+/**
+ * Creates a GlobTest layer with pre-seeded lock-file matches and a default
+ * "aaaaaaaa" hash for any patterns string that contains those file paths.
+ */
+const makeGlobLayer = (
+	lockfileMatches: Record<string, ReadonlyArray<string>> = {},
+	hashes: Record<string, string> = {},
+): AnyLayer => {
+	const state = GlobTest.empty();
+	for (const [key, matches] of Object.entries(lockfileMatches)) {
+		state.matches.set(key, matches);
+	}
+	for (const [key, hash] of Object.entries(hashes)) {
+		state.hashes.set(key, hash);
+	}
+	return GlobTest.layer(state);
 };
+
+/**
+ * GlobTest layer that returns an empty match set for any patterns.
+ * Suitable for tests that only need hash support or no lock files.
+ */
+const emptyGlobLayer = (): AnyLayer => GlobTest.layer(GlobTest.empty());
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -226,10 +146,13 @@ describe("getLockfilePatterns", () => {
 describe("generateCacheKey", () => {
 	const runtimes = [{ name: "node", version: "24.11.0" }];
 	const pm = { name: "pnpm", version: "10.20.0" };
+	// Hash seeded for the exact files string passed by hashFiles(["pnpm-lock.yaml"])
+	const pnpmLockHash = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234";
+	const pnpmLockGlobKey = hashFilesGlobKey(["pnpm-lock.yaml"]);
 
 	const baseLayer = Layer.mergeAll(
-		makeFileSystemLayer({ "pnpm-lock.yaml": "lockfile-content" }),
-		makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
+		makeGlobLayer({}, { [pnpmLockGlobKey]: pnpmLockHash }),
+		ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }),
 	);
 
 	it("produces correct format: {os}-{versionHash}-{branchHash}-{lockfileHash}", async () => {
@@ -248,15 +171,11 @@ describe("generateCacheKey", () => {
 	});
 
 	it("produces different keys for different branches", async () => {
-		const layer1 = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-		);
+		const globLayer = makeGlobLayer({}, { [pnpmLockGlobKey]: pnpmLockHash });
 
-		const layer2 = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/feature" }),
-		);
+		const layer1 = Layer.mergeAll(globLayer, ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }));
+
+		const layer2 = Layer.mergeAll(globLayer, ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/feature" }));
 
 		const key1 = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), layer1);
 		const key2 = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), layer2);
@@ -266,8 +185,8 @@ describe("generateCacheKey", () => {
 
 	it("falls back to empty string when GITHUB_REF is not a heads ref", async () => {
 		const layer = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/tags/v1.0.0" }),
+			makeGlobLayer({}, { [pnpmLockGlobKey]: pnpmLockHash }),
+			ActionEnvironmentTest.layer({ GITHUB_REF: "refs/tags/v1.0.0" }),
 		);
 
 		// Should still produce a key (with empty branch hashed)
@@ -276,22 +195,24 @@ describe("generateCacheKey", () => {
 	});
 
 	it("falls back to empty string when neither GITHUB_HEAD_REF nor GITHUB_REF is set", async () => {
-		const layer = Layer.mergeAll(makeFileSystemLayer({ "pnpm-lock.yaml": "content" }), makeEnvironmentLayer({}));
+		const layer = Layer.mergeAll(
+			makeGlobLayer({}, { [pnpmLockGlobKey]: pnpmLockHash }),
+			ActionEnvironmentTest.layer({}),
+		);
 
 		const key = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), layer);
 		expect(key).toMatch(/^[a-z]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+$/);
 	});
 
 	it("treats empty GITHUB_HEAD_REF as absent", async () => {
+		const globLayer = makeGlobLayer({}, { [pnpmLockGlobKey]: pnpmLockHash });
+
 		const layer = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({ GITHUB_HEAD_REF: "", GITHUB_REF: "refs/heads/main" }),
+			globLayer,
+			ActionEnvironmentTest.layer({ GITHUB_HEAD_REF: "", GITHUB_REF: "refs/heads/main" }),
 		);
 
-		const mainLayer = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-		);
+		const mainLayer = Layer.mergeAll(globLayer, ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }));
 
 		const key1 = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), layer);
 		const key2 = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), mainLayer);
@@ -299,18 +220,17 @@ describe("generateCacheKey", () => {
 	});
 
 	it("uses GITHUB_HEAD_REF for PRs over GITHUB_REF", async () => {
+		const globLayer = makeGlobLayer({}, { [pnpmLockGlobKey]: pnpmLockHash });
+
 		const prLayer = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({
+			globLayer,
+			ActionEnvironmentTest.layer({
 				GITHUB_HEAD_REF: "pr-branch",
 				GITHUB_REF: "refs/heads/main",
 			}),
 		);
 
-		const mainLayer = Layer.mergeAll(
-			makeFileSystemLayer({ "pnpm-lock.yaml": "content" }),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-		);
+		const mainLayer = Layer.mergeAll(globLayer, ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }));
 
 		const prKey = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), prLayer);
 		const mainKey = await run(generateCacheKey(runtimes, pm, ["pnpm-lock.yaml"]), mainLayer);
@@ -325,60 +245,61 @@ describe("restoreCache", () => {
 	const cachePaths = ["/home/runner/.local/share/pnpm/store", "**/node_modules"];
 
 	it("returns 'exact' when primary key matches and saves state", async () => {
-		const stateSaved: StateSaveCall[] = [];
+		const state = ActionStateTest.empty();
 
-		const dynamicCacheLayer = Layer.succeed(ActionCache, {
-			save: () => Effect.succeed(undefined),
-			restore: (_paths: readonly string[], key: string) => {
-				return Effect.succeed(Option.some(key));
-			},
-		} as never);
+		// Cache that returns the primary key verbatim — simulates exact hit
+		const exactCacheLayer = Layer.succeed(ActionCache, {
+			save: () => Effect.void,
+			restore: (_paths: readonly string[], key: string) => Effect.succeed(Option.some(key)),
+		});
 
 		const fullLayer = Layer.mergeAll(
-			makeFileSystemLayer({}),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-			dynamicCacheLayer,
-			makeStateLayer({ saved: stateSaved }),
+			emptyGlobLayer(),
+			ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }),
+			exactCacheLayer,
+			ActionStateTest.layer(state),
 		);
 
 		const result = await run(restoreCache({ cachePaths, runtimes, packageManager: pm, lockfiles: [] }), fullLayer);
 
 		expect(result).toBe("exact");
-		expect(stateSaved.length).toBe(1);
-		expect((stateSaved[0].value as { hit: string }).hit).toBe("exact");
+		expect(state.entries.has("cache-state")).toBe(true);
+		const saved = JSON.parse(state.entries.get("cache-state") ?? "{}");
+		expect(saved.restored).toBe(true);
 	});
 
 	it("returns 'partial' when restore key matches", async () => {
-		const stateSaved: StateSaveCall[] = [];
+		const state = ActionStateTest.empty();
 
-		const dynamicCacheLayer = Layer.succeed(ActionCache, {
-			save: () => Effect.succeed(undefined),
-			restore: () => {
-				return Effect.succeed(Option.some("some-other-key"));
-			},
-		} as never);
+		// Cache that returns a different key — simulates partial hit
+		const partialCacheLayer = Layer.succeed(ActionCache, {
+			save: () => Effect.void,
+			restore: () => Effect.succeed(Option.some("some-other-key")),
+		});
 
 		const layer = Layer.mergeAll(
-			makeFileSystemLayer({}),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-			dynamicCacheLayer,
-			makeStateLayer({ saved: stateSaved }),
+			emptyGlobLayer(),
+			ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }),
+			partialCacheLayer,
+			ActionStateTest.layer(state),
 		);
 
 		const result = await run(restoreCache({ cachePaths, runtimes, packageManager: pm, lockfiles: [] }), layer);
 
 		expect(result).toBe("partial");
-		expect((stateSaved[0].value as { hit: string }).hit).toBe("partial");
+		const saved = JSON.parse(state.entries.get("cache-state") ?? "{}");
+		expect(saved.restored).toBe(false);
 	});
 
 	it("uses cacheBust parameter when provided", async () => {
-		const stateSaved: StateSaveCall[] = [];
+		const state = ActionStateTest.empty();
+		const cache = ActionCacheTest.empty();
 
 		const layer = Layer.mergeAll(
-			makeFileSystemLayer({}),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-			makeCacheLayer({ restoreResult: Option.none() }),
-			makeStateLayer({ saved: stateSaved }),
+			emptyGlobLayer(),
+			ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }),
+			ActionCacheTest.layer(cache),
+			ActionStateTest.layer(state),
 		);
 
 		const result = await run(
@@ -387,119 +308,83 @@ describe("restoreCache", () => {
 		);
 
 		expect(result).toBe("none");
-		// cacheBust changes the key, so the key in state should differ from non-busted
-		expect(stateSaved[0].key).toBe("CACHE_STATE");
+		// cacheBust changes the key, so state should still be saved
+		expect(state.entries.has("cache-state")).toBe(true);
 	});
 
 	it("returns 'none' when no cache matches", async () => {
-		const stateSaved: StateSaveCall[] = [];
+		const state = ActionStateTest.empty();
+		const cache = ActionCacheTest.empty();
 
 		const layer = Layer.mergeAll(
-			makeFileSystemLayer({}),
-			makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" }),
-			makeCacheLayer({ restoreResult: Option.none() }),
-			makeStateLayer({ saved: stateSaved }),
+			emptyGlobLayer(),
+			ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" }),
+			ActionCacheTest.layer(cache),
+			ActionStateTest.layer(state),
 		);
 
 		const result = await run(restoreCache({ cachePaths, runtimes, packageManager: pm, lockfiles: [] }), layer);
 
 		expect(result).toBe("none");
-		expect((stateSaved[0].value as { hit: string }).hit).toBe("none");
+		const saved = JSON.parse(state.entries.get("cache-state") ?? "{}");
+		expect(saved.restored).toBe(false);
 	});
 });
 
 describe("saveCache", () => {
-	it("saves when hit is 'partial'", async () => {
-		const saveCalls: CacheSaveCall[] = [];
+	it("saves when restored is false (partial hit)", async () => {
+		const cache = ActionCacheTest.empty();
+		const state = ActionStateTest.empty();
+		state.entries.set("cache-state", JSON.stringify({ key: "test-key", paths: ["/cache/path"], restored: false }));
 
-		const layer = Layer.mergeAll(
-			makeCacheLayer({ saveCalls }),
-			makeStateLayer({
-				stored: {
-					CACHE_STATE: { hit: "partial", key: "test-key", paths: ["/cache/path"] },
-				},
-			}),
-		);
+		const layer = Layer.mergeAll(ActionCacheTest.layer(cache), ActionStateTest.layer(state));
 
 		await run(saveCache(), layer);
 
-		expect(saveCalls.length).toBe(1);
-		expect(saveCalls[0].key).toBe("test-key");
-		expect(saveCalls[0].paths).toEqual(["/cache/path"]);
+		expect(cache.entries.has("test-key")).toBe(true);
+		expect(cache.entries.get("test-key")).toEqual(["/cache/path"]);
 	});
 
-	it("saves when hit is 'none'", async () => {
-		const saveCalls: CacheSaveCall[] = [];
+	it("saves when restored is false (cache miss)", async () => {
+		const cache = ActionCacheTest.empty();
+		const state = ActionStateTest.empty();
+		state.entries.set("cache-state", JSON.stringify({ key: "test-key", paths: ["/cache/path"], restored: false }));
 
-		const layer = Layer.mergeAll(
-			makeCacheLayer({ saveCalls }),
-			makeStateLayer({
-				stored: {
-					CACHE_STATE: { hit: "none", key: "test-key", paths: ["/cache/path"] },
-				},
-			}),
-		);
+		const layer = Layer.mergeAll(ActionCacheTest.layer(cache), ActionStateTest.layer(state));
 
 		await run(saveCache(), layer);
 
-		expect(saveCalls.length).toBe(1);
+		expect(cache.entries.size).toBe(1);
 	});
 
-	it("skips when hit is 'exact'", async () => {
-		const saveCalls: CacheSaveCall[] = [];
+	it("skips when restored is true (exact hit)", async () => {
+		const cache = ActionCacheTest.empty();
+		const state = ActionStateTest.empty();
+		state.entries.set("cache-state", JSON.stringify({ key: "test-key", paths: ["/cache/path"], restored: true }));
 
-		const layer = Layer.mergeAll(
-			makeCacheLayer({ saveCalls }),
-			makeStateLayer({
-				stored: {
-					CACHE_STATE: { hit: "exact", key: "test-key", paths: ["/cache/path"] },
-				},
-			}),
-		);
+		const layer = Layer.mergeAll(ActionCacheTest.layer(cache), ActionStateTest.layer(state));
 
 		await run(saveCache(), layer);
 
-		expect(saveCalls.length).toBe(0);
-	});
-
-	it("skips when key is missing from state", async () => {
-		const saveCalls: CacheSaveCall[] = [];
-
-		const layer = Layer.mergeAll(
-			makeCacheLayer({ saveCalls }),
-			makeStateLayer({
-				stored: {
-					CACHE_STATE: { hit: "none", paths: ["/cache/path"] },
-				},
-			}),
-		);
-
-		await run(saveCache(), layer);
-
-		expect(saveCalls.length).toBe(0);
+		expect(cache.entries.size).toBe(0);
 	});
 
 	it("skips when paths is empty", async () => {
-		const saveCalls: CacheSaveCall[] = [];
+		const cache = ActionCacheTest.empty();
+		const state = ActionStateTest.empty();
+		state.entries.set("cache-state", JSON.stringify({ key: "test-key", paths: [], restored: false }));
 
-		const layer = Layer.mergeAll(
-			makeCacheLayer({ saveCalls }),
-			makeStateLayer({
-				stored: {
-					CACHE_STATE: { hit: "none", key: "test-key", paths: [] },
-				},
-			}),
-		);
+		const layer = Layer.mergeAll(ActionCacheTest.layer(cache), ActionStateTest.layer(state));
 
 		await run(saveCache(), layer);
 
-		expect(saveCalls.length).toBe(0);
+		expect(cache.entries.size).toBe(0);
 	});
 });
 
 describe("getCombinedCacheConfig", () => {
 	it("deduplicates paths across multiple package managers", async () => {
-		const layer = makeFailingCommandRunnerLayer();
+		const layer = CommandRunnerTest.empty();
 
 		const config = await run(getCombinedCacheConfig(["npm", "pnpm"]), layer);
 
@@ -508,7 +393,7 @@ describe("getCombinedCacheConfig", () => {
 	});
 
 	it("includes tool cache paths for runtimes", async () => {
-		const layer = makeFailingCommandRunnerLayer();
+		const layer = CommandRunnerTest.empty();
 		const runtimes = [{ name: "node", version: "24.11.0" }];
 
 		const config = await run(getCombinedCacheConfig(["pnpm"], runtimes), layer);
@@ -518,7 +403,7 @@ describe("getCombinedCacheConfig", () => {
 	});
 
 	it("sorts paths with absolute paths first, then globs", async () => {
-		const layer = makeFailingCommandRunnerLayer();
+		const layer = CommandRunnerTest.empty();
 
 		const config = await run(getCombinedCacheConfig(["pnpm"]), layer);
 
@@ -540,11 +425,9 @@ describe("getCombinedCacheConfig", () => {
 
 describe("detectCachePath", () => {
 	it("returns detected path from pnpm store path command", async () => {
-		const layer = makeCommandRunnerLayer(() => ({
-			exitCode: 0,
-			stdout: "/home/runner/.local/share/pnpm/store\n",
-			stderr: "",
-		}));
+		const layer = CommandRunnerTest.layer(
+			new Map([["pnpm store path", { exitCode: 0, stdout: "/home/runner/.local/share/pnpm/store\n", stderr: "" }]]),
+		);
 
 		const result = await run(detectCachePath("pnpm"), layer);
 
@@ -552,7 +435,11 @@ describe("detectCachePath", () => {
 	});
 
 	it("falls back to null on command failure", async () => {
-		const layer = makeFailingCommandRunnerLayer();
+		// Use empty responses so all commands return exitCode 0 with empty stdout
+		// To simulate failure, use a layer where all commands return non-zero
+		const layer = CommandRunnerTest.layer(
+			new Map([["pnpm store path", { exitCode: 1, stdout: "", stderr: "command failed" }]]),
+		);
 
 		const result = await run(detectCachePath("pnpm"), layer);
 
@@ -560,11 +447,9 @@ describe("detectCachePath", () => {
 	});
 
 	it("returns detected path for npm", async () => {
-		const layer = makeCommandRunnerLayer(() => ({
-			exitCode: 0,
-			stdout: "/home/runner/.npm\n",
-			stderr: "",
-		}));
+		const layer = CommandRunnerTest.layer(
+			new Map([["npm config get cache", { exitCode: 0, stdout: "/home/runner/.npm\n", stderr: "" }]]),
+		);
 
 		const result = await run(detectCachePath("npm"), layer);
 
@@ -572,11 +457,9 @@ describe("detectCachePath", () => {
 	});
 
 	it("returns detected path for yarn Berry", async () => {
-		const layer = makeCommandRunnerLayer(() => ({
-			exitCode: 0,
-			stdout: "/home/runner/.yarn/cache\n",
-			stderr: "",
-		}));
+		const layer = CommandRunnerTest.layer(
+			new Map([["yarn config get cacheFolder", { exitCode: 0, stdout: "/home/runner/.yarn/cache\n", stderr: "" }]]),
+		);
 
 		const result = await run(detectCachePath("yarn"), layer);
 
@@ -584,11 +467,9 @@ describe("detectCachePath", () => {
 	});
 
 	it("returns detected path for bun", async () => {
-		const layer = makeCommandRunnerLayer(() => ({
-			exitCode: 0,
-			stdout: "/home/runner/.bun/install/cache\n",
-			stderr: "",
-		}));
+		const layer = CommandRunnerTest.layer(
+			new Map([["bun pm cache", { exitCode: 0, stdout: "/home/runner/.bun/install/cache\n", stderr: "" }]]),
+		);
 
 		const result = await run(detectCachePath("bun"), layer);
 
@@ -596,11 +477,14 @@ describe("detectCachePath", () => {
 	});
 
 	it("parses deno info --json for denoDir", async () => {
-		const layer = makeCommandRunnerLayer(() => ({
-			exitCode: 0,
-			stdout: JSON.stringify({ denoDir: "/home/runner/.cache/deno" }),
-			stderr: "",
-		}));
+		const layer = CommandRunnerTest.layer(
+			new Map([
+				[
+					"deno info --json",
+					{ exitCode: 0, stdout: JSON.stringify({ denoDir: "/home/runner/.cache/deno" }), stderr: "" },
+				],
+			]),
+		);
 
 		const result = await run(detectCachePath("deno"), layer);
 
@@ -610,24 +494,32 @@ describe("detectCachePath", () => {
 
 describe("findLockFiles", () => {
 	it("finds lockfiles that exist via glob patterns", async () => {
-		// Uses real globSync — pnpm-lock.yaml exists at the repo root
-		const result = await Effect.runPromise(findLockFiles(["pnpm-lock.yaml"]));
+		const patternsKey = findLockFilesGlobKey(["pnpm-lock.yaml"]);
+		const layer = makeGlobLayer({ [patternsKey]: ["pnpm-lock.yaml"] });
+		const result = await run(findLockFiles(["pnpm-lock.yaml"]), layer);
 		expect(result).toContain("pnpm-lock.yaml");
 	});
 
 	it("finds lockfiles with glob wildcards", async () => {
-		const result = await Effect.runPromise(findLockFiles(["**/pnpm-lock.yaml"]));
+		const patternsKey = findLockFilesGlobKey(["**/pnpm-lock.yaml"]);
+		const layer = makeGlobLayer({ [patternsKey]: ["/repo/pnpm-lock.yaml"] });
+		const result = await run(findLockFiles(["**/pnpm-lock.yaml"]), layer);
 		expect(result.length).toBeGreaterThan(0);
 		expect(result.some((f) => f === "pnpm-lock.yaml" || f.endsWith("/pnpm-lock.yaml"))).toBe(true);
 	});
 
 	it("returns empty array when no lockfiles match", async () => {
-		const result = await Effect.runPromise(findLockFiles(["nonexistent-lockfile-xyz.lock"]));
+		const layer = emptyGlobLayer();
+		const result = await run(findLockFiles(["nonexistent-lockfile-xyz.lock"]), layer);
 		expect(result).toEqual([]);
 	});
 
 	it("deduplicates results across overlapping patterns", async () => {
-		const result = await Effect.runPromise(findLockFiles(["pnpm-lock.yaml", "pnpm-lock.yaml"]));
+		// GlobLive deduplicates via Set; GlobTest returns whatever we seed.
+		// Seed with a single entry to verify the caller doesn't double-count.
+		const patternsKey = findLockFilesGlobKey(["pnpm-lock.yaml", "pnpm-lock.yaml"]);
+		const layer = makeGlobLayer({ [patternsKey]: ["pnpm-lock.yaml"] });
+		const result = await run(findLockFiles(["pnpm-lock.yaml", "pnpm-lock.yaml"]), layer);
 		const pnpmCount = result.filter((f) => f === "pnpm-lock.yaml").length;
 		expect(pnpmCount).toBeLessThanOrEqual(1);
 	});
@@ -638,7 +530,7 @@ describe("generateRestoreKeys", () => {
 	const pm = { name: "pnpm", version: "10.20.0" };
 
 	it("returns restore key prefixes", async () => {
-		const layer = makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" });
+		const layer = ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" });
 
 		const keys = await run(generateRestoreKeys(runtimes, pm), layer);
 
@@ -648,7 +540,7 @@ describe("generateRestoreKeys", () => {
 	});
 
 	it("returns empty array when cacheBust is set", async () => {
-		const layer = makeEnvironmentLayer({ GITHUB_REF: "refs/heads/main" });
+		const layer = ActionEnvironmentTest.layer({ GITHUB_REF: "refs/heads/main" });
 
 		const keys = await run(generateRestoreKeys(runtimes, pm, "test-bust"), layer);
 

@@ -3,14 +3,14 @@ status: current
 module: workflow-runtime-action
 category: meta
 created: 2026-03-21
-updated: 2026-03-21
-last-synced: 2026-03-21
+updated: 2026-05-28
+last-synced: 2026-05-28
 completeness: 100
 related: []
 dependencies: []
 ---
 
-# Design Documentation Index
+# Design documentation index
 
 Navigation index for all design documentation in the workflow-runtime-action project.
 
@@ -18,31 +18,31 @@ Navigation index for all design documentation in the workflow-runtime-action pro
 
 | Document | Status | Completeness | Description |
 | --- | --- | --- | --- |
-| [architecture.md](./architecture.md) | current | 90% | Core architecture, entry points, module map, layer composition |
-| [effect-service-model.md](./effect-service-model.md) | current | 90% | Effect framework usage, service injection, error handling, Config API |
-| [runtime-installation.md](./runtime-installation.md) | current | 90% | RuntimeInstaller service, descriptors, PM setup, Biome installation |
+| [architecture.md](./architecture.md) | current | 92% | Entry topology, module map, `MainLive`/`PostLive` composition |
+| [effect-service-model.md](./effect-service-model.md) | current | 92% | Service tags, `Schema.TaggedError`, `Step.*` namespace, Config API |
+| [runtime-installation.md](./runtime-installation.md) | current | 92% | `RuntimeInstaller` `Context.Tag` class, descriptors, PM setup, Biome |
 
 ## Performance
 
 | Document | Status | Completeness | Description |
 | --- | --- | --- | --- |
-| [caching-strategy.md](./caching-strategy.md) | current | 90% | Cache keys, lockfiles, multi-PM support, cross-phase state |
+| [caching-strategy.md](./caching-strategy.md) | current | 92% | Cache keys, `Glob`-based lockfile detection/hashing, cross-phase state |
 
 ## Integration
 
 | Document | Status | Completeness | Description |
 | --- | --- | --- | --- |
-| [build-and-distribution.md](./build-and-distribution.md) | current | 85% | Build pipeline, rsbuild config, dist management, release process |
+| [build-and-distribution.md](./build-and-distribution.md) | current | 88% | `github-action-builder` ^0.7.1, cyclonedx `ignore` list, dist management |
 
 ## Testing
 
 | Document | Status | Completeness | Description |
 | --- | --- | --- | --- |
-| [testing-strategy.md](./testing-strategy.md) | current | 85% | Effect test layers, fixture tests, coverage, mock patterns |
+| [testing-strategy.md](./testing-strategy.md) | current | 90% | Library Test layers, hand-rolled mocks for failure injection, fixture tests |
 
 ## Statistics
 
 - **Total documents:** 6
 - **Current:** 6
-- **Average completeness:** 88%
-- **Last updated:** 2026-03-21
+- **Average completeness:** 91%
+- **Last updated:** 2026-05-28

@@ -3,328 +3,200 @@ status: current
 module: workflow-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-03-21
-last-synced: 2026-03-21
-completeness: 90
+updated: 2026-05-28
+last-synced: 2026-05-28
+completeness: 92
 related:
   - ./architecture.md
   - ./runtime-installation.md
+  - ./testing-strategy.md
 dependencies: []
 ---
 
-# Effect Service Model
+# Effect service model
 
-How the action uses the Effect framework for typed errors, dependency injection, and composable
-service layers.
+How the action uses Effect for typed errors, dependency injection, composable service layers and the `Step.*` namespace for log buffering.
 
-## Table of Contents
+## Table of contents
 
 1. [Overview](#overview)
-2. [Current State](#current-state)
+2. [Current state](#current-state)
 3. [Rationale](#rationale)
-4. [Implementation Details](#implementation-details)
-5. [Testing Strategy](#testing-strategy)
-6. [Future Enhancements](#future-enhancements)
-7. [Related Documentation](#related-documentation)
+4. [Implementation details](#implementation-details)
+5. [Related documentation](#related-documentation)
 
 ---
 
 ## Overview
 
-Every side effect in the action -- file I/O, process execution, caching, output setting, logging --
-flows through Effect services. The action never imports `@actions/*` packages or calls Node.js APIs
-directly (except `node:os` and `node:crypto` for platform detection and hashing). This design
-enables full testability via service substitution and typed error propagation.
+Every side effect (file I/O, process execution, caching, output setting, logging, globbing) flows through Effect services. The action never imports `@actions/*` packages and only reaches for `node:os`, `node:path` and `node:crypto` directly. This design enables full service substitution in tests and typed error propagation through the pipeline.
 
-**Key Features:**
+**Key features:**
 
-- All GitHub Actions interactions via `@savvy-web/github-action-effects` service tags
-- Inputs read lazily via Effect `Config` API (not an `ActionInputs` service)
-- Errors modeled as `Data.TaggedError` with typed fields
-- Layer composition at program boundaries (`MainLive`, `PostLive`)
-- No `vi.mock` needed in tests -- services are swapped via `Layer.succeed`
+- All GitHub Actions integration via `@savvy-web/github-action-effects` (^2.0.0) service tags.
+- Inputs read lazily via Effect `Config` API and library `ActionInput.*` combinators.
+- Errors modeled as `Schema.TaggedError` with computed `.message` getters and an `ActionError` union.
+- `Step.*` namespace for log group buffering (quiet-on-success, verbose-on-failure).
+- Layer composition split between entry (`main.ts`), program (`program.ts`) and layer file (`layers/app.ts`).
+- Tests use library-provided test layers from `@savvy-web/github-action-effects/testing`.
 
-**When to reference this document:**
+**When to load this doc:**
 
-- When adding a new service dependency to the pipeline
-- When modifying layer composition
-- When understanding how inputs, outputs, and state are accessed
-- When writing or debugging unit tests with Effect test layers
+- Adding a new service dependency to the pipeline.
+- Modifying layer composition in `src/layers/app.ts` or `src/post.ts`.
+- Writing tests that need to swap services or inject inputs.
 
 ---
 
-## Current State
+## Current state
 
-### Service Dependencies by Module
+### Service dependencies by module
 
-| Module | Services Required |
+| Module | Services required |
 | --- | --- |
-| `config.ts` | `FileSystem.FileSystem`, `Config` (via ConfigProvider) |
-| `cache.ts` | `ActionCache`, `ActionState`, `ActionEnvironment`, `CommandRunner`, `FileSystem.FileSystem` |
-| `runtime-installer.ts` | `ToolInstaller`, `CommandRunner`, `ActionOutputs` |
-| `main.ts` (pipeline) | All of the above + `ActionLogger` |
-| `main.ts` (Biome) | `ToolInstaller`, `ActionOutputs` |
-| `main.ts` (PM setup) | `CommandRunner` |
-| `main.ts` (deps install) | `CommandRunner`, `FileSystem.FileSystem` |
+| `services/config-loader.ts` | `FileSystem.FileSystem`, `Config` (`ConfigProvider`) |
+| `services/cache.ts` | `ActionCache`, `ActionState`, `ActionEnvironment`, `CommandRunner`, `Glob` |
+| `services/runtime-installer.ts` | `ToolInstaller`, `CommandRunner`, `ActionOutputs` |
+| `program.ts` | All of the above + `FileSystem.FileSystem` for `installDependencies` |
+| `program.installBiome` | `ToolInstaller`, `ActionOutputs`, `FileSystem.FileSystem` |
 | `post.ts` | `ActionCache`, `ActionState` |
 
-### Input Access Pattern
+`Action.run` provides `ActionOutputsLive`, `ActionLoggerLive` and the `ConfigProvider` automatically. Everything else is composed in `MainLive` (`src/layers/app.ts`) and `PostLive` (`src/post.ts`).
 
-Action inputs use the Effect `Config` API rather than a dedicated service:
+### Input access pattern
 
-```typescript
-// Boolean input with default
-const installDeps = yield* Config.boolean("install-deps").pipe(Config.withDefault(true))
+Inputs are read via Effect `Config` and library `ActionInput.*` combinators at point of use:
 
-// String input with default (empty = not provided)
-const biomeVersion = yield* Config.string("biome-version").pipe(Config.withDefault(""))
-const cacheBust = yield* Config.string("cache-bust").pipe(Config.withDefault(""))
+```ts
+const installDeps = yield* ActionInput.boolean("install-deps").pipe(Config.withDefault(true));
+const biomeVersion = yield* Config.string("biome-version").pipe(Config.withDefault(""));
+const additionalLockfiles = yield* ActionInput.multiline("additional-lockfiles").pipe(Config.withDefault([]));
 ```
 
-`Action.run` sets up a `ConfigProvider` that reads from `INPUT_*` environment variables. Inputs are
-resolved lazily at point of use, making each call self-documenting.
+`ActionInput.multiline` splits on `\n` and trims. It does **not** parse comma-separated, bullet-list or JSON-array inputs -- the previous `parseMultiValueInput` helper has been deleted. Use newline-separated values.
 
-### Error Type Mapping
+`ActionInput.boolean` follows the YAML 1.2 Core Schema (`true`/`false`/`True`/`False`/`TRUE`/`FALSE`).
 
-| Error Type | Tag | Fatal? | Fields |
-| --- | --- | --- | --- |
-| `ConfigError` | `"ConfigError"` | Yes | `reason`, `file?`, `cause?` |
-| `RuntimeInstallError` | `"RuntimeInstallError"` | Yes | `runtime`, `version`, `reason`, `cause?` |
-| `PackageManagerSetupError` | `"PackageManagerSetupError"` | Yes | `packageManager`, `version`, `reason`, `cause?` |
-| `DependencyInstallError` | `"DependencyInstallError"` | Yes | `packageManager`, `reason`, `cause?` |
-| `CacheError` | `"CacheError"` | Conditional | `operation`, `reason`, `cause?` |
+### Error types
 
-`CacheError` is non-fatal during restore (caught and demoted to warning) but causes a warning in
-the post action as well (post.ts catches all errors globally).
+All errors live in `src/errors/errors.ts` as `Schema.TaggedError` subclasses with `NonEmptyString` field constraints and computed `.message` getters. `ActionError` is the union covering the fatal-by-default cases. See the file for the exact field list -- documenting it here would just go stale.
+
+| Tag | Fatal? | When thrown |
+| --- | --- | --- |
+| `ConfigError` | Yes | Invalid or missing `package.json` / `devEngines` |
+| `RuntimeInstallError` | Yes | Runtime download or verify failure |
+| `PackageManagerSetupError` | Yes | corepack / npm setup failure |
+| `DependencyInstallError` | Yes | `npm ci` / `pnpm install` / etc. failure |
+| `CacheError` | Conditional | Non-fatal on restore, swallowed in post |
+
+### Step.\* namespace
+
+Each phase of `program.ts` is wrapped in `Step.groupStep(title, effect)`:
+
+- Buffers log output emitted inside the group.
+- On success: collapses the group and emits a single summary line (`Step.success(...)` if called inside).
+- On failure: expands the group and prints the buffered lines so the failure context is visible.
+
+`Step.success("X")` is the canonical success-line API; it replaces the previous `formatSuccess` + `Effect.log` pattern. Markdown helpers for job summaries are available via `GithubMarkdown.*` from the library if needed (none used today).
 
 ---
 
 ## Rationale
 
-### Why Effect Config API Instead of ActionInputs Service
+### Effect Config API instead of `ActionInputs`
 
-The `@savvy-web/github-action-effects` library provides an `ActionInputs` service, but this action
-does not use it. Instead, inputs are read via `Config.string` / `Config.boolean` with
-`Config.withDefault`.
+The library exposes an `ActionInputs` service, but the action uses `Config` + `ActionInput.*` combinators instead. Inputs are read at point of use, defaults are co-located with the read, and tests inject values via `ConfigProvider.fromMap` without mocking a service.
 
-**Advantages:**
+### `Context.Tag` class for `RuntimeInstaller`
 
-- Each input is read at its point of use, making the code self-documenting
-- Default values are co-located with the read operation
-- No upfront parsing step that could fail before the pipeline starts
-- In tests, inputs are injected via `ConfigProvider.fromMap` without mocking a service
+`RuntimeInstaller` is a `Context.Tag` class (see `src/services/runtime-installer.ts`):
 
-### Why GenericTag for RuntimeInstaller
-
-`Context.GenericTag<RuntimeInstaller>("RuntimeInstaller")` is used instead of a `Context.Tag`
-class because the installer needs to be swapped per runtime within a single pipeline execution.
-The `Effect.forEach` loop provides a different layer for each runtime name:
-
-```typescript
-Effect.forEach(config.runtimes, (rt) =>
-  RuntimeInstaller.pipe(
-    Effect.flatMap((installer) => installer.install(rt.version)),
-    Effect.provide(installerLayerFor(rt.name)),
-  )
-)
+```ts
+export class RuntimeInstaller extends Context.Tag("RuntimeInstaller")<
+  RuntimeInstaller,
+  { readonly install: (version: string) => Effect.Effect<InstalledRuntime, RuntimeInstallError, ...> }
+>() {}
 ```
 
-This pattern requires `Effect.flatMap` to access the service (not direct method calls) because
-`GenericTag` wraps the service value.
+The previous `Context.GenericTag` + separate interface form has been replaced. The tag class form gives a single import, automatic static tag identity through the type system and direct `yield* RuntimeInstaller` calls without a separate interface definition. The per-runtime swap pattern (`Effect.provide(installerLayerFor(rt.name))`) still works the same way.
 
-### Why TaggedError Instead of Plain Error
+### `Schema.TaggedError` instead of `Data.TaggedError`
 
-`Data.TaggedError` provides:
+`Schema.TaggedError` validates the error payload at construction, exposes the fields as schema-decoded values and round-trips cleanly through `ActionState` (file-backed persistence between main and post). Computed `.message` getters give every error a single, formatted message line for logs without the caller having to assemble one. The `ActionError` union enables exhaustive `Effect.catchTag` handling at the top of the pipeline if needed.
 
-- A `_tag` discriminant for `Effect.catchTag` pattern matching
-- Typed error fields accessible without casting
-- Structural equality for testing assertions
-- Integration with Effect's error channel type tracking
+### Step.groupStep for log structure
+
+GitHub Actions log groups improve readability but cause noise when every log line is interleaved. `Step.groupStep` solves this by buffering: the group reads quiet on success and verbose on failure. This matches what humans actually want -- the inside of a successful step is uninteresting; the inside of a failing step is everything.
 
 ---
 
-## Implementation Details
+## Implementation details
 
-### Layer Composition
+### Layer composition
 
-**What `Action.run` provides automatically:**
+What `Action.run` provides automatically:
 
-- `ActionOutputsLive` -- output setting, PATH manipulation, variable export
-- `ActionLoggerLive` -- collapsible log groups
-- `ConfigProvider` -- backed by GitHub Actions `INPUT_*` environment variables
-- `NodeFileSystem.layer` -- `FileSystem.FileSystem` for platform file operations
+- `ActionOutputsLive` -- outputs, `addPath`, `exportVariable`.
+- `ActionLoggerLive` -- log groups underlying `Step.groupStep`.
+- `ConfigProvider` -- backed by `INPUT_*` env vars.
 
-**What `MainLive` adds:**
+What `MainLive` adds in `src/layers/app.ts`:
 
-```typescript
-const MainLive = Layer.mergeAll(
-  ActionCacheLive,           // V2 Twirp cache protocol implementation
-  ToolInstallerLive,         // Download, extract (tar/zip), cache tools
-  CommandRunnerLive,         // Process execution via @effect/platform
-  ActionStateLive.pipe(      // Cross-phase state (file-based persistence)
-    Layer.provide(NodeFileSystem.layer)  // ActionStateLive depends on FileSystem
-  ),
-  ActionEnvironmentLive,     // GitHub context env vars (GITHUB_REF, etc.)
-  NodeFileSystem.layer,      // FileSystem for program-level code
-)
-```
-
-`ActionStateLive` depends on `FileSystem` for state file persistence, so `NodeFileSystem.layer` is
-explicitly provided to it. The same `NodeFileSystem.layer` is also merged at the top level so that
-program code (`loadPackageJson`, `detectBiome`, `findLockFiles`) can access `FileSystem.FileSystem`
-directly.
-
-**What `PostLive` adds:**
-
-```typescript
-const PostLive = Layer.mergeAll(
-  ActionCacheLive,
+```ts
+Layer.mergeAll(
+  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layer)),
+  ToolInstallerLive,
+  CommandRunnerLive,
   ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
-)
+  ActionEnvironmentLive,
+  GlobLive,
+  NodeFileSystem.layer,
+);
 ```
 
-### Error Handling Patterns
+`ActionCacheLive` needs `NodeHttpClient` for the V2 Twirp protocol. `ActionStateLive` needs `NodeFileSystem` for state-file persistence. `NodeFileSystem.layer` is also exposed at the top level so program code (`loadPackageJson`, `detectBiome`, `installDependencies`) can use `FileSystem.FileSystem` directly.
 
-**Fatal errors** propagate through the Effect error channel to `Action.run`, which calls
-`setFailed`:
+What `PostLive` (in `src/post.ts`) adds:
 
-```typescript
-// ConfigError propagates naturally from loadPackageJson
-const devEngines = yield* loadPackageJson
-
-// RuntimeInstallError propagates from installer.install()
-const installed = yield* Effect.forEach(config.runtimes, (rt) =>
-  RuntimeInstaller.pipe(
-    Effect.flatMap((installer) => installer.install(rt.version)),
-    Effect.provide(installerLayerFor(rt.name)),
-  )
-)
+```ts
+Layer.mergeAll(
+  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layer)),
+  ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
+);
 ```
 
-**Non-fatal errors** are caught and demoted:
+### Error handling patterns
 
-```typescript
-// Cache restore: CacheError -> warning + continue with "none"
-const cacheResult = yield* restoreCache(config).pipe(
-  Effect.catchTag("CacheError", (e) =>
-    Effect.gen(function* () {
-      yield* Effect.logWarning(`Cache restore failed: ${e.reason}`)
-      return "none" as const
-    })
-  )
-)
+Fatal errors propagate through the Effect error channel to `Action.run`, which calls `setFailed`. See `program.ts` for the call sites; the propagation is implicit through `yield*`.
 
-// Biome install: any error -> warning + continue
-yield* installBiome(version).pipe(
-  Effect.catchAll((e) =>
-    Effect.logWarning(`Biome installation failed: ${e.message}`)
-  )
-)
+Non-fatal demotion uses `Effect.catchTag` or `Effect.catchAll`:
 
-// Post action: any error -> warning (never fails the job)
-const post = Effect.gen(function* () {
-  yield* saveCache()
-}).pipe(
-  Effect.catchAll((error) =>
-    Effect.logWarning(`Post action cache save failed: ${extractErrorReason(error)}`)
-  )
-)
-```
+- Cache restore: `Effect.catchTag("CacheError", e => Effect.logWarning(...) + return "none")`.
+- Biome install: `Effect.catchAll(e => Effect.logWarning(...))`.
+- Post action: top-level `Effect.catchAll` (typed errors) + `Effect.catchAllDefect` (programming defects). Post never fails the workflow.
 
-### Logging Integration
+### `extractErrorReason` helper
 
-All log messages use Effect's built-in logging, which `Action.run` wires to the GitHub Actions
-log format:
+`services/runtime-installer.ts` exports `extractErrorReason(error)` -- a defensive accessor that pulls a human-readable message from any error shape (`.reason`, `.message`, `._tag`, `String(error)`). Used in `Effect.mapError` paths where the error type is not statically known.
 
-- `Effect.log(message)` -- info-level, visible in normal logs
-- `Effect.logWarning(message)` -- warning annotation in GitHub Actions
-- `Effect.logError(message)` -- error annotation in GitHub Actions
-- `Effect.logDebug(message)` -- only visible when `ACTIONS_STEP_DEBUG=true`
+### Logging
 
-`ActionLogger.group(name, effect)` wraps an effect in a collapsible GitHub Actions log group.
-
-### extractErrorReason Helper
-
-`runtime-installer.ts` exports `extractErrorReason(error)` which extracts a human-readable
-message from any error type:
-
-1. Check for `.reason` field (TaggedError pattern)
-2. Check for `.message` field (standard Error)
-3. Check for `._tag` field (Effect error tag)
-4. Fall back to `String(error)`
-
-This is used in error demotion paths where the error type is not statically known.
+- `Effect.log` -- info-level, visible in normal logs.
+- `Effect.logWarning` / `Effect.logError` -- annotated in the GitHub Actions UI.
+- `Effect.logDebug` -- visible only with `ACTIONS_STEP_DEBUG=true`.
+- `Step.groupStep(title, effect)` -- buffered group; quiet on success, verbose on failure.
+- `Step.success(line)` -- canonical success line emitted inside a group.
 
 ---
 
-## Testing Strategy
+## Related documentation
 
-### Service Substitution
+**Internal:**
 
-Tests provide mock implementations via `Layer.succeed`:
+- [Architecture](./architecture.md) -- topology and layer composition overview.
+- [Runtime installation](./runtime-installation.md) -- the one place a `Context.Tag` service is defined locally.
+- [Testing strategy](./testing-strategy.md) -- library Test layers, `ConfigProvider.fromMap`, hand-rolled mock cases.
 
-```typescript
-const makeOutputsLayer = (store: Record<string, string>) =>
-  Layer.succeed(ActionOutputs, {
-    set: (name: string, value: string) => {
-      store[name] = value
-      return Effect.void
-    },
-    addPath: () => Effect.void,
-    exportVariable: (name: string, value: string) => {
-      exportedVars[name] = value
-      return Effect.void
-    },
-    // ... other methods
-  } as unknown as ContextType.Tag.Service<typeof ActionOutputs>)
-```
+**Context files:**
 
-### Config Injection
-
-```typescript
-const configLayer = Layer.setConfigProvider(
-  ConfigProvider.fromMap(new Map([
-    ["install-deps", "false"],
-    ["biome-version", "2.3.14"],
-  ]))
-)
-```
-
-### Full Pipeline Testing
-
-`main.test.ts` composes all test layers and runs the full pipeline, asserting against captured
-output stores and exported variables.
-
----
-
-## Future Enhancements
-
-### Short-term
-
-- Add structured logging with key-value pairs for better CI debugging
-- Consider `Effect.acquireRelease` for cleanup-on-failure patterns
-
-### Medium-term
-
-- Explore `@effect/opentelemetry` integration for pipeline tracing
-- Add service-level metrics (install duration, cache hit rate)
-
----
-
-## Related Documentation
-
-**Internal Design Docs:**
-
-- [Architecture](./architecture.md) - Overall system architecture
-- [Runtime Installation](./runtime-installation.md) - RuntimeInstaller service details
-
-**Context Files:**
-
-- [src/CLAUDE.md](../../src/CLAUDE.md) - Source code development guide
-- [**test**/CLAUDE.md](../../__test__/CLAUDE.md) - Unit testing patterns
-
----
-
-**Document Status:** Current -- reflects the implemented Effect service model.
-
-**Next Steps:** Update when new services are added or error handling patterns change.
+- [src/CLAUDE.md](../../../src/CLAUDE.md)

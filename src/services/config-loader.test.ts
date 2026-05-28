@@ -1,8 +1,8 @@
 import { FileSystem } from "@effect/platform";
 import { ConfigProvider, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
-import { detectBiome, detectTurbo, loadPackageJson, parseDevEngines } from "../src/config.js";
-import { ConfigError } from "../src/errors.js";
+import { ConfigError } from "../errors/errors.js";
+import { detectBiome, detectTurbo, loadPackageJson, parseDevEngines } from "./config-loader.js";
 
 // ---------------------------------------------------------------------------
 // FileSystem mock helpers
