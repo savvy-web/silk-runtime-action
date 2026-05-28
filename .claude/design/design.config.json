@@ -2,9 +2,9 @@
 	"$schema": "../../.claude/skills/design-config/json-schemas/current.json",
 	"version": "1.0.0",
 	"project": {
-		"name": "savvy-web/workflow-runtime-action",
+		"name": "savvy-web/silk-runtime-action",
 		"type": "application",
-		"repository": "https://github.com/savvy-web/workflow-runtime-action",
+		"repository": "https://github.com/savvy-web/silk-runtime-action",
 		"maintainer": "C. Spencer Beggs"
 	},
 	"paths": {
@@ -15,9 +15,9 @@
 		"localContext": "CLAUDE.local.md"
 	},
 	"modules": {
-		"workflow-runtime-action": {
+		"silk-runtime-action": {
 			"path": ".",
-			"designDocsPath": ".claude/design/workflow-runtime-action",
+			"designDocsPath": ".claude/design/silk-runtime-action",
 			"categories": ["architecture", "performance", "integration", "testing", "meta"],
 			"maintainer": "C. Spencer Beggs",
 			"userDocs": {

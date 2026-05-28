@@ -1,6 +1,6 @@
 # src/CLAUDE.md
 
-Source code architecture, build process, and development guidelines for the workflow-runtime-action.
+Source code architecture, build process, and development guidelines for the silk-runtime-action.
 
 **See also:** [Root CLAUDE.md](../CLAUDE.md) for repository overview.
 
@@ -15,7 +15,7 @@ Key architectural properties:
 - **Logging via Step.\* namespace** -- `Step.groupStep` for collapsible sections that buffer output and expand on failure; `Step.success` for canonical success lines
 - **Build via rsbuild** -- `@savvy-web/github-action-builder` ^0.7.1 uses rsbuild under the hood
 
-For a full architectural spec see `.claude/design/workflow-runtime-action/architecture.md`.
+For a full architectural spec see `.claude/design/silk-runtime-action/architecture.md`.
 
 ## Entry Points
 
@@ -246,7 +246,7 @@ Ensure the required service is included in the layer passed to `Effect.provide` 
 
 For deep architectural details:
 
-- **Architecture:** `@../.claude/design/workflow-runtime-action/architecture.md`
-- **Effect Service Model:** `@../.claude/design/workflow-runtime-action/effect-service-model.md`
-- **Runtime Installation:** `@../.claude/design/workflow-runtime-action/runtime-installation.md`
-- **Caching Strategy:** `@../.claude/design/workflow-runtime-action/caching-strategy.md`
+- **Architecture:** `@../.claude/design/silk-runtime-action/architecture.md`
+- **Effect Service Model:** `@../.claude/design/silk-runtime-action/effect-service-model.md`
+- **Runtime Installation:** `@../.claude/design/silk-runtime-action/runtime-installation.md`
+- **Caching Strategy:** `@../.claude/design/silk-runtime-action/caching-strategy.md`

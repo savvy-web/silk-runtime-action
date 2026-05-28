@@ -1,5 +1,5 @@
 import { FileSystem } from "@effect/platform";
-import { ActionCache, ActionLogger, ActionOutputs } from "@savvy-web/github-action-effects";
+import { ActionCache, ActionOutputs, Step } from "@savvy-web/github-action-effects";
 import {
 	ActionCacheError,
 	ActionEnvironmentTest,
@@ -78,10 +78,9 @@ const getOutput = (state: ReturnType<typeof ActionOutputsTest.empty>, name: stri
 // biome-ignore lint/suspicious/noExplicitAny: test mock type erasure at service boundary
 const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	const outputsSvc = yield* ActionOutputs;
-	const logger = yield* ActionLogger;
 
 	// 1. Parse configuration
-	const config = yield* logger.group(
+	const config = yield* Step.groupStep(
 		"Detect configuration",
 		Effect.gen(function* () {
 			const devEngines = yield* loadPackageJson;
@@ -124,7 +123,7 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	}
 
 	// Restore cache (non-fatal)
-	const cacheResult = yield* logger.group(
+	const cacheResult = yield* Step.groupStep(
 		"Restore cache",
 		restoreCache({
 			cachePaths: finalCachePaths,
@@ -135,7 +134,7 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	);
 
 	// 3. Install runtimes
-	const installed = yield* logger.group(
+	const installed = yield* Step.groupStep(
 		"Install runtimes",
 		Effect.forEach(config.runtimes, (rt) =>
 			RuntimeInstaller.pipe(
@@ -150,13 +149,13 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	// program.ts wraps around this call. Behavior of that guard (skipping install
 	// when install-deps=false) is exercised by the workflow integration tests in
 	// .github/workflows/test.yml and __fixtures__/, not here.
-	yield* logger.group("Install dependencies", installDependencies(pmName));
+	yield* Step.groupStep("Install dependencies", installDependencies(pmName));
 
 	// 5. Install Biome (non-fatal)
 	if (Option.isSome(config.biome)) {
-		yield* logger
-			.group("Install Biome", Effect.log(`Biome ${config.biome.value} (test stub)`))
-			.pipe(Effect.catchAll(() => Effect.void));
+		yield* Step.groupStep("Install Biome", Effect.log(`Biome ${config.biome.value} (test stub)`)).pipe(
+			Effect.catchAll(() => Effect.void),
+		);
 	}
 
 	// 6. Set outputs

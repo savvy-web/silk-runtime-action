@@ -205,7 +205,9 @@ export const detectCachePath = (pm: PackageManager) =>
  */
 export const getCacheConfig = (pm: PackageManager) =>
 	Effect.gen(function* () {
-		const detected = yield* detectCachePath(pm).pipe(Effect.orElse(() => Effect.succeed(null)));
+		// detectCachePath catches its own failures and resolves to null on error,
+		// so no outer orElse is needed here.
+		const detected = yield* detectCachePath(pm);
 
 		const globalCachePaths = detected ? [detected] : getDefaultCachePaths(pm);
 		const additionalPaths = getAdditionalPaths(pm);

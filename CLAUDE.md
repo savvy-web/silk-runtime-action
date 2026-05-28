@@ -130,7 +130,7 @@ Then use the action in your workflow:
 ```yaml
 steps:
   - uses: actions/checkout@v6
-  - uses: savvy-web/workflow-runtime-action@v1
+  - uses: savvy-web/silk-runtime-action@v1
     # That's it! Reads everything from package.json
   - run: pnpm test
 ```
@@ -217,17 +217,17 @@ This repository uses modular documentation organized by directory:
 
 For deep architectural details, rationale, and design decisions:
 
-* **Architecture:** `@./.claude/design/workflow-runtime-action/architecture.md`
+* **Architecture:** `@./.claude/design/silk-runtime-action/architecture.md`
   Load when understanding overall system design, entry points, or layer composition.
-* **Effect Service Model:** `@./.claude/design/workflow-runtime-action/effect-service-model.md`
+* **Effect Service Model:** `@./.claude/design/silk-runtime-action/effect-service-model.md`
   Load when working with services, error handling, or dependency injection.
-* **Runtime Installation:** `@./.claude/design/workflow-runtime-action/runtime-installation.md`
+* **Runtime Installation:** `@./.claude/design/silk-runtime-action/runtime-installation.md`
   Load when modifying runtime descriptors, PM setup, or Biome installation.
-* **Caching Strategy:** `@./.claude/design/workflow-runtime-action/caching-strategy.md`
+* **Caching Strategy:** `@./.claude/design/silk-runtime-action/caching-strategy.md`
   Load when working with cache keys, lockfiles, or cross-phase state.
-* **Build and Distribution:** `@./.claude/design/workflow-runtime-action/build-and-distribution.md`
+* **Build and Distribution:** `@./.claude/design/silk-runtime-action/build-and-distribution.md`
   Load when modifying build config, dist management, or release process.
-* **Testing Strategy:** `@./.claude/design/workflow-runtime-action/testing-strategy.md`
+* **Testing Strategy:** `@./.claude/design/silk-runtime-action/testing-strategy.md`
   Load when writing tests, understanding mock patterns, or fixture setup.
 
 ## Project Structure
@@ -390,8 +390,8 @@ Uses Changesets for versioning:
 3. **Users reference by tag:**
 
    ```yaml
-   - uses: savvy-web/workflow-runtime-action@v1
-   - uses: savvy-web/workflow-runtime-action@v1.2.3
+   - uses: savvy-web/silk-runtime-action@v1
+   - uses: savvy-web/silk-runtime-action@v1.2.3
    ```
 
 ## Build Process

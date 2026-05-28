@@ -2,7 +2,7 @@
 
 ## Repository Overview
 
-This is a **Node.js runtime setup GitHub Action repository** (`@savvy-web/workflow-runtime-action`) that provides a comprehensive GitHub Action for setting up Node.js development environments with automatic package manager detection, dependency caching, and Turbo build cache configuration. **This repository will eventually be open-sourced** and provides a traditional GitHub Action that can be referenced from the root.
+This is a **Node.js runtime setup GitHub Action repository** (`@savvy-web/silk-runtime-action`) that provides a comprehensive GitHub Action for setting up Node.js development environments with automatic package manager detection, dependency caching, and Turbo build cache configuration. **This repository will eventually be open-sourced** and provides a traditional GitHub Action that can be referenced from the root.
 
 **Key Characteristics:**
 
@@ -259,7 +259,7 @@ npm install -g pnpm@10.20.0
 3. Test in a consuming repository by referencing your branch:
 
    ```yaml
-   uses: savvy-web/workflow-runtime-action@your-branch
+   uses: savvy-web/silk-runtime-action@your-branch
    ```
 
 4. Run `pnpm lint:fix` to format YAML
