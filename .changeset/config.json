@@ -3,7 +3,7 @@
 	"changelog": [
 		"@savvy-web/changesets/changelog",
 		{
-			"repo": "savvy-web/workflow-runtime-action"
+			"repo": "savvy-web/silk-runtime-action"
 		}
 	],
 	"commit": false,

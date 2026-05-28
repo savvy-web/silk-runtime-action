@@ -1,6 +1,6 @@
 ---
 status: current
-module: workflow-runtime-action
+module: silk-runtime-action
 category: architecture
 created: 2026-03-21
 updated: 2026-05-28

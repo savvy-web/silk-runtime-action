@@ -1,6 +1,6 @@
 ---
 status: current
-module: workflow-runtime-action
+module: silk-runtime-action
 category: integration
 created: 2026-03-21
 updated: 2026-05-28
@@ -165,7 +165,7 @@ Optional (declared in `optionalDependencies`, never installed and ignored at bui
 1. `pnpm changeset` to record changes.
 2. Changesets workflow opens a release PR.
 3. Merging the PR bumps `package.json` and `CHANGELOG.md`, then creates a GitHub release with tags.
-4. Users reference by tag (e.g., `savvy-web/workflow-runtime-action@v1`).
+4. Users reference by tag (e.g., `savvy-web/silk-runtime-action@v1`).
 
 ---
 

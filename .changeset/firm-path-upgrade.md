@@ -1,5 +1,5 @@
 ---
-"@savvy-web/workflow-runtime-action": minor
+"@savvy-web/silk-runtime-action": major
 ---
 
 ## Features
@@ -19,7 +19,7 @@ The `additional-lockfiles` input previously documented comma-separated support. 
 **Before:**
 
 ```yaml
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
   with:
     additional-lockfiles: "custom.lock, another.lock"
 ```
@@ -27,7 +27,7 @@ The `additional-lockfiles` input previously documented comma-separated support. 
 **After:**
 
 ```yaml
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
   with:
     additional-lockfiles: |
       custom.lock

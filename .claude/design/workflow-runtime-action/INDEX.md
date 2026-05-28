@@ -1,6 +1,6 @@
 ---
 status: current
-module: workflow-runtime-action
+module: silk-runtime-action
 category: meta
 created: 2026-03-21
 updated: 2026-05-28
@@ -12,7 +12,7 @@ dependencies: []
 
 # Design documentation index
 
-Navigation index for all design documentation in the workflow-runtime-action project.
+Navigation index for all design documentation in the silk-runtime-action project.
 
 ## Architecture
 

@@ -1,8 +1,10 @@
-# JavaScript Runtime Setup Action
+# silk-runtime-action
 
-Automatically detect and set up JavaScript runtime environments in GitHub Actions
-from your `package.json` `devEngines` configuration. One action for Node.js,
-Bun, and Deno with intelligent package manager detection and dependency caching.
+[![License: MIT](https://img.shields.io/badge/License-MIT-4caf50.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/pnpm-config-dependency-action)
+[![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-green?logo=node.js)](https://nodejs.org)
+
+Automatically detect and set up JavaScript runtime environments in GitHub Actions from your `package.json` `devEngines` configuration. One action for Node.js, Bun, and Deno with intelligent package manager detection and dependency caching.
 
 ## Why This Action?
 
@@ -13,8 +15,7 @@ Setting up JavaScript environments in CI should be simple. This action:
 - **Caches dependencies** automatically for faster builds
 - **Supports multiple runtimes** simultaneously (Node.js + Deno, Node.js + Bun)
 
-**No configuration needed** -- just add the action and it figures everything out
-from your `package.json`.
+**No configuration needed** -- just add the action and it figures everything out from your `package.json`.
 
 ## Quick Start
 
@@ -28,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: savvy-web/workflow-runtime-action@v1
+      - uses: savvy-web/silk-runtime-action@v1
       - run: pnpm test
       - run: pnpm build
 ```
@@ -67,8 +68,7 @@ The action reads all configuration from your `package.json` `devEngines` field:
 
 ## Inputs
 
-All inputs are optional. Runtime and package manager versions are read
-exclusively from `devEngines` in `package.json`.
+All inputs are optional. Runtime and package manager versions are read exclusively from `devEngines` in `package.json`.
 
 | Input | Description | Default |
 | ----- | ----------- | ------- |
@@ -105,7 +105,7 @@ exclusively from `devEngines` in `package.json`.
 
 ```yaml
 # Automatically detects Node.js version and pnpm from package.json
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
 - run: pnpm test
 ```
 
@@ -113,7 +113,7 @@ exclusively from `devEngines` in `package.json`.
 
 ```yaml
 # Sets up both Node.js and Deno from package.json devEngines
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
 
 - name: Test with Node.js
   run: npm test
@@ -126,7 +126,7 @@ exclusively from `devEngines` in `package.json`.
 
 ```yaml
 # Skip automatic installation
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
   with:
     install-deps: false
 
@@ -139,7 +139,7 @@ exclusively from `devEngines` in `package.json`.
 ```yaml
 - name: Setup runtime
   id: setup
-  uses: savvy-web/workflow-runtime-action@v1
+  uses: savvy-web/silk-runtime-action@v1
 
 - name: Display environment
   run: |
@@ -151,7 +151,7 @@ exclusively from `devEngines` in `package.json`.
 ### With Biome and Turbo
 
 ```yaml
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
   with:
     turbo-token: ${{ secrets.TURBO_TOKEN }}
     turbo-team: ${{ secrets.TURBO_TEAM }}
@@ -163,15 +163,13 @@ exclusively from `devEngines` in `package.json`.
 ### pnpm
 
 - Installed via corepack with exact version
-- Install command: `pnpm install --frozen-lockfile` (or `pnpm install` without
-  lockfile)
+- Install command: `pnpm install --frozen-lockfile` (or `pnpm install` without lockfile)
 
 ### Yarn
 
 - Installed via corepack with exact version
 - Supports Yarn Classic (1.x) and Berry (2.x+)
-- Install command: `yarn install --immutable` (or `yarn install --no-immutable`
-  without lockfile)
+- Install command: `yarn install --immutable` (or `yarn install --no-immutable` without lockfile)
 
 ### npm
 
@@ -191,8 +189,7 @@ exclusively from `devEngines` in `package.json`.
 
 ## Dependency Caching
 
-The action automatically caches dependencies based on your package manager and
-lockfile:
+The action automatically caches dependencies based on your package manager and lockfile:
 
 - **Cache key** includes lockfile hash for invalidation on changes
 - **Platform-specific** cache paths for each package manager
@@ -230,15 +227,14 @@ Cache hit status is available in the `cache-hit` output.
 
 **Error:** `Must be an absolute version, not a semver range`
 
-**Solution:** Use exact versions (e.g., `24.10.0`) instead of ranges (e.g.,
-`^24.0.0`).
+**Solution:** Use exact versions (e.g., `24.10.0`) instead of ranges (e.g., `^24.0.0`).
 
 ### Dependency Installation Fails
 
 **Solution:** Skip automatic installation and install manually:
 
 ```yaml
-- uses: savvy-web/workflow-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v1
   with:
     install-deps: false
 
@@ -247,8 +243,7 @@ Cache hit status is available in the `cache-hit` output.
 
 ## Multiple Runtimes
 
-You can set up multiple runtimes simultaneously by specifying an array in
-`devEngines.runtime`:
+You can set up multiple runtimes simultaneously by specifying an array in `devEngines.runtime`:
 
 ```json
 {
@@ -274,23 +269,12 @@ You can set up multiple runtimes simultaneously by specifying an array in
 }
 ```
 
-The action will install all specified runtimes and make them available in your
-workflow.
+The action will install all specified runtimes and make them available in your workflow.
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for development
-setup, testing, and contribution guidelines.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing and contribution guidelines.
 
 ## License
 
-MIT License -- See [LICENSE](LICENSE) for details.
-
-## Support
-
-- **Issues:** [GitHub Issues](https://github.com/savvy-web/workflow-runtime-action/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/savvy-web/workflow-runtime-action/discussions)
-
----
-
-**Made with care by [Savvy Web Systems](https://github.com/savvy-web)**
+[MIT](LICENSE)
