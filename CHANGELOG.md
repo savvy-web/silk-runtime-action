@@ -1,5 +1,15 @@
 # @savvy-web/silk-runtime-action
 
+## 1.0.1
+
+### Dependencies
+
+* | [`202a7f7`](https://github.com/savvy-web/silk-runtime-action/commit/202a7f72029d0b3188a5ad84869340f88348d28d) | Dependency    | Type    | Action | From    | To |
+  | :------------------------------------------------------------------------------------------------------------ | :------------ | :------ | :----- | :------ | -- |
+  | @savvy-web/github-action-effects                                                                              | dependency    | updated | ^2.0.0 | ^2.0.1  |    |
+  | @savvy-web/commitlint                                                                                         | devDependency | updated | ^0.9.1 | ^0.10.0 |    |
+  | @savvy-web/lint-staged                                                                                        | devDependency | updated | ^1.1.0 | ^1.2.0  |    |
+
 ## 1.0.0
 
 ### Breaking Changes
@@ -96,12 +106,12 @@ The cache-key hash algorithm changed from a local `fast-glob` + SHA-256 implemen
 ### Dependencies
 
 * | [`358dce1`](https://github.com/savvy-web/silk-runtime-action/commit/358dce10a1486bad3b524257ea67b84daa360fc1) | Dependency | Type    | Action | From   | To |
-  | :---------------------------------------------------------------------------------------------------------------- | :--------- | :------ | :----- | :----- | -- |
-  | @savvy-web/changesets                                                                                             | dependency | updated | ^0.4.2 | ^0.5.3 |    |
-  | @savvy-web/commitlint                                                                                             | dependency | updated | ^0.4.0 | ^0.4.2 |    |
-  | @savvy-web/github-action-builder                                                                                  | dependency | updated | ^0.2.1 | ^0.4.0 |    |
-  | @savvy-web/lint-staged                                                                                            | dependency | updated | ^0.5.0 | ^0.6.1 |    |
-  | @savvy-web/vitest                                                                                                 | dependency | updated | ^0.2.0 | ^0.2.2 |    |
+  | :------------------------------------------------------------------------------------------------------------ | :--------- | :------ | :----- | :----- | -- |
+  | @savvy-web/changesets                                                                                         | dependency | updated | ^0.4.2 | ^0.5.3 |    |
+  | @savvy-web/commitlint                                                                                         | dependency | updated | ^0.4.0 | ^0.4.2 |    |
+  | @savvy-web/github-action-builder                                                                              | dependency | updated | ^0.2.1 | ^0.4.0 |    |
+  | @savvy-web/lint-staged                                                                                        | dependency | updated | ^0.5.0 | ^0.6.1 |    |
+  | @savvy-web/vitest                                                                                             | dependency | updated | ^0.2.0 | ^0.2.2 |    |
 
 ## 0.1.7
 

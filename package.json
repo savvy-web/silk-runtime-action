@@ -1,6 +1,6 @@
 {
 	"name": "@savvy-web/silk-runtime-action",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"private": true,
 	"description": "Comprehensive Node.js runtime setup action with automatic package manager detection, dependency caching and Turbo build cache configuration",
 	"repository": {
