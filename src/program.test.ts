@@ -145,7 +145,11 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 		),
 	);
 
-	// 4. Install dependencies (always in tests — overridden by ConfigProvider in specific tests)
+	// 4. Install dependencies.
+	// NOTE: this mirror pipeline does NOT implement the `install-deps` guard that
+	// program.ts wraps around this call. Behavior of that guard (skipping install
+	// when install-deps=false) is exercised by the workflow integration tests in
+	// .github/workflows/test.yml and __fixtures__/, not here.
 	yield* logger.group("Install dependencies", installDependencies(pmName));
 
 	// 5. Install Biome (non-fatal)
@@ -289,16 +293,12 @@ describe("main pipeline", () => {
 		expect(getOutput(outputsState, "turbo-enabled")).toBe("false");
 	});
 
-	it("install-deps=false skips dependency installation", async () => {
-		const { layer, outputsState, configProvider } = buildBaseLayer({
-			inputs: { "install-deps": "false" },
-		});
-
-		await runPipeline(layer, configProvider);
-
-		expect(getOutput(outputsState, "node-version")).toBe("24.11.0");
-		expect(getOutput(outputsState, "package-manager")).toBe("pnpm");
-	});
+	// Removed: "install-deps=false skips dependency installation"
+	// — the mirror pipeline above does not implement the install-deps guard
+	// (that lives in program.ts), so the previous test only checked that two
+	// outputs were set, which would have been true with or without the guard.
+	// Coverage of the production install-deps branch belongs to the workflow
+	// integration tests in .github/workflows/test.yml + __fixtures__/.
 
 	it("biome install failure does not fail the action (non-fatal)", async () => {
 		const biomeConfig = JSON.stringify({
