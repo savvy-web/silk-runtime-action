@@ -255,6 +255,6 @@ as a GitHub step summary.
 
 * [Root CLAUDE.md](../../CLAUDE.md) - Repository overview
 * [**fixtures**/CLAUDE.md](../../__fixtures__/CLAUDE.md) - Available test fixtures
-* [**test**/CLAUDE.md](../../__test__/CLAUDE.md) - Unit testing
+* [src/CLAUDE.md](../../src/CLAUDE.md) - Source code architecture and co-located unit tests
 * [GitHub Actions Documentation](https://docs.github.com/en/actions) - GitHub Actions reference
 * [nektos/act](https://github.com/nektos/act) - Run GitHub Actions locally

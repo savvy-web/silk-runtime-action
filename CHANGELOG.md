@@ -1,4 +1,4 @@
-# @savvy-web/workflow-runtime-action
+# @savvy-web/silk-runtime-action
 
 ## 0.2.2
 

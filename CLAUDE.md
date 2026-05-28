@@ -88,14 +88,14 @@ Repositories using this action **MUST** have a `package.json` in their root dire
 **Technical stack:**
 
 * **Runtime framework:** [Effect](https://effect.website) for typed errors, dependency injection, and service composition
-* **GitHub Action services:** `@savvy-web/github-action-effects` 0.11.10 -- zero `@actions/*` dependencies, native ESM, implements the GitHub Actions runtime protocol natively (V2 Twirp caching, native process execution)
-* **Action inputs:** Read via the Effect `Config` API (`Config.string`, `Config.boolean`, `Config.withDefault`) backed by a `ConfigProvider` that reads `INPUT_*` environment variables -- not via an ActionInputs service
+* **GitHub Action services:** `@savvy-web/github-action-effects` ^2.0.0 — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
+* **Build tool:** `@savvy-web/github-action-builder` ^0.7.1 (rsbuild-based) configured via `action.config.ts`
+* **Cross-phase state:** `src/state.ts` defines `CacheState` (Schema.Class) and `STATE_KEYS`; `main` writes, `post` reads.
 * **Platform I/O:** `@effect/platform` (FileSystem)
-* **Build tool:** `@savvy-web/github-action-builder` 0.5.0 (rsbuild-based) configured via `action.config.ts`
-* **Action type:** Compiled Node.js action (uses `node24` runtime)
-* **Package manager:** pnpm 10.32.1 (specified in package.json)
-* **Node.js version:** 24.11.0 (specified in package.json devEngines.runtime)
-* **Linting:** Biome 2.4.5 with strict rules
+* **Action type:** Compiled Node.js action (uses `node24` runtime, see `action.yml`)
+* **Package manager:** pnpm 10.33.4 (specified in package.json)
+* **Node.js version:** 26.2.0 (specified in package.json devEngines.runtime)
+* **Linting:** Biome 2.4.15 with strict rules
 * **Testing:** Vitest with Effect test layers + fixture-based workflow tests
 * **Type checking:** TypeScript with native preview build (`@typescript/native-preview`)
 * **Direct dependencies:** Zero `@actions/*` packages -- all GitHub Actions integration is provided by `github-action-effects`
@@ -130,7 +130,7 @@ Then use the action in your workflow:
 ```yaml
 steps:
   - uses: actions/checkout@v6
-  - uses: savvy-web/workflow-runtime-action@v1
+  - uses: savvy-web/silk-runtime-action@v1
     # That's it! Reads everything from package.json
   - run: pnpm test
 ```
@@ -158,12 +158,58 @@ git add src/ dist/ .github/actions/local/
 git commit -m "feat: add new feature"
 ```
 
+## Dogfooding First-Party Dependencies
+
+We author every dependency in the table below, so a bug or missing API in one can be fixed **in its own repo** and dogfooded through this action before publishing. The action is a **bundled** artifact — `pnpm build` inlines every dependency into `dist/{main,post}.js` — so once a local library build is linked and this repo is rebuilt, the change is baked into the committed `dist`. The integration runs the committed `dist`, **not** `node_modules`.
+
+| Package | Repo | Local checkout |
+| --- | --- | --- |
+| `@savvy-web/github-action-effects` | `savvy-web/github-action-effects` | `../github-action-effects` |
+| `@savvy-web/github-action-builder` | `savvy-web/github-action-builder` | `../github-action-builder` |
+
+Both are direct-only dependencies with no transitive duplication path, so `pnpm link ../<repo>` is the linking mechanism for either. The `pnpm-workspace.yaml` `overrides` mechanism is not needed here unless a future first-party transitive dependency is introduced.
+
+**Procedure:**
+
+1. **Build the library:** in its repo run `pnpm ci:build` (produces `dist/dev` link target).
+2. **Link it:** `pnpm link ../github-action-effects` here, then `pnpm install`.
+3. **Keep the declared range correct** in this repo's `package.json` for the eventual unlinked install.
+4. **Iterate:** edit library source → `pnpm ci:build` there → `pnpm typecheck` + `pnpm test` here → `pnpm build` here → commit (`src` + `dist` + changeset) → push `dev`.
+5. **Library edits ship separately:** they land on the library's own branch and release with its next published version.
+6. **Final step, only AFTER the dogfooded version publishes:** remove the link, pin the published range, `pnpm install`.
+
+Commits must be GPG-signed with the GitHub-verified key for `C. Spencer Beggs <spencer@savvyweb.systems>` or the signature ruleset rejects them.
+
+## Development & Release Cycle
+
+### The `dev` branch convention
+
+All in-progress feature work lands on a long-lived **`dev`** branch, never directly on `main`. `main` always reflects the last released state.
+
+The shared release workflow at `savvy-web/.github/.github/workflows/release.yml` has a matching **`dev` branch**. This repo's own `release.yml` pins `@dev` so it exercises in-progress workflow changes before they reach `main`.
+
+### Flow: `dev` → `main` → release
+
+1. Feature work accumulates on `dev`; merge it into `main` when ready.
+2. The push to `main` triggers **Phase 1** — changeset detection creates/updates `changeset-release/main` and the release PR.
+3. Pushes to the release branch trigger **Phase 2** validation (build, publish dry-runs, release-notes preview, sticky comment).
+4. Merging the release PR triggers **Phase 3** — publishing, Git tags, and a published GitHub release.
+5. The published release fires `release-sync.yml`, which closes the loop by resetting `dev` back to `main`.
+
+### `release-sync.yml` — post-release housekeeping
+
+Triggered by `release: [published]` (and `workflow_dispatch` with a `tag` input + `dry-run` for rehearsal). Runs as the GitHub App bot so its pushes can bypass protection and won't recurse (no workflow triggers on tag/`dev` pushes). On a **stable SemVer 2.0.0 release `>= 1.0.0`** (bare `MAJOR.MINOR.PATCH` — no leading `v`, no `-prerelease`, no `+build`) it:
+
+1. Moves (or creates) the **`v<major>`** alias tag (e.g. `v1`) at the released commit.
+2. **Hard-resets `dev` to `main` HEAD** — a genuine clobber, so any `dev` commit not yet in `main` is discarded. This is safe by design: `dev` work always lands in `main` before a release.
+
+Each push is guarded: if the remote `v<major>` tag or `dev` already points at its target commit, that push is skipped. Sub-`1.0.0`, prerelease, build-metadata, and non-SemVer tags are ignored (no-op).
+
 ## Documentation Structure
 
 This repository uses modular documentation organized by directory:
 
-* **[src/CLAUDE.md](src/CLAUDE.md)** - Source code architecture, build process, and development guidelines
-* **[**test**/CLAUDE.md](__test__/CLAUDE.md)** - Unit testing strategy, mocking, and coverage requirements
+* **[src/CLAUDE.md](src/CLAUDE.md)** - Source code architecture, build process, and development guidelines (unit tests are co-located with their source modules under `src/`)
 * **[**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md)** - Test fixtures for integration testing
 * **[.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md)** - Workflow testing patterns and reusable actions
 
@@ -171,53 +217,50 @@ This repository uses modular documentation organized by directory:
 
 For deep architectural details, rationale, and design decisions:
 
-* **Architecture:** `@./.claude/design/workflow-runtime-action/architecture.md`
+* **Architecture:** `@./.claude/design/silk-runtime-action/architecture.md`
   Load when understanding overall system design, entry points, or layer composition.
-* **Effect Service Model:** `@./.claude/design/workflow-runtime-action/effect-service-model.md`
+* **Effect Service Model:** `@./.claude/design/silk-runtime-action/effect-service-model.md`
   Load when working with services, error handling, or dependency injection.
-* **Runtime Installation:** `@./.claude/design/workflow-runtime-action/runtime-installation.md`
+* **Runtime Installation:** `@./.claude/design/silk-runtime-action/runtime-installation.md`
   Load when modifying runtime descriptors, PM setup, or Biome installation.
-* **Caching Strategy:** `@./.claude/design/workflow-runtime-action/caching-strategy.md`
+* **Caching Strategy:** `@./.claude/design/silk-runtime-action/caching-strategy.md`
   Load when working with cache keys, lockfiles, or cross-phase state.
-* **Build and Distribution:** `@./.claude/design/workflow-runtime-action/build-and-distribution.md`
+* **Build and Distribution:** `@./.claude/design/silk-runtime-action/build-and-distribution.md`
   Load when modifying build config, dist management, or release process.
-* **Testing Strategy:** `@./.claude/design/workflow-runtime-action/testing-strategy.md`
+* **Testing Strategy:** `@./.claude/design/silk-runtime-action/testing-strategy.md`
   Load when writing tests, understanding mock patterns, or fixture setup.
 
 ## Project Structure
 
 ```text
 .
-├── src/                     # TypeScript source code → See src/CLAUDE.md
-│   ├── main.ts              # Main action logic (Effect pipeline)
-│   ├── post.ts              # Post-action hook (cache save)
-│   ├── config.ts            # devEngines parsing and detection helpers
-│   ├── cache.ts             # Cache operations (restore/save)
-│   ├── runtime-installer.ts # RuntimeInstaller service + descriptor layers
-│   ├── schemas.ts           # Effect Schema definitions
-│   ├── errors.ts            # TaggedError hierarchy
-│   ├── emoji.ts             # Log formatting helpers
-│   └── descriptors/         # Per-runtime download descriptors
-│       ├── node.ts
-│       ├── bun.ts
-│       ├── deno.ts
-│       └── biome.ts
-├── dist/                    # Compiled JavaScript (committed!)
-│   ├── main.js
-│   ├── post.js
-│   └── package.json
-├── __test__/                # Unit tests → See __test__/CLAUDE.md
-├── __fixtures__/            # Integration test fixtures → See __fixtures__/CLAUDE.md
+├── src/
+│   ├── main.ts                # 4-line Action.run(program, { layer: MainLive })
+│   ├── post.ts                # post Effect + PostLive + Action.run
+│   ├── program.ts             # main Effect program
+│   ├── state.ts               # CacheState Schema.Class + STATE_KEYS
+│   ├── layers/
+│   │   └── app.ts             # MainLive composition
+│   ├── services/
+│   │   ├── runtime-installer.ts + .test.ts
+│   │   ├── cache.ts            + .test.ts
+│   │   └── config-loader.ts    + .test.ts
+│   ├── descriptors/
+│   │   ├── node.ts / bun.ts / deno.ts / biome.ts
+│   │   └── descriptors.test.ts
+│   ├── schemas/
+│   │   └── domain.ts           + domain.test.ts
+│   └── errors/
+│       └── errors.ts           + errors.test.ts
+├── dist/
+│   ├── main.js / post.js / package.json
+├── __fixtures__/              # workflow integration test fixtures
 ├── .github/
-│   ├── actions/            # Reusable composite actions
-│   │   ├── test-fixture/   # Unified test helper (setup, run, verify)
-│   │   └── local/          # Local copy of action for testing (no pre-hook)
-│   └── workflows/          # GitHub Actions workflows → See .github/workflows/CLAUDE.md
-├── action.config.ts         # Build configuration for github-action-builder
-├── action.yml               # Action definition
-├── package.json             # Dependencies and scripts
-├── tsconfig.json            # TypeScript config
-└── biome.jsonc              # Biome config
+│   ├── actions/local/         # mirrored bundled action for local testing
+│   └── workflows/             # CI workflows
+├── action.config.ts
+├── action.yml
+└── package.json
 ```
 
 ## Action Inputs
@@ -243,7 +286,7 @@ are read exclusively from `devEngines` — there are no explicit version inputs.
 ### Cache Inputs
 
 * **`additional-lockfiles`** - Additional lockfile patterns to include in cache
-  key generation. Supports glob patterns. Multiline or comma-separated.
+  key generation. Supports glob patterns. Multiline string.
 * **`additional-cache-paths`** - Additional paths to cache/restore. Multiline
   string with glob patterns.
 
@@ -347,13 +390,13 @@ Uses Changesets for versioning:
 3. **Users reference by tag:**
 
    ```yaml
-   - uses: savvy-web/workflow-runtime-action@v1
-   - uses: savvy-web/workflow-runtime-action@v1.2.3
+   - uses: savvy-web/silk-runtime-action@v1
+   - uses: savvy-web/silk-runtime-action@v1.2.3
    ```
 
 ## Build Process
 
-The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` 0.5.0 (rsbuild-based).
+The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` ^0.7.1 (rsbuild-based).
 
 ### What Gets Built
 
@@ -414,11 +457,11 @@ git commit -m "build: update compiled output"
 
 ```typescript
 // Correct
-import { loadPackageJson } from "./config.js";
+import { loadPackageJson } from "./services/config-loader.js";
 import { readFile } from "node:fs/promises";
 
 // Incorrect
-import { loadPackageJson } from "./config";
+import { loadPackageJson } from "./services/config-loader";
 import { readFile } from "fs/promises";
 ```
 
@@ -450,7 +493,7 @@ import { readFile } from "fs/promises";
 When contributing:
 
 1. Modify TypeScript source in `src/` (see [src/CLAUDE.md](src/CLAUDE.md))
-2. Add/update unit tests in `__test__/` (see [**test**/CLAUDE.md](__test__/CLAUDE.md))
+2. Add/update co-located unit tests next to the source modules (e.g., `src/services/cache.test.ts`)
 3. Add/update fixtures in `__fixtures__/` if needed (see [**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md))
 4. Update workflows in `.github/workflows/` if needed (see [.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md))
 5. Run `pnpm build` to compile

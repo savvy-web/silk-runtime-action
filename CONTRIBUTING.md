@@ -14,8 +14,8 @@ and information for developers working on this action.
 
 ```bash
 # Clone the repository
-git clone https://github.com/savvy-web/workflow-runtime-action.git
-cd workflow-runtime-action
+git clone https://github.com/savvy-web/silk-runtime-action.git
+cd silk-runtime-action
 
 # Install dependencies
 pnpm install
@@ -230,8 +230,8 @@ Follow the prompts to:
 5. **Users reference by tag:**
 
    ```yaml
-   - uses: savvy-web/workflow-runtime-action@v1
-   - uses: savvy-web/workflow-runtime-action@v1.2.3
+   - uses: savvy-web/silk-runtime-action@v1
+   - uses: savvy-web/silk-runtime-action@v1.2.3
    ```
 
 ## Common Issues
@@ -314,8 +314,8 @@ tools together!
 
 ## Questions?
 
-* **Issues:** [GitHub Issues](https://github.com/savvy-web/workflow-runtime-action/issues)
-* **Discussions:** [GitHub Discussions](https://github.com/savvy-web/workflow-runtime-action/discussions)
+* **Issues:** [GitHub Issues](https://github.com/savvy-web/silk-runtime-action/issues)
+* **Discussions:** [GitHub Discussions](https://github.com/savvy-web/silk-runtime-action/discussions)
 
 ## License
 

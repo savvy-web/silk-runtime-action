@@ -3,7 +3,7 @@
 Test fixtures for integration testing with GitHub Actions workflows.
 
 **See also:** [Root CLAUDE.md](../CLAUDE.md) |
-[**test**/CLAUDE.md](../__test__/CLAUDE.md) for unit testing |
+[src/CLAUDE.md](../src/CLAUDE.md) for source and co-located unit tests |
 [.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md) for workflow
 testing patterns.
 
@@ -253,5 +253,4 @@ Before committing a fixture, verify:
 * [Root CLAUDE.md](../CLAUDE.md) - Repository overview
 * [.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md) - Testing
   workflow patterns
-* [**tests**/CLAUDE.md](../__tests__/CLAUDE.md) - Unit testing
-* [src/CLAUDE.md](../src/CLAUDE.md) - Source code architecture
+* [src/CLAUDE.md](../src/CLAUDE.md) - Source code architecture and co-located unit tests

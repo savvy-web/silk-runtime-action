@@ -1,21 +1,21 @@
 # src/CLAUDE.md
 
-Source code architecture, build process, and development guidelines for the workflow-runtime-action.
+Source code architecture, build process, and development guidelines for the silk-runtime-action.
 
 **See also:** [Root CLAUDE.md](../CLAUDE.md) for repository overview.
 
 ## Architecture Overview
 
-The action is written as an **Effect-based program** using `@savvy-web/github-action-effects` (0.11.10) for GitHub Action service abstractions. All side effects (file I/O, command execution, caching, outputs) flow through Effect services rather than direct API calls.
+The action is written as an **Effect-based program** using `@savvy-web/github-action-effects` (^2.0.0) for GitHub Action service abstractions. All side effects (file I/O, command execution, caching, outputs) flow through Effect services rather than direct API calls.
 
 Key architectural properties:
 
 - **Zero `@actions/*` dependencies** -- `github-action-effects` implements the GitHub Actions runtime protocol natively (V2 Twirp protocol with Azure Blob Storage for caching, native process execution, etc.)
-- **Inputs via Effect Config API** -- `Config.string`, `Config.boolean`, `Config.withDefault` backed by a `ConfigProvider` that reads GitHub Actions input environment variables
-- **Logging via Effect.log** -- `Effect.log`, `Effect.logWarning`, `Effect.logError`, `Effect.logDebug` for all log output; `ActionLogger.group()` for collapsible sections
-- **Build via rsbuild** -- `@savvy-web/github-action-builder` 0.5.0 uses rsbuild under the hood
+- **Inputs via Effect Config API** -- `Config.string`, `Config.boolean`, `Config.withDefault` backed by a `ConfigProvider` that reads GitHub Actions input environment variables; `ActionInput.*` combinators for multi-value inputs
+- **Logging via Step.\* namespace** -- `Step.groupStep` for collapsible sections that buffer output and expand on failure; `Step.success` for canonical success lines
+- **Build via rsbuild** -- `@savvy-web/github-action-builder` ^0.7.1 uses rsbuild under the hood
 
-For a full architectural spec see `.claude/design/workflow-runtime-action/architecture.md`.
+For a full architectural spec see `.claude/design/silk-runtime-action/architecture.md`.
 
 ## Entry Points
 
@@ -28,104 +28,92 @@ runs:
   post: "dist/post.js"
 ```
 
-- **[main.ts](main.ts)** -> `dist/main.js` -- Effect pipeline that detects config, installs runtimes, sets up package manager, caches dependencies, and sets outputs
-- **[post.ts](post.ts)** -> `dist/post.js` -- Saves the dependency cache after the job completes (non-fatal; errors are warnings)
+- **[main.ts](main.ts)** -> `dist/main.js` -- Thin entry that calls `Action.run(program, { layer: MainLive })`
+- **[program.ts](program.ts)** -> `dist/main.js` (bundled) -- Effect pipeline that detects config, installs runtimes, sets up package manager, caches dependencies, and sets outputs
+- **[post.ts](post.ts)** -> `dist/post.js` -- Saves the dependency cache after the job completes; reads `CacheState` from main, no-op on exact hit (non-fatal; errors and defects are logged as warnings via `Effect.catchAll` + `Effect.catchAllDefect`)
 
 ## Source Modules
 
 ### [main.ts](main.ts)
 
-Top-level Effect pipeline composed of nine sequential steps:
+3-line thin entry. Imports `program` from `program.ts` and `MainLive` from `layers/app.ts`; calls `Action.run(program, { layer: MainLive })`.
 
-1. Parse configuration (load `package.json`, detect Biome, detect Turbo)
-2. Compute cache config and find lockfiles
-3. Restore cache (non-fatal on error)
-4. Install runtimes via `RuntimeInstaller` service
-5. Setup package manager (corepack/npm)
-6. Install dependencies (lockfile-aware)
-7. Install Biome (non-fatal on error)
-8. Set action outputs
-9. Log a summary
+### [program.ts](program.ts)
 
-Also contains:
+Top-level Effect pipeline (the main phase). Contains the `program` export plus helper functions:
 
-- **`parseMultiValueInput`** -- Parses multi-value input strings (newlines, bullets, commas, JSON arrays)
-- **`installBiome`** -- Installs Biome as a raw binary using `ToolInstaller.download` + `ToolInstaller.cacheFile`
-- **`getActivePackageManagers`** -- Determines active package managers from runtimes
-- **`installDependencies`** -- Runs lockfile-aware install command for the detected package manager
-- **`setupPackageManager`** -- Activates the correct package manager version via corepack or npm global install
-- **`setOutputs`** -- Sets all action outputs from pipeline results
-
-Layer composition at the bottom wires `ActionCacheLive`, `ToolInstallerLive`, `CommandRunnerLive`, `ActionStateLive` (with `NodeFileSystem`), `ActionEnvironmentLive`, and `NodeFileSystem.layer` into `MainLive`, then calls `Action.run(main, { layer: MainLive })`.
+- `installBiome` -- Installs Biome as a raw binary via `ToolInstaller.download` + `ToolInstaller.cacheFile`
+- `installDependencies` -- Lockfile-aware install for the detected package manager
+- `setupPackageManager` -- Activates the correct PM version via corepack or npm global install
+- `getActivePackageManagers` -- Determines which PMs are active from runtimes
+- `setOutputs` -- Sets all action outputs from pipeline results
 
 ### [post.ts](post.ts)
 
-Minimal Effect program that calls `saveCache()`. Errors are caught globally and demoted to warnings so a cache-save failure never fails the job.
+Post-action: reads `CacheState` via `ActionState.getOptional`, skips when missing or `restored===true`, otherwise calls `saveCache()` inside a `Step.groupStep`. Wrapped in `Effect.catchAll` + `Effect.catchAllDefect` so post-action failures never fail the workflow.
 
-### [config.ts](config.ts)
+### [state.ts](state.ts)
+
+Cross-phase state schemas. Exports `CacheState` (`Schema.Class` with `key`, `paths`, `restored`) and `STATE_KEYS` constant for use with `ActionState.save`/`get`.
+
+### [layers/app.ts](layers/app.ts)
+
+`MainLive` layer composition. Merges every library and Node platform layer the program needs: `ActionCacheLive` (with `NodeHttpClient`), `ToolInstallerLive`, `CommandRunnerLive`, `ActionStateLive` (with `NodeFileSystem`), `ActionEnvironmentLive`, `GlobLive`, `NodeFileSystem.layer`.
+
+### [services/cache.ts](services/cache.ts)
+
+Effect functions backed by `ActionCache`, `ActionState`, `ActionEnvironment`, `CommandRunner`, and library `Glob` services:
+
+- `getDefaultCachePaths` / `getLockfilePatterns` -- Pure helpers per package manager
+- `detectCachePath` -- Queries the installed PM for its actual cache directory (e.g., `pnpm store path`)
+- `getCacheConfig` / `getCombinedCacheConfig` -- Merges configs for active PMs and adds tool cache paths
+- `findLockFiles` -- Resolves lockfile patterns via `Glob.glob` (newline-separated patterns; `!`-prefix excludes)
+- `generateCacheKey` / `generateRestoreKeys` -- Deterministic keys from runtime versions, PM version, branch, lockfile hashes (via `Glob.hashFiles`)
+- `restoreCache` -- Restores cache via `ActionCache` (V2 Twirp) and saves `CacheState` for the post action
+- `saveCache` -- Reads state saved by `restoreCache` and saves only when previous restore was not an exact hit
+
+### [services/runtime-installer.ts](services/runtime-installer.ts)
+
+- `RuntimeDescriptor` interface -- Describes how to download and install a tool
+- `RuntimeInstaller` `Context.Tag` class -- Service tag with a single `install(version)` method
+- `makeRuntimeInstaller` -- Factory that creates a `RuntimeInstaller` service shape from a descriptor; uses `ToolInstaller` primitives (`download`, `extractTar`/`extractZip`, `cacheDir`); wraps failures in `RuntimeInstallError`
+- Pre-built layers: `NodeInstallerLive`, `BunInstallerLive`, `DenoInstallerLive`
+- `installerLayerFor(name)` -- Returns the appropriate layer by runtime name
+
+### [services/config-loader.ts](services/config-loader.ts)
 
 Pure Effect functions for configuration loading and detection:
 
-- **`loadPackageJson`** -- Reads and decodes `package.json` via `FileSystem.FileSystem`, wrapping all failures in `ConfigError`
-- **`parseDevEngines`** -- Normalises `devEngines.runtime` from single-object or array form to always-array
-- **`detectBiome`** -- Checks the `biome-version` Config input override first (via `Config.string("biome-version").pipe(Config.withDefault(""))`), then reads `$schema` from `biome.jsonc` / `biome.json`
-- **`detectTurbo`** -- Returns `true` if `turbo.json` exists in the working directory
+- `loadPackageJson` -- Reads and decodes `package.json` via `FileSystem`, wraps failures in `ConfigError`
+- `parseDevEngines` -- Normalises `devEngines.runtime` from object/array to always-array
+- `detectBiome` -- Checks `biome-version` input, then reads `$schema` from `biome.jsonc`/`biome.json`
+- `detectTurbo` -- Returns `true` if `turbo.json` exists
 
-### [cache.ts](cache.ts)
+### [schemas/domain.ts](schemas/domain.ts)
 
-Effect functions backed by `ActionCache`, `ActionState`, `ActionEnvironment`, `CommandRunner`, and `FileSystem` services:
+Effect Schema definitions:
 
-- **`getDefaultCachePaths`** / **`getLockfilePatterns`** -- Pure helpers per package manager
-- **`detectCachePath`** -- Queries the installed package manager for its actual cache directory (e.g., `pnpm store path`)
-- **`getCacheConfig`** / **`getCombinedCacheConfig`** -- Merges configs for all active package managers and adds tool cache paths for installed runtimes
-- **`findLockFiles`** -- Checks for known lockfile filenames at the workspace root
-- **`generateCacheKey`** / **`generateRestoreKeys`** -- Build deterministic cache keys from runtime versions, package manager version, branch, and lockfile hashes
-- **`restoreCache`** -- Restores cache via `ActionCache` (V2 Twirp protocol) and saves state (key + paths + hit status) for the post action
-- **`saveCache`** -- Reads state saved by `restoreCache` and saves cache only when the previous restore was not an exact hit
+- `AbsoluteVersion` -- Rejects semver range operators
+- `RuntimeName` / `PackageManagerName` -- `Schema.Literal` unions
+- `RuntimeEntry` / `PackageManagerEntry` -- Validated structs
+- `DevEngines` -- Complete devEngines schema
 
-### [runtime-installer.ts](runtime-installer.ts)
+### [errors/errors.ts](errors/errors.ts)
 
-Service-based runtime installation:
-
-- **`RuntimeDescriptor`** interface -- Describes how to download and install a tool: download URL factory, tool install options factory (archive type, bin sub-path), verify command
-- **`RuntimeInstaller`** service tag -- `Context.GenericTag<RuntimeInstaller>` with a single `install(version)` method
-- **`makeRuntimeInstaller`** -- Factory that creates a `RuntimeInstaller` from a `RuntimeDescriptor`; uses individual `ToolInstaller` primitives (`download`, `extractTar`/`extractZip`, `cacheDir`) rather than a single high-level call; wraps all failures in `RuntimeInstallError`
-- Pre-built layers: `NodeInstallerLive`, `BunInstallerLive`, `DenoInstallerLive` (Biome uses `installBiome()` directly since it's a raw binary)
-- **`installerLayerFor(name)`** -- Returns the appropriate layer by runtime name
-
-### [schemas.ts](schemas.ts)
-
-Effect Schema definitions shared across the codebase:
-
-- **`AbsoluteVersion`** -- Rejects semver range operators; requires `major.minor.patch` format
-- **`RuntimeName`** -- `Schema.Literal("node", "bun", "deno")`
-- **`PackageManagerName`** -- `Schema.Literal("npm", "pnpm", "yarn", "bun", "deno")`
-- **`RuntimeEntry`** -- `{ name: RuntimeName, version: AbsoluteVersion, onFail? }` struct
-- **`PackageManagerEntry`** -- `{ name: PackageManagerName, version: AbsoluteVersion, onFail? }` struct
-- **`DevEngines`** -- `{ packageManager: PackageManagerEntry, runtime: RuntimeEntry | RuntimeEntry[] }`
-- **`CacheStateSchema`** -- State persisted between main and post actions: `{ hit, key?, paths? }`
-
-### [errors.ts](errors.ts)
-
-`Data.TaggedError` hierarchy for typed error handling:
+`Schema.TaggedError` hierarchy with computed `.message` getters:
 
 | Tag | Fields | When thrown |
 | --- | ------- | ----------- |
 | `ConfigError` | `reason`, `file?`, `cause?` | Invalid/missing `package.json` or `devEngines` |
 | `RuntimeInstallError` | `runtime`, `version`, `reason`, `cause?` | Runtime download or setup failure |
-| `PackageManagerSetupError` | `packageManager`, `version`, `reason`, `cause?` | Package manager setup failure |
-| `DependencyInstallError` | `packageManager`, `reason`, `cause?` | `npm install` / `pnpm install` etc. failure |
-| `CacheError` | `operation`, `reason`, `cause?` | Cache restore, save, or key-generation failure |
-
-### [emoji.ts](emoji.ts)
-
-Formatting helpers used by `main.ts` log messages. Provides `formatRuntime`, `formatPackageManager`, `formatDetection`, `formatInstallation`, `formatSuccess`, and similar functions that prepend emoji to log strings.
+| `PackageManagerSetupError` | `packageManager`, `version`, `reason`, `cause?` | PM setup failure (corepack/npm) |
+| `DependencyInstallError` | `packageManager`, `reason`, `cause?` | npm/pnpm/yarn/bun install failure |
+| `CacheError` | `operation`, `reason`, `cause?` | Cache restore/save/key-generation failure |
+| `ActionError` | union | Union type for exhaustive `Effect.catchTag` |
 
 ### [descriptors/](descriptors/)
 
-One file per installable runtime (`node.ts`, `bun.ts`, `deno.ts`). Each exports a `descriptor` conforming to the `RuntimeDescriptor` interface, encoding the download URL template, archive options, and verify command. Descriptors are pure data with no `postInstall` hooks -- package manager setup is handled separately in `main.ts`.
-
-`biome.ts` exports a `binaryMap` (platform/arch to binary name) rather than a `RuntimeDescriptor`, since Biome is a single binary download that uses `installBiome()` directly with `ToolInstaller.download` + `ToolInstaller.cacheFile`.
+One file per installable runtime (`node.ts`, `bun.ts`, `deno.ts`). Each exports a `descriptor` conforming to `RuntimeDescriptor`. `biome.ts` exports a `binaryMap` (platform/arch to binary name) since Biome is a single-binary download handled directly by `installBiome()`.
 
 ## Build Process
 
@@ -145,7 +133,7 @@ Run the build:
 pnpm build
 ```
 
-This uses `@savvy-web/github-action-builder` (0.5.0, rsbuild-based) to bundle both entry points to `dist/` and copy a testing variant to `.github/actions/local/`.
+This uses `@savvy-web/github-action-builder` (^0.7.1, rsbuild-based) to bundle both entry points to `dist/` and copy a testing variant to `.github/actions/local/`.
 
 **Always commit `dist/` and `.github/actions/local/` after building.**
 
@@ -160,7 +148,7 @@ This uses `@savvy-web/github-action-builder` (0.5.0, rsbuild-based) to bundle bo
 
 ```bash
 # 1. Edit source
-vim src/config.ts
+vim src/services/config-loader.ts
 
 # 2. Type-check
 pnpm typecheck
@@ -183,18 +171,34 @@ git commit -m "feat: ..."
 
 ### Service injection
 
-All services (FileSystem, CommandRunner, ActionOutputs, ToolInstaller, etc.) are provided via `Effect.provide` or as layers. Never import `@actions/*` packages directly -- they are not dependencies of this project.
+All services (`FileSystem`, `CommandRunner`, `ActionOutputs`, `ToolInstaller`, etc.) are provided via `Effect.provide` or as layers. Never import `@actions/*` packages directly -- they are not dependencies of this project.
 
 ### Input reading
 
-Action inputs are read via the Effect `Config` API at point of use:
+Action inputs are read via the Effect `Config` API and library `ActionInput.*` combinators at point of use:
 
 ```typescript
-const installDeps = yield* Config.boolean("install-deps").pipe(Config.withDefault(true))
-const biomeVersion = yield* Config.string("biome-version").pipe(Config.withDefault(""))
+const installDeps = yield* ActionInput.boolean("install-deps").pipe(Config.withDefault(true));
+const biomeVersion = yield* Config.string("biome-version").pipe(Config.withDefault(""));
+const additionalLockfiles = yield* ActionInput.multiline("additional-lockfiles").pipe(Config.withDefault([]));
 ```
 
-`Action.run` sets up a `ConfigProvider` that reads from GitHub Actions input environment variables (`INPUT_*`).
+`Action.run` sets up a `ConfigProvider` that reads from GitHub Actions input environment variables (`INPUT_*`). `ActionInput.multiline` splits on `\n` and trims; it does not parse comma-separated, bullets, or JSON arrays -- use newline-separated input.
+
+### Step.groupStep convention
+
+Each phase of the main program is wrapped in `Step.groupStep(title, effect)`. This:
+
+- Buffers log lines emitted inside the group
+- Collapses the group in CI when successful (quiet-on-success)
+- Expands and prints buffered lines when the group fails (verbose-on-failure)
+
+Use `Step.success("X")` inside a group body to emit a canonical success-line for the group's summary.
+
+```typescript
+yield* Step.groupStep("Install runtimes", Effect.forEach(config.runtimes, (rt) => /* ... */));
+yield* Step.success(`Biome ${version}`);
+```
 
 ### Error handling
 
@@ -202,7 +206,21 @@ Use tagged errors (`ConfigError`, `RuntimeInstallError`, etc.) and handle them w
 
 ### Testing
 
-Tests import service tags directly from `@savvy-web/github-action-effects` and provide inline mock implementations via `Layer.succeed`. No `vi.mock` needed since `github-action-effects` 0.11.10 has no `@actions/*` transitive imports. See [`__test__/CLAUDE.md`](../__test__/CLAUDE.md).
+Tests use library-provided test layers from `@savvy-web/github-action-effects/testing`:
+
+```typescript
+import { ActionOutputsTest } from "@savvy-web/github-action-effects/testing";
+const outputs = ActionOutputsTest.empty();
+const layer = ActionOutputsTest.layer(outputs);
+await program.pipe(Effect.provide(layer), Effect.runPromise);
+expect(outputs.outputs.find((o) => o.name === "node-version")?.value).toBe("24.11.0");
+```
+
+Test layers expose mutable state objects that capture method calls. Asserting against the state is preferred over mocking individual methods. For failure-injection cases (e.g., simulating `ActionCache.save` errors), a hand-rolled `Layer.succeed(Tag, {...})` mock is still acceptable.
+
+Action inputs are overridden via `ConfigProvider.fromMap(new Map([["input-name", "value"]]))`.
+
+Tests are co-located with their source modules. See [errors/errors.test.ts](errors/errors.test.ts), [services/cache.test.ts](services/cache.test.ts), [program.test.ts](program.test.ts), [post.test.ts](post.test.ts) for representative patterns.
 
 ## Common Issues
 
@@ -221,7 +239,6 @@ Ensure the required service is included in the layer passed to `Effect.provide` 
 ## Related Documentation
 
 - [Root CLAUDE.md](../CLAUDE.md) - Repository overview
-- [**test**/CLAUDE.md](../__test__/CLAUDE.md) - Unit testing strategy
 - [**fixtures**/CLAUDE.md](../__fixtures__/CLAUDE.md) - Integration testing
 - [Effect Documentation](https://effect.website/docs) - Effect framework reference
 
@@ -229,7 +246,7 @@ Ensure the required service is included in the layer passed to `Effect.provide` 
 
 For deep architectural details:
 
-- **Architecture:** `@../.claude/design/workflow-runtime-action/architecture.md`
-- **Effect Service Model:** `@../.claude/design/workflow-runtime-action/effect-service-model.md`
-- **Runtime Installation:** `@../.claude/design/workflow-runtime-action/runtime-installation.md`
-- **Caching Strategy:** `@../.claude/design/workflow-runtime-action/caching-strategy.md`
+- **Architecture:** `@../.claude/design/silk-runtime-action/architecture.md`
+- **Effect Service Model:** `@../.claude/design/silk-runtime-action/effect-service-model.md`
+- **Runtime Installation:** `@../.claude/design/silk-runtime-action/runtime-installation.md`
+- **Caching Strategy:** `@../.claude/design/silk-runtime-action/caching-strategy.md`

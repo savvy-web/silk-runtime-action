@@ -7,8 +7,6 @@ updates:
   - package-ecosystem: "npm"
     directories:
       - "/"
-      - "/docs"
-      - "/pkgs/*"
     schedule:
       interval: "weekly"
       day: "monday"
