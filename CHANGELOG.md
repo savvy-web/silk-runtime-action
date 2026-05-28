@@ -61,25 +61,25 @@ The cache-key hash algorithm changed from a local `fast-glob` + SHA-256 implemen
 
 ### Bug Fixes
 
-* [`64f2859`](https://github.com/savvy-web/workflow-runtime-action/commit/64f285956b82a93639139358dc843acd1db65c89) Retry `corepack enable` after removing stale shims when it fails with EEXIST. This handles the case where a cached Node installation contains symlinks from a previous corepack setup, causing `corepack enable` to fail when trying to create them again.
+* [`64f2859`](https://github.com/savvy-web/silk-runtime-action/commit/64f285956b82a93639139358dc843acd1db65c89) Retry `corepack enable` after removing stale shims when it fails with EEXIST. This handles the case where a cached Node installation contains symlinks from a previous corepack setup, causing `corepack enable` to fail when trying to create them again.
 
 ## 0.2.1
 
 ### Bug Fixes
 
-* [`d16d202`](https://github.com/savvy-web/workflow-runtime-action/commit/d16d202c9d0025de9797662008e1b73e8c695616) Fix Node.js not being available on PATH after installation. The Node tar archive extracts to a nested directory (e.g., `node-v24.11.0-linux-x64/`), so the `bin/` path added to PATH didn't contain the actual binary. Now passes `--strip 1` to tar during extraction to flatten the archive root, matching the pattern used by `actions/setup-node`. Also adds `streaming: true` to dependency install for visible error output on failure, and temporary runtime diagnostics logging.
+* [`d16d202`](https://github.com/savvy-web/silk-runtime-action/commit/d16d202c9d0025de9797662008e1b73e8c695616) Fix Node.js not being available on PATH after installation. The Node tar archive extracts to a nested directory (e.g., `node-v24.11.0-linux-x64/`), so the `bin/` path added to PATH didn't contain the actual binary. Now passes `--strip 1` to tar during extraction to flatten the archive root, matching the pattern used by `actions/setup-node`. Also adds `streaming: true` to dependency install for visible error output on failure, and temporary runtime diagnostics logging.
 
 ## 0.2.0
 
 ### Breaking Changes
 
-* [`354877c`](https://github.com/savvy-web/workflow-runtime-action/commit/354877c6a163c476d7153b66f6b434bf2ae0a9d1) Remove explicit version inputs (`node-version`, `bun-version`, `deno-version`, `package-manager`, `package-manager-version`). All configuration now comes exclusively from `package.json` `devEngines` fields.
+* [`354877c`](https://github.com/savvy-web/silk-runtime-action/commit/354877c6a163c476d7153b66f6b434bf2ae0a9d1) Remove explicit version inputs (`node-version`, `bun-version`, `deno-version`, `package-manager`, `package-manager-version`). All configuration now comes exclusively from `package.json` `devEngines` fields.
 * Remove `pre` action hook (collapsed into main).
 * Require `devEngines.packageManager` and `devEngines.runtime` in `package.json`.
 
 ### Features
 
-* [`354877c`](https://github.com/savvy-web/workflow-runtime-action/commit/354877c6a163c476d7153b66f6b434bf2ae0a9d1) Rewrite action internals from imperative TypeScript to Effect-based programs using `@savvy-web/github-action-effects` 0.11.x.
+* [`354877c`](https://github.com/savvy-web/silk-runtime-action/commit/354877c6a163c476d7153b66f6b434bf2ae0a9d1) Rewrite action internals from imperative TypeScript to Effect-based programs using `@savvy-web/github-action-effects` 0.11.x.
 
 - **Zero `@actions/*` dependencies**: The effects library implements the GitHub Actions runtime protocol natively (V2 Twirp caching, native process execution, workflow commands). No CJS/ESM interop issues, no bundler hacks.
 - **Effect architecture**: Two entry points (main.ts, post.ts) as Effect pipelines with typed errors, dependency injection via layers, and schema-validated configuration.
@@ -95,7 +95,7 @@ The cache-key hash algorithm changed from a local `fast-glob` + SHA-256 implemen
 
 ### Dependencies
 
-* | [`358dce1`](https://github.com/savvy-web/workflow-runtime-action/commit/358dce10a1486bad3b524257ea67b84daa360fc1) | Dependency | Type    | Action | From   | To |
+* | [`358dce1`](https://github.com/savvy-web/silk-runtime-action/commit/358dce10a1486bad3b524257ea67b84daa360fc1) | Dependency | Type    | Action | From   | To |
   | :---------------------------------------------------------------------------------------------------------------- | :--------- | :------ | :----- | :----- | -- |
   | @savvy-web/changesets                                                                                             | dependency | updated | ^0.4.2 | ^0.5.3 |    |
   | @savvy-web/commitlint                                                                                             | dependency | updated | ^0.4.0 | ^0.4.2 |    |
@@ -107,7 +107,7 @@ The cache-key hash algorithm changed from a local `fast-glob` + SHA-256 implemen
 
 ### Dependencies
 
-* [`32ff0b0`](https://github.com/savvy-web/workflow-runtime-action/commit/32ff0b0f977eeddad3aa0a3d262dccb2806f1eab) @savvy-web/changesets: ^0.1.1 → ^0.4.2
+* [`32ff0b0`](https://github.com/savvy-web/silk-runtime-action/commit/32ff0b0f977eeddad3aa0a3d262dccb2806f1eab) @savvy-web/changesets: ^0.1.1 → ^0.4.2
 * @savvy-web/commitlint: ^0.3.3 → ^0.4.0
 * @savvy-web/github-action-builder: ^0.1.4 → ^0.2.1
 * @savvy-web/lint-staged: ^0.4.5 → ^0.5.0
@@ -117,7 +117,7 @@ The cache-key hash algorithm changed from a local `fast-glob` + SHA-256 implemen
 
 ### Bug Fixes
 
-* [`7f4fb75`](https://github.com/savvy-web/workflow-runtime-action/commit/7f4fb753ce138a762c2c1511d74662fed2973051) Supports @savvy-web/vitest
+* [`7f4fb75`](https://github.com/savvy-web/silk-runtime-action/commit/7f4fb753ce138a762c2c1511d74662fed2973051) Supports @savvy-web/vitest
 
 ## 0.1.5
 
