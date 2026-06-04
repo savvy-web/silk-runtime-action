@@ -1,7 +1,7 @@
 # silk-runtime-action
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-4caf50.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/pnpm-config-dependency-action)
+[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/silk-update-action)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-green?logo=node.js)](https://nodejs.org)
 
 Automatically detect and set up JavaScript runtime environments in GitHub Actions from your `package.json` `devEngines` configuration. One action for Node.js, Bun, and Deno with intelligent package manager detection and dependency caching.
