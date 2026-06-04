@@ -1,5 +1,11 @@
 # @savvy-web/silk-runtime-action
 
+## 1.0.3
+
+### Other
+
+* [`334253f`](https://github.com/savvy-web/silk-runtime-action/commit/334253f25b51cfa570a85edb015d36fcfe13b9d3) Upgrade to `@savvy-web/silk` dependency system.
+
 ## 1.0.2
 
 ### Dependencies
