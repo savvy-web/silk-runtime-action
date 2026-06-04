@@ -162,7 +162,7 @@ A single declarative source of truth in `package.json` (per Corepack and pnpm). 
 
 ### Split entry/program/layer
 
-`main.ts` is 3 lines. The pipeline (`program`) and the layer composition (`MainLive`) live in their own modules. This lets `program.test.ts` import the program without triggering the module-level `Action.run` side effect in `main.ts`, matching the canonical pnpm-config-dependency-action pattern.
+`main.ts` is 3 lines. The pipeline (`program`) and the layer composition (`MainLive`) live in their own modules. This lets `program.test.ts` import the program without triggering the module-level `Action.run` side effect in `main.ts`, matching the canonical silk-update-action pattern.
 
 ### Descriptor pattern for runtimes
 
