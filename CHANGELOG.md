@@ -1,5 +1,11 @@
 # @savvy-web/silk-runtime-action
 
+## 1.0.4
+
+### Other
+
+* [`ae0b23f`](https://github.com/savvy-web/silk-runtime-action/commit/ae0b23fa7a7afe48eacc05d6dd2111c4507edcac) Upgrade to silk-release-action v2.
+
 ## 1.0.3
 
 ### Other
