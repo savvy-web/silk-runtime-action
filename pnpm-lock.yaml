@@ -86,8 +86,8 @@ importers:
         version: 0.2.1(effect@3.21.3)
     devDependencies:
       '@savvy-web/github-action-builder':
-        specifier: ^0.7.9
-        version: 0.7.9(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/platform@0.96.1(effect@3.21.3))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(effect@3.21.3))(@types/node@25.9.3)(@typescript/native-preview@7.0.0-dev.20260614.1)(typescript@6.0.3)
+        specifier: ^0.7.10
+        version: 0.7.10(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/platform@0.96.1(effect@3.21.3))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(effect@3.21.3))(@types/node@25.9.3)(@typescript/native-preview@7.0.0-dev.20260614.1)(typescript@6.0.3)
       '@savvy-web/silk':
         specifier: ^1.1.0
         version: 1.1.0(947a23cc6cea32faa938edaaa04f3015)
@@ -958,8 +958,8 @@ packages:
     resolution: {integrity: sha512-GDh92e8ZxwxfzP3pi5fIwV5krcH7tdKMCGeXuygDaWf6wB1kElIWJ3D08TQLCPG2UM2gp4LN/r43L3Mij3ShwQ==}
     hasBin: true
 
-  '@savvy-web/github-action-builder@0.7.9':
-    resolution: {integrity: sha512-mdkBsUNnQ/oOBlhiygJHlwpwAp6WnkNriNkuI1VIPsv0Zl4dKcI/9EVKqJj+LMwH8TADmUeEoJ2ppWQLlRw0/g==}
+  '@savvy-web/github-action-builder@0.7.10':
+    resolution: {integrity: sha512-Ga441cHBCaw79dkpXhRB0QlfiZzB5b4Ud1Fb3o5WYWJzoj0yz0OuCcOBv2qyM+xuyp4SWBpXD3WAO11iGAeb1g==}
     hasBin: true
     peerDependencies:
       '@types/node': ^25.9.0
@@ -4444,7 +4444,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@savvy-web/github-action-builder@0.7.9(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/platform@0.96.1(effect@3.21.3))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(effect@3.21.3))(@types/node@25.9.3)(@typescript/native-preview@7.0.0-dev.20260614.1)(typescript@6.0.3)':
+  '@savvy-web/github-action-builder@0.7.10(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/platform@0.96.1(effect@3.21.3))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(effect@3.21.3))(@types/node@25.9.3)(@typescript/native-preview@7.0.0-dev.20260614.1)(typescript@6.0.3)':
     dependencies:
       '@effect/cli': 0.75.2(@effect/platform@0.96.1(effect@3.21.3))(@effect/printer-ansi@0.49.0(@effect/typeclass@0.40.0(effect@3.21.3))(effect@3.21.3))(@effect/printer@0.49.0(@effect/typeclass@0.40.0(effect@3.21.3))(effect@3.21.3))(effect@3.21.3)
       '@effect/cluster': 0.59.0(@effect/platform@0.96.1(effect@3.21.3))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(@effect/platform@0.96.1(effect@3.21.3))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.3))(effect@3.21.3))(effect@3.21.3))(effect@3.21.3)

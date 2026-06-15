@@ -38,7 +38,7 @@
 		"jsonc-effect": "^0.2.1"
 	},
 	"devDependencies": {
-		"@savvy-web/github-action-builder": "^0.7.9",
+		"@savvy-web/github-action-builder": "^0.7.10",
 		"@savvy-web/silk": "^1.1.0",
 		"@savvy-web/vitest": "^1.5.0"
 	},
