@@ -1,5 +1,27 @@
 # @savvy-web/silk-runtime-action
 
+## 1.0.5
+
+### Bug Fixes
+
+* [`137939d`](https://github.com/savvy-web/silk-runtime-action/commit/137939d442ab1e7a44ab3f8919efa22d95a19aa2) The action no longer crashes on Windows runners. The committed bundle had a
+  build-machine absolute path frozen into `@azure/storage-common`'s
+  `createRequire(import.meta.url)` call (reached via the cache service's
+  `@azure/storage-blob` dependency). That driveless POSIX `file://` path was
+  accepted on macOS/Linux but rejected by `createRequire` on Windows, throwing at
+  module load. Rebuilt with a bundler that keeps `import.meta.url` as a runtime
+  expression, so the path resolves correctly on every platform.
+
+### Dependencies
+
+* | [`137939d`](https://github.com/savvy-web/silk-runtime-action/commit/137939d442ab1e7a44ab3f8919efa22d95a19aa2) | Dependency    | Type    | Action   | From     | To |
+  | :------------------------------------------------------------------------------------------------------------ | :------------ | :------ | :------- | :------- | -- |
+  | @effect/cluster                                                                                               | dependency    | updated | ^0.58.2  | ^0.59.0  |    |
+  | @effect/platform-node                                                                                         | dependency    | updated | ^0.106.0 | ^0.107.0 |    |
+  | effect                                                                                                        | dependency    | updated | ^3.21.2  | ^3.21.3  |    |
+  | @savvy-web/github-action-builder                                                                              | devDependency | updated | ^0.7.8   | ^0.7.10  |    |
+  | @savvy-web/silk                                                                                               | devDependency | updated | ^1.0.0   | ^1.1.0   |    |
+
 ## 1.0.4
 
 ### Other
