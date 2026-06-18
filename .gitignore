@@ -10,13 +10,12 @@
 **/.cache
 coverage/
 **/*.asc
-
-# NOTE: dist/ is NOT ignored - compiled GitHub Actions must be committed
-# The dist/ folder contains the compiled action code that GitHub Actions will execute
-# However, .github/actions/local/ is generated during build for local testing
 pnpm-publish-summary.json
 pnpm-release.json
 .changeset/status.json
+# Temp files written by changeset CLI when called from tests
+.changeset-status-*.json
+.changeset-mergebase-*.json
 # Environment files (keep .example files committed)
 .env
 .env.local
@@ -29,17 +28,15 @@ pnpm-release.json
 !.env.*.example
 
 .pnpm-release.json
-**/*.api.json
-**/yo-rc.json
-**/savvy.config.toml
-pkgs/generators/test.ts
 # Temporary api-extractor files created during build
-**/src/api-extractor-*.ts
-test.ts
 .claude/settings.local.json
+.claude/schedule_task.lock
+.claude/plans
+.claude/cache/
+.claude/agents
+.claude/skills
+CLAUDE.local.md
 **/coverage-debug
-test-summary-dev/
-!__fixtures__/turbo-enabled/.turbo
-!__fixtures__/additional-inputs/build
-!__fixtures__/additional-inputs/dist
 .claude/plugins-debug.log
+# Superpowers working docs (specs, plans) — kept local, not tracked
+docs/superpowers/
