@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TurboCacheResolution } from "./activation.js";
-import { DEFAULT_TURBO_PORT, buildSpawnSpec, killProcess } from "./lifecycle.js";
+import { DEFAULT_TURBO_PORT, buildSpawnSpec, killProcess, waitForServer } from "./lifecycle.js";
 
 describe("buildSpawnSpec", () => {
 	it("builds a github-backed spec with the core env", () => {
@@ -54,4 +55,22 @@ describe("killProcess", () => {
 
 it("exposes the default port", () => {
 	expect(DEFAULT_TURBO_PORT).toBe(41230);
+});
+
+describe("waitForServer", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("returns true when the status endpoint responds ok", async () => {
+		vi.stubGlobal("fetch", () => Promise.resolve(new Response(null, { status: 200 })));
+		const result = await Effect.runPromise(waitForServer(41230, { attempts: 1, delayMillis: 1 }));
+		expect(result).toBe(true);
+	});
+
+	it("returns false when the server never responds", async () => {
+		vi.stubGlobal("fetch", () => Promise.reject(new Error("refused")));
+		const result = await Effect.runPromise(waitForServer(41230, { attempts: 2, delayMillis: 1 }));
+		expect(result).toBe(false);
+	});
 });

@@ -48,6 +48,7 @@ export const buildSpawnSpec = (
  * are still fully detached from the parent's pipes, so the Actions step does not
  * hang. */
 export const spawnTurboServer = (spec: SpawnSpec): Effect.Effect<number, never> =>
+	/* v8 ignore start -- spawns a real detached process; exercised by the e2e fixture */
 	Effect.sync(() => {
 		const out = openSync(serverLogPath(spec.port), "a");
 		const child = spawn(spec.command, [...spec.args], {
@@ -58,6 +59,7 @@ export const spawnTurboServer = (spec: SpawnSpec): Effect.Effect<number, never> 
 		child.unref();
 		return child.pid ?? -1;
 	});
+/* v8 ignore stop */
 
 /**
  * Poll the server's status endpoint until it responds 200 or the budget is
