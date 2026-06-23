@@ -10,7 +10,7 @@ import {
 	GlobTest,
 	ToolInstallerTest,
 } from "@savvy-web/github-action-effects/testing";
-import { Config, ConfigProvider, Effect, Exit, Layer, Logger, Option } from "effect";
+import { ConfigProvider, Effect, Exit, Layer, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	getActivePackageManagers,
@@ -108,19 +108,7 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	const cacheConfig = yield* getCombinedCacheConfig(activePackageManagers, runtimeEntries);
 	const lockfiles = yield* findLockFiles(cacheConfig.lockfilePatterns);
 
-	const turboPaths = config.turbo ? ["**/.turbo"] : [];
-	const finalCachePaths = [...cacheConfig.cachePaths, ...turboPaths];
-
-	if (config.turbo) {
-		const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
-		const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
-		if (turboToken !== "") {
-			yield* outputsSvc.exportVariable("TURBO_TOKEN", turboToken);
-		}
-		if (turboTeam !== "") {
-			yield* outputsSvc.exportVariable("TURBO_TEAM", turboTeam);
-		}
-	}
+	const finalCachePaths = [...cacheConfig.cachePaths];
 
 	// Restore cache (non-fatal)
 	const cacheResult = yield* Step.groupStep(
@@ -380,27 +368,6 @@ describe("main pipeline", () => {
 		expect(getOutput(outputsState, "bun-version")).toBe("1.3.3");
 		expect(getOutput(outputsState, "bun-enabled")).toBe("true");
 		expect(getOutput(outputsState, "package-manager")).toBe("pnpm");
-	});
-
-	it("turbo detection sets TURBO_TOKEN and TURBO_TEAM env vars", async () => {
-		const { layer, outputsState, configProvider } = buildBaseLayer({
-			files: {
-				"package.json": VALID_PACKAGE_JSON,
-				"turbo.json": "{}",
-			},
-			inputs: {
-				"turbo-token": "my-token",
-				"turbo-team": "my-team",
-			},
-		});
-
-		await runPipeline(layer, configProvider);
-
-		expect(getOutput(outputsState, "turbo-enabled")).toBe("true");
-		const turboToken = outputsState.variables.find((v) => v.name === "TURBO_TOKEN")?.value;
-		const turboTeam = outputsState.variables.find((v) => v.name === "TURBO_TEAM")?.value;
-		expect(turboToken).toBe("my-token");
-		expect(turboTeam).toBe("my-team");
 	});
 });
 

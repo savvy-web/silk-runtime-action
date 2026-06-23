@@ -9,11 +9,12 @@
  */
 
 import { homedir, arch as osArch, platform as osPlatform, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { FileSystem } from "@effect/platform";
 import { ActionInput, ActionOutputs, CommandRunner, Step, ToolInstaller } from "@savvy-web/github-action-effects";
 import type { Context } from "effect";
-import { Config, Effect, Option } from "effect";
+import { Config, Effect, Option, Redacted } from "effect";
 import { binaryMap as biomeBinaryMap } from "./descriptors/biome.js";
 import { DependencyInstallError, PackageManagerSetupError } from "./errors/errors.js";
 import type { PackageManagerEntry, RuntimeEntry } from "./schemas/domain.js";
@@ -27,6 +28,9 @@ import {
 	formatCauseDetail,
 	installerLayerFor,
 } from "./services/runtime-installer.js";
+import { resolveTurboCache } from "./services/turbo-cache/activation.js";
+import { applyTurboCache } from "./services/turbo-cache/apply.js";
+import { spawnTurboServer, waitForServer } from "./services/turbo-cache/lifecycle.js";
 
 /**
  * Install Biome CLI as a raw binary using ToolInstaller primitives.
@@ -363,25 +367,57 @@ export const program = Effect.gen(function* () {
 	const cacheBust = yield* Config.string("cache-bust").pipe(Config.withDefault(""));
 	const cacheBustValue = cacheBust && cacheBust !== "false" ? cacheBust : undefined;
 
-	// Build final cache paths: base + additional inputs + turbo
-	const turboPaths = config.turbo ? ["**/.turbo"] : [];
-	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths, ...turboPaths];
+	// Cache paths no longer include **/.turbo — the turbo remote cache replaces it.
+	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths];
 
 	yield* Effect.logDebug(`Active PMs: ${activePackageManagers.join(", ")}`);
 	yield* Effect.logDebug(`Lockfiles found: ${lockfiles.length > 0 ? lockfiles.join(", ") : "(none)"}`);
 	yield* Effect.logDebug(`Cache paths (${finalCachePaths.length}): ${finalCachePaths.join(", ")}`);
 
-	// Handle turbo env vars
-	if (config.turbo) {
-		const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
-		const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
-		if (turboToken !== "") {
-			yield* outputs.exportVariable("TURBO_TOKEN", turboToken);
-		}
-		if (turboTeam !== "") {
-			yield* outputs.exportVariable("TURBO_TEAM", turboTeam);
-		}
-	}
+	// Resolve and apply turbo remote cache strategy.
+	const turboResult = yield* Step.groupStep(
+		"Turbo remote cache",
+		Effect.gen(function* () {
+			const cacheMode =
+				(yield* Config.string("turbo-cache").pipe(Config.withDefault("auto"))) === "off" ? "off" : "auto";
+			const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
+			const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
+			const prefix = yield* Config.string("turbo-cache-prefix").pipe(Config.withDefault(""));
+
+			// Secrets: read redacted, register with the runner's log mask, then
+			// unwrap for transport. setSecret takes plaintext (it tells the runner
+			// what to redact); Redacted guards against accidental logging in main.
+			const s3Secret = yield* Config.redacted("turbo-s3-secret-access-key").pipe(Config.withDefault(Redacted.make("")));
+			const s3Session = yield* Config.redacted("turbo-s3-session-token").pipe(Config.withDefault(Redacted.make("")));
+			for (const secret of [turboToken, Redacted.value(s3Secret), Redacted.value(s3Session)]) {
+				if (secret !== "") yield* outputs.setSecret(secret);
+			}
+
+			const s3 = {
+				bucket: yield* Config.string("turbo-s3-bucket").pipe(Config.withDefault("")),
+				region: yield* Config.string("turbo-s3-region").pipe(Config.withDefault("")),
+				endpoint: yield* Config.string("turbo-s3-endpoint").pipe(Config.withDefault("")),
+				accessKeyId: yield* Config.string("turbo-s3-access-key-id").pipe(Config.withDefault("")),
+				secretAccessKey: Redacted.value(s3Secret),
+				sessionToken: Redacted.value(s3Session),
+				prefix: yield* Config.string("turbo-s3-prefix").pipe(Config.withDefault("")),
+			};
+			const resolution = resolveTurboCache({
+				turboDetected: config.turbo,
+				cacheMode,
+				turboToken,
+				turboTeam,
+				s3,
+			});
+			const serverEntry = join(dirname(fileURLToPath(import.meta.url)), "turbo-server.js");
+			return yield* applyTurboCache(resolution, {
+				serverEntry,
+				prefix,
+				spawn: spawnTurboServer,
+				waitForReady: waitForServer,
+			});
+		}),
+	);
 
 	// 3. Restore cache (non-fatal)
 	const cacheResult = yield* Step.groupStep(
@@ -456,6 +492,8 @@ export const program = Effect.gen(function* () {
 
 	// 8. Set outputs
 	yield* setOutputs(outputs, installed, config, cacheResult, lockfiles, finalCachePaths);
+	yield* outputs.set("turbo-cache-backend", turboResult.backend);
+	yield* outputs.set("turbo-cache-port", turboResult.port === null ? "" : String(turboResult.port));
 
 	// 9. Summary
 	yield* Step.groupStep(
