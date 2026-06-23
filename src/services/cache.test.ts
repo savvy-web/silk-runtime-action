@@ -10,6 +10,7 @@ import {
 import { Effect, Layer, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	buildLockfileGlobPatterns,
 	detectCachePath,
 	findLockFiles,
 	generateCacheKey,
@@ -44,12 +45,9 @@ const run = <A>(effect: Effect.Effect<A, any, any>, layer: AnyLayer): Promise<A>
 
 /**
  * Build the exact patterns string that findLockFiles passes to glob.glob.
- * Mirrors the implementation in cache.ts.
+ * Uses the real implementation (no mirror) so excludes can't drift.
  */
-const findLockFilesGlobKey = (patterns: string[]): string => {
-	const excludes = "!**/node_modules/**\n!**/.git/**";
-	return [...patterns, excludes].join("\n");
-};
+const findLockFilesGlobKey = (patterns: string[]): string => buildLockfileGlobPatterns(patterns);
 
 /**
  * Build the exact patterns string that hashFiles passes to glob.hashFiles.
@@ -512,6 +510,16 @@ describe("findLockFiles", () => {
 		const layer = emptyGlobLayer();
 		const result = await run(findLockFiles(["nonexistent-lockfile-xyz.lock"]), layer);
 		expect(result).toEqual([]);
+	});
+
+	it("excludes node_modules, .git, and test/fixture trees from discovery", () => {
+		const patternsStr = buildLockfileGlobPatterns(["**/pnpm-lock.yaml"]);
+		expect(patternsStr).toContain("**/pnpm-lock.yaml");
+		expect(patternsStr).toContain("!**/node_modules/**");
+		expect(patternsStr).toContain("!**/.git/**");
+		expect(patternsStr).toContain("!**/__fixtures__/**");
+		expect(patternsStr).toContain("!**/__test__/**");
+		expect(patternsStr).toContain("!**/__tests__/**");
 	});
 
 	it("deduplicates results across overlapping patterns", async () => {
