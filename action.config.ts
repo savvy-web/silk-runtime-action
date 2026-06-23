@@ -4,6 +4,7 @@ export default defineConfig({
 	entries: {
 		main: "src/main.ts",
 		post: "src/post.ts",
+		workers: { "turbo-server": "src/turbo-server.ts" },
 	},
 	build: {
 		minify: true,
