@@ -23,21 +23,21 @@ to the external Vercel Remote Cache instead of one of the local backends.
 
 | Input | Description |
 | :--- | :--- |
-| `turbo-cache` | Backend to use: `"github"` (default) or `"s3"` |
-| `turbo-cache-prefix` | Cache key prefix (default: `"turbo"`) |
+| `turbo-cache` | Cache mode: `auto` (default) starts the embedded server when `turbo.json` is present; `off` disables. Backend is auto-selected: S3 if `turbo-s3-bucket` is set, otherwise GitHub Actions cache. |
+| `turbo-cache-prefix` | Key prefix/namespace for embedded turbo cache artifacts (default: `""`) |
 | `turbo-s3-bucket` | S3 bucket name |
-| `turbo-s3-region` | AWS region (default: `"us-east-1"`) |
+| `turbo-s3-region` | AWS region (default: `""`) |
 | `turbo-s3-endpoint` | Custom S3-compatible endpoint URL |
 | `turbo-s3-access-key-id` | AWS access key ID |
 | `turbo-s3-secret-access-key` | AWS secret access key |
 | `turbo-s3-session-token` | AWS session token (optional) |
-| `turbo-s3-prefix` | S3 key prefix (default: `"turbo"`) |
+| `turbo-s3-prefix` | S3 key prefix (default: `""`) |
 
 **New outputs:**
 
 | Output | Description |
 | :--- | :--- |
-| `turbo-cache-backend` | Active backend (`"github"`, `"s3"`, or `"vercel"`) |
+| `turbo-cache-backend` | Active backend (`github`, `s3`, `remote`, or `none`) |
 | `turbo-cache-port` | Port the local server is listening on |
 
 **Behavior change:** `**/.turbo` is no longer included in the file-level

@@ -29,6 +29,7 @@ import {
 	installerLayerFor,
 } from "./services/runtime-installer.js";
 import { resolveTurboCache } from "./services/turbo-cache/activation.js";
+import type { TurboApplyResult } from "./services/turbo-cache/apply.js";
 import { applyTurboCache } from "./services/turbo-cache/apply.js";
 import { spawnTurboServer, waitForServer } from "./services/turbo-cache/lifecycle.js";
 
@@ -416,7 +417,13 @@ export const program = Effect.gen(function* () {
 				spawn: spawnTurboServer,
 				waitForReady: waitForServer,
 			});
-		}),
+		}).pipe(
+			Effect.catchAll((error) =>
+				Effect.logWarning(`Turbo cache setup error: ${error instanceof Error ? error.message : String(error)}`).pipe(
+					Effect.as<TurboApplyResult>({ backend: "none", port: null }),
+				),
+			),
+		),
 	);
 
 	// 3. Restore cache (non-fatal)
