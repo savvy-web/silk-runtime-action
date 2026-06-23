@@ -3,14 +3,15 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-06-23
+last-synced: 2026-06-23
 completeness: 92
 related:
   - ./effect-service-model.md
   - ./caching-strategy.md
   - ./runtime-installation.md
   - ./build-and-distribution.md
+  - ./turbo-remote-cache.md
 dependencies: []
 ---
 
@@ -32,7 +33,7 @@ Top-level architecture of the Effect-based GitHub Action that sets up JavaScript
 
 ## Overview
 
-The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation and Turborepo detection.
+The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
 
 Built on the Effect framework using `@savvy-web/github-action-effects` (^2.0.0) for all GitHub Actions runtime interactions. The library implements the GitHub Actions runtime protocol natively (V2 Twirp caching, Azure Blob Storage, native process execution) so the action has zero `@actions/*` direct or transitive dependencies.
 
@@ -58,26 +59,30 @@ Built on the Effect framework using `@savvy-web/github-action-effects` (^2.0.0) 
 | Entry | Source | Output | Purpose |
 | --- | --- | --- | --- |
 | `main` | `src/main.ts` | `dist/main.js` | Thin wrapper: `Action.run(program, { layer: MainLive })` |
-| `post` | `src/post.ts` | `dist/post.js` | Cache save after job; never fails workflow |
+| `post` | `src/post.ts` | `dist/post.js` | Cache save + turbo server teardown after job; never fails workflow |
+| `turbo-server` | `src/turbo-server.ts` | `dist/turbo-server.js` | Detached embedded turbo remote-cache server (a `workers` bundle) |
 
-`main.ts` is 3 lines (excluding imports). `program.ts` owns the Effect pipeline. There is no `pre` hook.
+`main.ts` is 3 lines (excluding imports). `program.ts` owns the Effect pipeline. There is no `pre` hook. `turbo-server.js` is not a lifecycle hook — main spawns it as a detached process. See [turbo remote cache](./turbo-remote-cache.md).
 
 ### Source module map
 
 | Module | Path | Responsibility |
 | --- | --- | --- |
 | Entry | `src/main.ts` | `Action.run(program, { layer: MainLive })` |
-| Program | `src/program.ts` | Nine-step Effect pipeline + helpers (`installBiome`, `installDependencies`, `setupPackageManager`, `setOutputs`) |
-| Post | `src/post.ts` | Read `CacheState`, save cache when no exact hit; catches all errors and defects |
+| Program | `src/program.ts` | Sequential Effect pipeline + helpers (`installBiome`, `installDependencies`, `setupPackageManager`, `setOutputs`, `turboLocalCachePaths`) |
+| Post | `src/post.ts` | Reap turbo server, then save cache when no exact hit; catches all errors and defects |
+| Turbo server | `src/turbo-server.ts` | Detached embedded turbo remote-cache server entry |
+| Turbo cache | `src/services/turbo-cache/{activation,codec,handler,lifecycle,apply}.ts` | Embedded remote cache; see [turbo remote cache](./turbo-remote-cache.md) |
+| Summary | `src/services/summary.ts` | `buildRuntimeSummary` job-summary panel + step-line formatters |
 | Layers | `src/layers/app.ts` | `MainLive` layer composition |
-| State | `src/state.ts` | `CacheState` (`Schema.Class`) and `STATE_KEYS` |
+| State | `src/state.ts` | `CacheState`, `TurboServerState` (`Schema.Class`) and `STATE_KEYS` |
 | Config | `src/services/config-loader.ts` | `loadPackageJson`, `parseDevEngines`, `detectBiome`, `detectTurbo` |
 | Cache | `src/services/cache.ts` | Key generation, restore/save, lockfile detection via `Glob`, cache path resolution |
 | Runtime installer | `src/services/runtime-installer.ts` | `RuntimeInstaller` (`Context.Tag` class), `makeRuntimeInstaller`, per-runtime layers |
 | Schemas | `src/schemas/domain.ts` | `AbsoluteVersion`, `DevEngines`, typed name literals |
 | Errors | `src/errors/errors.ts` | `Schema.TaggedError` hierarchy + `ActionError` union |
 | Descriptors | `src/descriptors/{node,bun,deno,biome}.ts` | Per-runtime download descriptors; Biome `binaryMap` |
-| Build config | `action.config.ts` | `@savvy-web/github-action-builder` entry points, minify and ignore list |
+| Build config | `action.config.ts` | `@savvy-web/github-action-builder` entry points (incl. `workers`), minify and ignore list |
 
 ### Architecture diagram
 
@@ -96,17 +101,25 @@ action.yml (node24 runtime)
     |       |     |
     |       |     +-- services/config-loader.ts -> schemas/domain.ts
     |       |     +-- services/cache.ts ----------> Glob (lockfiles + hashFiles)
+    |       |     +-- services/turbo-cache/apply.ts -> spawn dist/turbo-server.js (detached)
     |       |     +-- services/runtime-installer.ts -> descriptors/{node,bun,deno}.ts
     |       |     +-- program.installBiome --------> descriptors/biome.ts
     |       |     +-- program.{setupPackageManager,installDependencies,setOutputs}
+    |       |     +-- services/summary.ts ---------> outputs.summary (job panel)
     |       |
     |       +-- src/layers/app.ts    (MainLive composition)
+    |
+    +-- turbo-server: dist/turbo-server.js (detached process, spawned by main)
+    |       |
+    |       v
+    |   services/turbo-cache/handler.ts over BlobStore (github | s3)
     |
     +-- post: dist/post.js
             |
             v
         src/post.ts
             |
+            +-- services/turbo-cache (killProcess on saved pid)
             +-- services/cache.ts (saveCache)
             +-- catchAll + catchAllDefect (post never fails workflow)
 ```
@@ -174,7 +187,7 @@ Cache restore (`Effect.catchTag("CacheError", ...)`), Biome install (`Effect.cat
 
 ### Cross-phase state via ActionState
 
-GitHub Actions runs main and post in separate processes. `ActionState.save(STATE_KEYS.cacheState, value, CacheState)` in main; `ActionState.getOptional(STATE_KEYS.cacheState, CacheState)` in post. `CacheState` is a `Schema.Class` so it round-trips cleanly through the runner state file. See `src/state.ts`.
+GitHub Actions runs main and post in separate processes. `ActionState.save(STATE_KEYS.cacheState, value, CacheState)` in main; `ActionState.getOptional(STATE_KEYS.cacheState, CacheState)` in post. `CacheState` is a `Schema.Class` so it round-trips cleanly through the runner state file. The same mechanism carries `TurboServerState` (the embedded server's pid) so post can reap the detached process. See `src/state.ts` and [turbo remote cache](./turbo-remote-cache.md).
 
 ---
 
@@ -182,17 +195,18 @@ GitHub Actions runs main and post in separate processes. `ActionState.save(STATE
 
 ### Pipeline steps (`src/program.ts`)
 
-The main pipeline runs nine sequential steps inside a single `Effect.gen`. Each is wrapped in `Step.groupStep(title, effect)` (quiet-on-success, verbose-on-failure):
+The main pipeline runs sequential steps inside a single `Effect.gen`. Most are wrapped in `Step.groupStep(title, effect)` (quiet-on-success, verbose-on-failure). See `src/program.ts` for the exact order; the shape is:
 
-1. **Detect configuration** -- load `package.json`, decode `devEngines`, detect Biome and Turbo.
-2. **Compute cache config** -- determine active package managers, merge cache paths, find lockfiles via `Glob.glob`.
-3. **Restore cache** -- generate cache key, restore via V2 Twirp protocol; non-fatal.
-4. **Install runtimes** -- `Effect.forEach` over runtimes with `Effect.provide(installerLayerFor(rt.name))`.
-5. **Setup package manager** -- corepack (pnpm/yarn), `npm install -g` (npm), no-op (bun/deno).
-6. **Install dependencies** -- lockfile-aware install command; skipped for Deno; opt-out via `install-deps=false`.
-7. **Install Biome** -- direct binary download; non-fatal.
-8. **Set outputs** -- versions, cache status, lockfiles, cache paths.
-9. **Summary** -- final status group.
+- **Detect configuration** -- load `package.json`, decode `devEngines`, detect Biome and Turbo.
+- **Compute cache config** -- determine active package managers, merge cache paths (incl. `**/.turbo/cache` when Turbo is detected), find lockfiles via `Glob.glob`.
+- **Turbo remote cache** -- resolve and apply the embedded cache strategy; spawn the detached server when applicable; non-fatal. See [turbo remote cache](./turbo-remote-cache.md).
+- **Restore cache** -- generate cache key, restore via V2 Twirp protocol; non-fatal.
+- **Install runtimes** -- `Effect.forEach` over runtimes with `Effect.provide(installerLayerFor(rt.name))`.
+- **Setup package manager** -- corepack (pnpm/yarn), `npm install -g` (npm), no-op (bun/deno).
+- **Install dependencies** -- lockfile-aware install command; skipped for Deno; opt-out via `install-deps=false`.
+- **Install Biome** -- direct binary download; non-fatal.
+- **Set outputs and job summary** -- versions, cache status, lockfiles, cache paths, turbo backend/port; render the job-summary panel (non-fatal).
+- **Summary** -- final status group.
 
 ### Error hierarchy
 
@@ -272,6 +286,8 @@ Main                                  Post
 | `ToolInstaller` | Download, extract, cache tools | services/runtime-installer.ts, program.installBiome |
 | `CommandRunner` | Process execution | services/cache.ts, program.ts, services/runtime-installer.ts |
 | `Glob` | Glob expansion + hash-of-hashes | services/cache.ts (`findLockFiles`, `hashFiles`) |
+| `BlobStore` | Blob put/get/has (GitHub cache or S3/SigV4) | turbo-server.ts, services/turbo-cache/handler.ts |
+| `GithubMarkdown` | Job-summary markdown helpers | services/summary.ts |
 
 ### `@effect/platform` services
 
@@ -285,6 +301,7 @@ Main                                  Post
 
 - [Effect service model](./effect-service-model.md) -- service tags, error types, Step.\* namespace, test layers.
 - [Caching strategy](./caching-strategy.md) -- cache key formula, lockfile detection, Glob integration.
+- [Turbo remote cache](./turbo-remote-cache.md) -- embedded server, activation tree, codec, cross-phase teardown.
 - [Runtime installation](./runtime-installation.md) -- `RuntimeInstaller` tag class, descriptors, PM setup.
 - [Build and distribution](./build-and-distribution.md) -- builder version, ignore list, dist management.
 - [Testing strategy](./testing-strategy.md) -- library Test layers, hand-rolled mock cases, fixture tests.

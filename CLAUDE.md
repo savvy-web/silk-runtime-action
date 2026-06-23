@@ -88,14 +88,14 @@ Repositories using this action **MUST** have a `package.json` in their root dire
 **Technical stack:**
 
 * **Runtime framework:** [Effect](https://effect.website) for typed errors, dependency injection, and service composition
-* **GitHub Action services:** `@savvy-web/github-action-effects` ^2.0.0 — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
-* **Build tool:** `@savvy-web/github-action-builder` ^0.7.1 (rsbuild-based) configured via `action.config.ts`
-* **Cross-phase state:** `src/state.ts` defines `CacheState` (Schema.Class) and `STATE_KEYS`; `main` writes, `post` reads.
+* **GitHub Action services:** `@savvy-web/github-action-effects` ^2.2.2 — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, `BlobStore` (GitHub Actions cache / S3 SigV4 backends) backing the embedded turbo remote cache, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
+* **Build tool:** `@savvy-web/github-action-builder` ^0.7.12 (rsbuild-based) configured via `action.config.ts`; `entries.workers` bundles the detached `src/turbo-server.ts` as a third entry.
+* **Cross-phase state:** `src/state.ts` defines `CacheState` and `TurboServerState` (Schema.Class) plus `STATE_KEYS`; `main` writes, `post` reads.
 * **Platform I/O:** `@effect/platform` (FileSystem)
 * **Action type:** Compiled Node.js action (uses `node24` runtime, see `action.yml`)
-* **Package manager:** pnpm 10.33.4 (specified in package.json)
-* **Node.js version:** 26.2.0 (specified in package.json devEngines.runtime)
-* **Linting:** Biome 2.4.15 with strict rules
+* **Package manager:** pnpm 11.8.0 (specified in package.json)
+* **Node.js version:** 26.3.1 (specified in package.json devEngines.runtime)
+* **Linting:** Biome 2.4.16 with strict rules
 * **Testing:** Vitest with Effect test layers + fixture-based workflow tests
 * **Type checking:** TypeScript with native preview build (`@typescript/native-preview`)
 * **Direct dependencies:** Zero `@actions/*` packages -- all GitHub Actions integration is provided by `github-action-effects`
@@ -160,7 +160,7 @@ git commit -m "feat: add new feature"
 
 ## Dogfooding First-Party Dependencies
 
-We author every dependency in the table below, so a bug or missing API in one can be fixed **in its own repo** and dogfooded through this action before publishing. The action is a **bundled** artifact — `pnpm build` inlines every dependency into `dist/{main,post}.js` — so once a local library build is linked and this repo is rebuilt, the change is baked into the committed `dist`. The integration runs the committed `dist`, **not** `node_modules`.
+We author every dependency in the table below, so a bug or missing API in one can be fixed **in its own repo** and dogfooded through this action before publishing. The action is a **bundled** artifact — `pnpm build` inlines every dependency into `dist/{main,post,turbo-server}.js` — so once a local library build is linked and this repo is rebuilt, the change is baked into the committed `dist`. The integration runs the committed `dist`, **not** `node_modules`.
 
 | Package | Repo | Local checkout |
 | --- | --- | --- |
@@ -247,6 +247,8 @@ For deep architectural details, rationale, and design decisions:
   Load when working with cache keys, lockfiles, or cross-phase state.
 * **Build and Distribution:** `@./.claude/design/silk-runtime-action/build-and-distribution.md`
   Load when modifying build config, dist management, or release process.
+* **Turbo Remote Cache:** `@./.claude/design/silk-runtime-action/turbo-remote-cache.md`
+  Load when working on the embedded turbo cache server, activation/backend selection, the artifact codec/handler, or server lifecycle and teardown.
 * **Testing Strategy:** `@./.claude/design/silk-runtime-action/testing-strategy.md`
   Load when writing tests, understanding mock patterns, or fixture setup.
 
@@ -258,13 +260,16 @@ For deep architectural details, rationale, and design decisions:
 │   ├── main.ts                # 4-line Action.run(program, { layer: MainLive })
 │   ├── post.ts                # post Effect + PostLive + Action.run
 │   ├── program.ts             # main Effect program
-│   ├── state.ts               # CacheState Schema.Class + STATE_KEYS
+│   ├── turbo-server.ts        # detached turbo remote-cache server (third bundle)
+│   ├── state.ts               # CacheState + TurboServerState Schema.Class + STATE_KEYS
 │   ├── layers/
 │   │   └── app.ts             # MainLive composition
 │   ├── services/
 │   │   ├── runtime-installer.ts + .test.ts
 │   │   ├── cache.ts            + .test.ts
-│   │   └── config-loader.ts    + .test.ts
+│   │   ├── config-loader.ts    + .test.ts
+│   │   ├── summary.ts          + .test.ts   # job-summary panel + step-line formatters
+│   │   └── turbo-cache/        # codec, activation, handler, lifecycle, apply (+ .test.ts)
 │   ├── descriptors/
 │   │   ├── node.ts / bun.ts / deno.ts / biome.ts
 │   │   └── descriptors.test.ts
@@ -273,7 +278,7 @@ For deep architectural details, rationale, and design decisions:
 │   └── errors/
 │       └── errors.ts           + errors.test.ts
 ├── dist/
-│   ├── main.js / post.js / package.json
+│   ├── main.js / post.js / turbo-server.js / package.json
 ├── __fixtures__/              # workflow integration test fixtures
 ├── .github/
 │   ├── actions/local/         # mirrored bundled action for local testing
@@ -441,13 +446,14 @@ Uses Changesets for versioning:
 
 ## Build Process
 
-The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` ^0.7.1 (rsbuild-based).
+The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` ^0.7.12 (rsbuild-based).
 
 ### What Gets Built
 
-1. **Compile TypeScript to JavaScript** - Bundles two entry points:
+1. **Compile TypeScript to JavaScript** - Bundles three entry points:
    * `src/main.ts` → `dist/main.js` (main action logic)
    * `src/post.ts` → `dist/post.js` (post-action cache save)
+   * `src/turbo-server.ts` → `dist/turbo-server.js` (detached turbo remote-cache server, via `entries.workers`)
 
 2. **Bundle Configuration** (from `action.config.ts`):
    * **Minification:** Enabled
@@ -465,12 +471,14 @@ The build automatically creates a **local copy** of the action at `.github/actio
 dist/                           # Production build (committed)
 ├── main.js                     # Main action bundle
 ├── post.js                     # Post-action bundle
+├── turbo-server.js             # Detached turbo cache server bundle
 └── package.json                # Module marker
 
 .github/actions/local/          # Local testing copy (committed)
 └── dist/
     ├── main.js
     ├── post.js
+    ├── turbo-server.js
     └── package.json
 ```
 

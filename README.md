@@ -1,7 +1,7 @@
 # silk-runtime-action
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-4caf50.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/silk-update-action)
+[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/silk-runtime-action)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-green?logo=node.js)](https://nodejs.org)
 
 Automatically detect and set up JavaScript runtime environments in GitHub Actions from your `package.json` `devEngines` configuration. One action for Node.js, Bun, and Deno with intelligent package manager detection and dependency caching.
@@ -106,7 +106,7 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `turbo-enabled` | Whether Turbo configuration was detected (`true` \| `false`) |
 | `turbo-cache-backend` | Active turbo cache backend (`github` \| `s3` \| `remote` \| `none`) |
 | `turbo-cache-port` | Local port the embedded turbo cache server bound to (empty when not started) |
-| `cache-hit` | Cache status (`true` \| `partial` \| `false` \| `n/a`) |
+| `cache-hit` | Cache status (`true` \| `partial` \| `false`) |
 | `lockfiles` | Comma-separated list of detected lockfiles |
 | `cache-paths` | Comma-separated list of cached paths |
 
@@ -218,6 +218,10 @@ artifact cache (`**/.turbo/cache`) is also file-cached as a fast local-restore
 layer, while `**/.turbo/runs` and the other `.turbo` subdirectories are excluded.
 To use Vercel Remote Cache instead, supply `turbo-token` + `turbo-team`
 (passthrough mode).
+
+## Job summary
+
+The action writes a job-summary panel to the GitHub run, summarizing the runtimes and package manager it set up, whether Biome was installed, the active Turbo cache backend and mode, the dependency-cache hit status and the install outcome, with a collapsed section listing the cache key and lockfiles. Collapsed step lines also report their result inline, so the detected configuration, the Turbo cache backend and the cache hit are visible without expanding each group. Writing the summary is non-fatal — if it fails the action logs a warning and continues.
 
 ## Troubleshooting
 

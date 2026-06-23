@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: meta
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-06-23
+last-synced: 2026-06-23
 completeness: 100
 related: []
 dependencies: []
@@ -32,7 +32,8 @@ Navigation index for all design documentation in the silk-runtime-action project
 
 | Document | Status | Completeness | Description |
 | --- | --- | --- | --- |
-| [build-and-distribution.md](./build-and-distribution.md) | current | 88% | `github-action-builder` ^0.7.1, cyclonedx `ignore` list, dist management |
+| [build-and-distribution.md](./build-and-distribution.md) | current | 88% | `github-action-builder` ^0.7.1, cyclonedx `ignore` list, three-entry dist |
+| [turbo-remote-cache.md](./turbo-remote-cache.md) | current | 90% | Embedded turbo remote cache: activation tree, detached server, codec, teardown |
 
 ## Testing
 
@@ -42,7 +43,7 @@ Navigation index for all design documentation in the silk-runtime-action project
 
 ## Statistics
 
-- **Total documents:** 6
-- **Current:** 6
+- **Total documents:** 7
+- **Current:** 7
 - **Average completeness:** 91%
-- **Last updated:** 2026-05-28
+- **Last updated:** 2026-06-23
