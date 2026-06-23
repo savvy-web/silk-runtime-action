@@ -164,21 +164,37 @@ We author every dependency in the table below, so a bug or missing API in one ca
 
 | Package | Repo | Local checkout |
 | --- | --- | --- |
-| `@savvy-web/github-action-effects` | `savvy-web/github-action-effects` | `../github-action-effects` |
-| `@savvy-web/github-action-builder` | `savvy-web/github-action-builder` | `../github-action-builder` |
+| `@savvy-web/github-action-effects` | `savvy-web/systems` | `../systems/packages/github-action-effects` |
+| `@savvy-web/github-action-builder` | `savvy-web/systems` | `../systems/packages/github-action-builder` |
 
-Both are direct-only dependencies with no transitive duplication path, so `pnpm link ../<repo>` is the linking mechanism for either. The `pnpm-workspace.yaml` `overrides` mechanism is not needed here unless a future first-party transitive dependency is introduced.
+Both packages live inside the `systems` monorepo. Both are direct-only dependencies with no transitive duplication path, so `pnpm link ../<path>` is the linking mechanism for either. The `pnpm-workspace.yaml` `overrides` mechanism is not needed here unless a future first-party transitive dependency is introduced.
 
 **Procedure:**
 
-1. **Build the library:** in its repo run `pnpm ci:build` (produces `dist/dev` link target).
-2. **Link it:** `pnpm link ../github-action-effects` here, then `pnpm install`.
+1. **Build the library:** in the `systems` repo, `cd packages/<name>` and run `node savvy.build.ts --target dev` (produces the `dist/dev` link target).
+2. **Link it:** `pnpm link ../systems/packages/github-action-effects` here, then `pnpm install`.
 3. **Keep the declared range correct** in this repo's `package.json` for the eventual unlinked install.
-4. **Iterate:** edit library source → `pnpm ci:build` there → `pnpm typecheck` + `pnpm test` here → `pnpm build` here → commit (`src` + `dist` + changeset) → push `dev`.
+4. **Iterate:** edit library source → `node savvy.build.ts --target dev` there → `pnpm typecheck` + `pnpm test` here → `pnpm build` here → commit (`src` + `dist` + changeset) → push `dev`.
 5. **Library edits ship separately:** they land on the library's own branch and release with its next published version.
 6. **Final step, only AFTER the dogfooded version publishes:** remove the link, pin the published range, `pnpm install`.
 
 Commits must be GPG-signed with the GitHub-verified key for `C. Spencer Beggs <spencer@savvyweb.systems>` or the signature ruleset rejects them.
+
+### `**/.turbo` is no longer file-cached
+
+The `**/.turbo` directory is **not** added to the GitHub Actions file cache. The
+embedded remote cache server (or Vercel passthrough) replaces it — Turborepo
+writes artifacts to the remote cache API instead of local `.turbo` directories,
+so file-caching them is redundant and wasteful.
+
+### Known limitation: `ACTIONS_RUNTIME_TOKEN` lifetime
+
+The embedded GitHub Actions cache backend captures `ACTIONS_RUNTIME_TOKEN` at
+server spawn time. This token is a short-lived JWT issued by the GitHub Actions
+backend. On very long-running jobs, late cache-write requests from Turborepo may
+receive a `401 Unauthorized` response if the token has expired before the job
+finishes. The S3 backend is unaffected because it uses its own long-lived
+credentials rather than the GitHub runtime token.
 
 ## Development & Release Cycle
 
@@ -279,9 +295,28 @@ are read exclusively from `devEngines` — there are no explicit version inputs.
 
 ### Turbo Remote Cache Inputs
 
-* **`turbo-token`** - Turbo remote cache token (optional, for Vercel Remote
-  Cache)
-* **`turbo-team`** - Turbo team slug (optional, for Vercel Remote Cache)
+* **`turbo-cache`** - Turbo remote cache mode (`auto` | `off`). `auto` starts
+  an embedded cache server when `turbo.json` is present and no external Vercel
+  creds are set. Default: `"auto"`.
+* **`turbo-cache-prefix`** - Key prefix/namespace for embedded turbo cache
+  artifacts. Default: `""`.
+* **`turbo-token`** - Turbo remote cache token. When provided together with
+  `turbo-team`, selects passthrough (external Vercel) mode and disables the
+  embedded server.
+* **`turbo-team`** - Turbo team slug. When provided together with `turbo-token`,
+  selects passthrough (external Vercel) mode and disables the embedded server.
+* **`turbo-s3-bucket`** - S3 bucket for the embedded turbo cache backend.
+  Presence selects the S3 backend.
+* **`turbo-s3-region`** - S3 region for the embedded turbo cache backend.
+* **`turbo-s3-endpoint`** - Custom S3 endpoint (R2/MinIO/Spaces). Leave empty
+  for AWS S3.
+* **`turbo-s3-access-key-id`** - S3 access key ID for the embedded turbo cache
+  backend.
+* **`turbo-s3-secret-access-key`** - S3 secret access key for the embedded
+  turbo cache backend.
+* **`turbo-s3-session-token`** - Optional S3 session token for temporary
+  credentials.
+* **`turbo-s3-prefix`** - Optional key prefix within the S3 bucket.
 
 ### Cache Inputs
 
@@ -323,6 +358,12 @@ are read exclusively from `devEngines` — there are no explicit version inputs.
 * **`biome-enabled`** - Whether Biome was installed (`"true"` | `"false"`)
 * **`turbo-enabled`** - Whether Turbo configuration was detected (`"true"` |
   `"false"`)
+* **`turbo-cache-backend`** - Active turbo cache backend (`"github"` | `"s3"` |
+  `"remote"` | `"none"`). `"github"` = embedded GitHub Actions cache backend;
+  `"s3"` = embedded S3 backend; `"remote"` = passthrough to external Vercel;
+  `"none"` = turbo cache disabled or turbo not detected.
+* **`turbo-cache-port`** - Local port the embedded turbo cache server bound to.
+  Empty when the embedded server was not started.
 
 ### Cache Outputs
 
