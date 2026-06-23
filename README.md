@@ -211,11 +211,13 @@ Cache hit status is available in the `cache-hit` output.
 
 ### Turbo build cache
 
-`**/.turbo` is **not** added to the file cache. When `turbo.json` is detected,
-the action starts an embedded remote cache server (GitHub Actions cache or S3
-backend) that Turborepo writes to directly. The `turbo-cache-backend` output
-reports which backend is active. To use Vercel Remote Cache instead, supply
-`turbo-token` + `turbo-team` (passthrough mode).
+When `turbo.json` is detected, the action starts an embedded remote cache server
+(GitHub Actions cache or S3 backend) that Turborepo writes to directly; the
+`turbo-cache-backend` output reports which backend is active. Turbo's local
+artifact cache (`**/.turbo/cache`) is also file-cached as a fast local-restore
+layer, while `**/.turbo/runs` and the other `.turbo` subdirectories are excluded.
+To use Vercel Remote Cache instead, supply `turbo-token` + `turbo-team`
+(passthrough mode).
 
 ## Troubleshooting
 

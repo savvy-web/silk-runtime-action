@@ -180,12 +180,16 @@ Both packages live inside the `systems` monorepo. Both are direct-only dependenc
 
 Commits must be GPG-signed with the GitHub-verified key for `C. Spencer Beggs <spencer@savvyweb.systems>` or the signature ruleset rejects them.
 
-### `**/.turbo` is no longer file-cached
+### Turbo file caching: `**/.turbo/cache` only
 
-The `**/.turbo` directory is **not** added to the GitHub Actions file cache. The
-embedded remote cache server (or Vercel passthrough) replaces it — Turborepo
-writes artifacts to the remote cache API instead of local `.turbo` directories,
-so file-caching them is redundant and wasteful.
+The embedded remote cache server (or Vercel passthrough) is the primary cache —
+Turborepo writes artifacts to the remote cache API. As a complementary fast
+local-restore layer, only `**/.turbo/cache` (Turbo's local artifact cache) is
+added to the GitHub Actions file cache. `**/.turbo/runs` (run summaries),
+`.turbo/cookies`, and `.turbo/daemon` are deliberately excluded — a restored
+stale run summary would break "latest run = current run" detection by tooling
+that parses `turbo --summarize` output. This selection lives in
+`turboLocalCachePaths` in `src/program.ts`.
 
 ### Known limitation: `ACTIONS_RUNTIME_TOKEN` lifetime
 

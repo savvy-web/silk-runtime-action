@@ -311,6 +311,13 @@ export const setOutputs = (
 		yield* outputs.set("cache-paths", cachePaths.join(","));
 	});
 
+/**
+ * File-cache paths for Turbo's local artifact cache. Only `.turbo/cache` (the
+ * task-output cache) is included; `.turbo/runs` (run summaries),
+ * `.turbo/cookies`, and `.turbo/daemon` are excluded.
+ */
+export const turboLocalCachePaths = (turboDetected: boolean): string[] => (turboDetected ? ["**/.turbo/cache"] : []);
+
 // ---------------------------------------------------------------------------
 // Main pipeline
 // ---------------------------------------------------------------------------
@@ -368,8 +375,12 @@ export const program = Effect.gen(function* () {
 	const cacheBust = yield* Config.string("cache-bust").pipe(Config.withDefault(""));
 	const cacheBustValue = cacheBust && cacheBust !== "false" ? cacheBust : undefined;
 
-	// Cache paths no longer include **/.turbo — the turbo remote cache replaces it.
-	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths];
+	// Turbo's local artifact cache (.turbo/cache) is file-cached as a fast
+	// local-restore layer alongside the embedded remote cache. .turbo/runs
+	// (run summaries) is deliberately excluded — a restored stale summary would
+	// break "latest run = current run" detection by tools that parse
+	// `turbo --summarize` output; cookies/daemon are ephemeral.
+	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths, ...turboLocalCachePaths(config.turbo)];
 
 	yield* Effect.logDebug(`Active PMs: ${activePackageManagers.join(", ")}`);
 	yield* Effect.logDebug(`Lockfiles found: ${lockfiles.length > 0 ? lockfiles.join(", ") : "(none)"}`);

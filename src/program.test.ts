@@ -18,6 +18,7 @@ import {
 	installDependencies,
 	setOutputs,
 	setupPackageManager,
+	turboLocalCachePaths,
 } from "./program.js";
 import type { PackageManager } from "./services/cache.js";
 import { findLockFiles, getCombinedCacheConfig, restoreCache } from "./services/cache.js";
@@ -108,7 +109,7 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	const cacheConfig = yield* getCombinedCacheConfig(activePackageManagers, runtimeEntries);
 	const lockfiles = yield* findLockFiles(cacheConfig.lockfilePatterns);
 
-	const finalCachePaths = [...cacheConfig.cachePaths];
+	const finalCachePaths = [...cacheConfig.cachePaths, ...turboLocalCachePaths(config.turbo)];
 
 	// Restore cache (non-fatal)
 	const cacheResult = yield* Step.groupStep(
@@ -374,6 +375,22 @@ describe("main pipeline", () => {
 // ---------------------------------------------------------------------------
 // getActivePackageManagers tests
 // ---------------------------------------------------------------------------
+
+describe("turboLocalCachePaths", () => {
+	it("caches .turbo/cache when turbo is detected", () => {
+		expect(turboLocalCachePaths(true)).toEqual(["**/.turbo/cache"]);
+	});
+
+	it("excludes .turbo/runs and other subdirectories (only .turbo/cache)", () => {
+		const paths = turboLocalCachePaths(true);
+		expect(paths.some((p) => p.includes(".turbo/runs"))).toBe(false);
+		expect(paths).toEqual(["**/.turbo/cache"]);
+	});
+
+	it("is empty when turbo is not detected", () => {
+		expect(turboLocalCachePaths(false)).toEqual([]);
+	});
+});
 
 describe("getActivePackageManagers", () => {
 	it("includes primary PM for node runtime", () => {

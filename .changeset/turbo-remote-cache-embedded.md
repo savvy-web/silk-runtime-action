@@ -40,6 +40,8 @@ to the external Vercel Remote Cache instead of one of the local backends.
 | `turbo-cache-backend` | Active backend (`github`, `s3`, `remote`, or `none`) |
 | `turbo-cache-port` | Port the local server is listening on |
 
-**Behavior change:** `**/.turbo` is no longer included in the file-level
-dependency cache. The embedded remote cache server replaces that mechanism with
-artifact-level caching that is faster and more granular.
+**Behavior change:** the embedded remote cache server provides artifact-level
+caching (faster and more granular than the old whole-`**/.turbo` file cache).
+Turbo's local artifact cache (`**/.turbo/cache`) is still file-cached as a fast
+local-restore layer, but `**/.turbo/runs` (run summaries) and the other `.turbo`
+subdirectories are no longer cached.
