@@ -129,7 +129,7 @@ Then use the action in your workflow:
 
 ```yaml
 steps:
-  - uses: actions/checkout@v6
+  - uses: actions/checkout@v7
   - uses: savvy-web/silk-runtime-action@v1
     # That's it! Reads everything from package.json
   - run: pnpm test
