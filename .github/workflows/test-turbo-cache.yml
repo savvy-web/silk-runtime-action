@@ -44,22 +44,29 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a cross-job remote cache hit"; exit 1; }
 
-  # Job 3: S3 backend via a MinIO service container — real SigV4 signing path.
+  # Job 3: S3 backend via MinIO — real SigV4 signing path.
+  # MinIO runs via `docker run` rather than a services: container so we can use
+  # the official minio/minio image, which needs a `server` command that service
+  # containers cannot specify (bitnami/minio:latest was removed from Docker Hub).
   s3-double-build:
     runs-on: ubuntu-latest
-    services:
-      minio:
-        image: bitnami/minio:latest
-        ports: ["9000:9000"]
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_DEFAULT_BUCKETS: turbo-cache
     defaults:
       run:
         working-directory: __fixtures__/turbo-monorepo
     steps:
       - uses: actions/checkout@v7
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9000/minio/health/ready; then echo "MinIO ready"; break; fi
+            if [ "$i" -eq 30 ]; then echo "MinIO did not become ready" >&2; docker logs minio; exit 1; fi
+            sleep 1
+          done
+          docker run --rm --network host --entrypoint sh minio/mc -c \
+            "mc alias set m http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing m/turbo-cache"
       - uses: ./.github/actions/local
         with:
           turbo-cache: auto
