@@ -19,6 +19,10 @@ CI runs. Two backends are supported:
 When `turbo-token` + `turbo-team` are both set the server acts as a passthrough
 to the external Vercel Remote Cache instead of one of the local backends.
 
+The server round-trips Turbo's `x-artifact-duration` header (stored on PUT,
+returned on GET) so Turborepo reports an accurate `timeSaved` on remote cache
+hits, matching local-hit behavior.
+
 **New inputs:**
 
 | Input | Description |

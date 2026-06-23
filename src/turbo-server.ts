@@ -45,11 +45,14 @@ const server = createServer((req, res) => {
 	const chunks: Array<Buffer> = [];
 	req.on("data", (c: Buffer) => chunks.push(c));
 	req.on("end", () => {
+		const durationHeader = req.headers["x-artifact-duration"];
+		const artifactDuration = typeof durationHeader === "string" ? Number(durationHeader) || 0 : 0;
 		const treq: TurboRequest = {
 			method: req.method ?? "GET",
 			path: req.url ?? "/",
 			authorization: req.headers.authorization,
 			artifactTag: typeof req.headers["x-artifact-tag"] === "string" ? req.headers["x-artifact-tag"] : undefined,
+			artifactDuration,
 			body: new Uint8Array(Buffer.concat(chunks)),
 		};
 		runtime

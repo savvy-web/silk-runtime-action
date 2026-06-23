@@ -14,6 +14,7 @@ const req = (over: Partial<TurboRequest>): TurboRequest => ({
 	path: "/",
 	authorization: "Bearer tok",
 	artifactTag: undefined,
+	artifactDuration: 0,
 	body: new Uint8Array(),
 	...over,
 });
@@ -35,7 +36,7 @@ describe("makeTurboHandler", () => {
 		expect(r.status).toBe(401);
 	});
 
-	it("PUT then GET round-trips body and tag under the prefixed key", async () => {
+	it("PUT then GET round-trips body, tag, and duration under the versioned prefixed key", async () => {
 		const state = BlobStoreTest.empty();
 		const put = await run(
 			state,
@@ -43,15 +44,19 @@ describe("makeTurboHandler", () => {
 				method: "PUT",
 				path: "/v8/artifacts/h1",
 				artifactTag: "sig",
+				artifactDuration: 1980,
 				body: new Uint8Array([7, 8, 9]),
 			}),
 		);
 		expect(put.status).toBe(202);
-		expect(state.entries.has("p/h1")).toBe(true);
+		// key is namespaced by the artifact frame version (avoids reading old-format blobs)
+		expect(state.entries.has("p/v2/h1")).toBe(true);
 
 		const get = await run(state, req({ method: "GET", path: "/v8/artifacts/h1" }));
 		expect(get.status).toBe(200);
 		expect(get.headers["x-artifact-tag"]).toBe("sig");
+		// x-artifact-duration must round-trip so Turbo computes a real timeSaved on remote hits
+		expect(get.headers["x-artifact-duration"]).toBe("1980");
 		expect(get.body).toEqual(new Uint8Array([7, 8, 9]));
 	});
 
