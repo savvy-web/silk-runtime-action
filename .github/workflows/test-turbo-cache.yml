@@ -1,0 +1,79 @@
+name: Test Turbo Cache
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  # Job 1: within-job remote round-trip (proves the server mechanism).
+  double-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: __fixtures__/turbo-monorepo
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/local
+        with:
+          turbo-cache: auto
+      - name: First build (populates remote cache)
+        run: pnpm exec turbo run build --remote-only
+      - name: Clear local turbo state
+        run: rm -rf .turbo node_modules/.cache/turbo **/.turbo
+      - name: Second build (must be a remote cache hit)
+        run: |
+          OUT=$(pnpm exec turbo run build --remote-only)
+          echo "$OUT"
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a remote cache hit"; exit 1; }
+
+  # Job 2: a SEPARATE job that depends on job 1 — this is the real requirement
+  # (dependent build steps in separate jobs sharing cache). The GitHub cache
+  # entries job 1 committed must be visible here on a cold runner.
+  dependent-job-hit:
+    needs: double-build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: __fixtures__/turbo-monorepo
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/local
+        with:
+          turbo-cache: auto
+      - name: Build on a cold runner (must hit cache populated by the prior job)
+        run: |
+          OUT=$(pnpm exec turbo run build --remote-only)
+          echo "$OUT"
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a cross-job remote cache hit"; exit 1; }
+
+  # Job 3: S3 backend via a MinIO service container — real SigV4 signing path.
+  s3-double-build:
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: bitnami/minio:latest
+        ports: ["9000:9000"]
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: turbo-cache
+    defaults:
+      run:
+        working-directory: __fixtures__/turbo-monorepo
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/local
+        with:
+          turbo-cache: auto
+          turbo-s3-bucket: turbo-cache
+          turbo-s3-region: us-east-1
+          turbo-s3-endpoint: http://127.0.0.1:9000
+          turbo-s3-access-key-id: minioadmin
+          turbo-s3-secret-access-key: minioadmin
+      - name: First build (populates S3)
+        run: pnpm exec turbo run build --remote-only
+      - name: Clear local turbo state
+        run: rm -rf .turbo node_modules/.cache/turbo **/.turbo
+      - name: Second build (must be an S3 cache hit)
+        run: |
+          OUT=$(pnpm exec turbo run build --remote-only)
+          echo "$OUT"
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected an S3 remote cache hit"; exit 1; }
