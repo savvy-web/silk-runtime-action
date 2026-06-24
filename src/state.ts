@@ -22,8 +22,18 @@ export class CacheState extends Schema.Class<CacheState>("CacheState")({
 }) {}
 
 /**
+ * Turbo cache server state persisted from main to post so post can kill it.
+ */
+export class TurboServerState extends Schema.Class<TurboServerState>("TurboServerState")({
+	pid: Schema.Number,
+	port: Schema.Number,
+	backend: Schema.String,
+}) {}
+
+/**
  * Keys used with `ActionState.save/get`.
  */
 export const STATE_KEYS = {
 	cacheState: "cache-state",
+	turboServerState: "turbo-server-state",
 } as const;

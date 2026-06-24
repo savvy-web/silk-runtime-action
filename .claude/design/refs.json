@@ -1,0 +1,47 @@
+{
+	"version": 1,
+	"refs": [
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/architecture.md",
+			"hash": "2d62b33e995d416917e3076ddc6d545436b8f0a2c52eecd183c9457bf6fd30af",
+			"recordedAt": "2026-06-23"
+		},
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/build-and-distribution.md",
+			"hash": "70f5dc5e7c111ce2651270a291e43b85dcee1b78aea69f5480e023f7079e4397",
+			"recordedAt": "2026-06-23"
+		},
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/caching-strategy.md",
+			"hash": "5460fae42e52fa9746f40eeb174f4d6f22733987522f01a5a4ac3c4eb5604d6b",
+			"recordedAt": "2026-06-23"
+		},
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/effect-service-model.md",
+			"hash": "7d731f31d70e5d7622202fd9eb2ddc6d2b87ca59b2eadddad30ef552795e603c",
+			"recordedAt": "2026-06-23"
+		},
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/runtime-installation.md",
+			"hash": "50baa7c7eb4e8dbdaec7cf6fadbb7214b26f95ef21c300d1f4684bc401fb7d82",
+			"recordedAt": "2026-06-23"
+		},
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/testing-strategy.md",
+			"hash": "207a6d625507b467ced4f33114c0792de047f9db75e2eb379b4ffa3104d3f731",
+			"recordedAt": "2026-06-23"
+		},
+		{
+			"source": "CLAUDE.md",
+			"target": ".claude/design/silk-runtime-action/turbo-remote-cache.md",
+			"hash": "dc2e3085f9c54c255dd12009c64fbd030d37649b8cc2dc8535617efee5fd1292",
+			"recordedAt": "2026-06-23"
+		}
+	]
+}

@@ -8,12 +8,48 @@ inputs:
     description: Biome version to install (e.g., '2.3.14'). If not provided, auto-detects from biome.jsonc/biome.json $schema field. Leave empty to skip.
     required: false
     default: ""
+  turbo-cache:
+    description: Turbo remote cache mode (auto | off). auto starts an embedded cache server when turbo.json is present and no external Vercel creds are set.
+    required: false
+    default: "auto"
+  turbo-cache-prefix:
+    description: Key prefix/namespace for embedded turbo cache artifacts.
+    required: false
+    default: ""
   turbo-token:
-    description: Turbo remote cache token (optional, for Vercel Remote Cache)
+    description: Turbo remote cache token (selects passthrough/external Vercel mode and disables the embedded server).
     required: false
     default: ""
   turbo-team:
-    description: Turbo team slug (optional, for Vercel Remote Cache)
+    description: Turbo team slug (selects passthrough/external Vercel mode and disables the embedded server).
+    required: false
+    default: ""
+  turbo-s3-bucket:
+    description: S3 bucket for the embedded turbo cache backend. Presence selects the S3 backend.
+    required: false
+    default: ""
+  turbo-s3-region:
+    description: S3 region for the embedded turbo cache backend.
+    required: false
+    default: ""
+  turbo-s3-endpoint:
+    description: Custom S3 endpoint (R2/MinIO/Spaces). Leave empty for AWS S3.
+    required: false
+    default: ""
+  turbo-s3-access-key-id:
+    description: S3 access key id for the embedded turbo cache backend.
+    required: false
+    default: ""
+  turbo-s3-secret-access-key:
+    description: S3 secret access key for the embedded turbo cache backend.
+    required: false
+    default: ""
+  turbo-s3-session-token:
+    description: Optional S3 session token for temporary credentials.
+    required: false
+    default: ""
+  turbo-s3-prefix:
+    description: Optional key prefix within the S3 bucket.
     required: false
     default: ""
   install-deps:
@@ -55,6 +91,10 @@ outputs:
     description: Whether Biome was installed (true | false)
   turbo-enabled:
     description: Whether Turbo configuration was detected (true | false)
+  turbo-cache-backend:
+    description: Active turbo cache backend (github | s3 | remote | none)
+  turbo-cache-port:
+    description: Local port the embedded turbo cache server bound to (empty when not started)
   cache-hit:
     description: Whether dependencies were restored from cache (true | partial | false)
   lockfiles:

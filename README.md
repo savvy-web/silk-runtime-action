@@ -1,7 +1,7 @@
 # silk-runtime-action
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-4caf50.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/silk-update-action)
+[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/silk-runtime-action)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-green?logo=node.js)](https://nodejs.org)
 
 Automatically detect and set up JavaScript runtime environments in GitHub Actions from your `package.json` `devEngines` configuration. One action for Node.js, Bun, and Deno with intelligent package manager detection and dependency caching.
@@ -28,7 +28,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: savvy-web/silk-runtime-action@v1
       - run: pnpm test
       - run: pnpm build
@@ -73,8 +73,17 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | Input | Description | Default |
 | ----- | ----------- | ------- |
 | `biome-version` | Biome version to install (e.g., `2.3.14`). Auto-detects from `biome.jsonc`/`biome.json` `$schema` field if not provided. Leave empty to skip. | `""` |
-| `turbo-token` | Turbo remote cache token (for Vercel Remote Cache) | `""` |
-| `turbo-team` | Turbo team slug (for Vercel Remote Cache) | `""` |
+| `turbo-cache` | Turbo remote cache mode (`auto` \| `off`). `auto` starts an embedded cache server when `turbo.json` is present and no external Vercel creds are set. | `"auto"` |
+| `turbo-cache-prefix` | Key prefix/namespace for embedded turbo cache artifacts. | `""` |
+| `turbo-token` | Turbo remote cache token. When provided with `turbo-team`, selects passthrough (external Vercel) mode and disables the embedded server. | `""` |
+| `turbo-team` | Turbo team slug. When provided with `turbo-token`, selects passthrough (external Vercel) mode and disables the embedded server. | `""` |
+| `turbo-s3-bucket` | S3 bucket for the embedded turbo cache backend. Presence selects the S3 backend. | `""` |
+| `turbo-s3-region` | S3 region for the embedded turbo cache backend. | `""` |
+| `turbo-s3-endpoint` | Custom S3 endpoint (R2/MinIO/Spaces). Leave empty for AWS S3. | `""` |
+| `turbo-s3-access-key-id` | S3 access key ID for the embedded turbo cache backend. | `""` |
+| `turbo-s3-secret-access-key` | S3 secret access key for the embedded turbo cache backend. | `""` |
+| `turbo-s3-session-token` | Optional S3 session token for temporary credentials. | `""` |
+| `turbo-s3-prefix` | Optional key prefix within the S3 bucket. | `""` |
 | `install-deps` | Whether to install dependencies (`true` \| `false`) | `"true"` |
 | `cache-bust` | Cache busting for testing -- `true` (auto-generate), `false` (normal), or custom string. **Testing only.** | `"false"` |
 | `additional-lockfiles` | Additional lockfile patterns for cache key generation (multiline glob patterns) | `""` |
@@ -95,7 +104,9 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `biome-version` | Installed Biome version or empty |
 | `biome-enabled` | Whether Biome was installed (`true` \| `false`) |
 | `turbo-enabled` | Whether Turbo configuration was detected (`true` \| `false`) |
-| `cache-hit` | Cache status (`true` \| `partial` \| `false` \| `n/a`) |
+| `turbo-cache-backend` | Active turbo cache backend (`github` \| `s3` \| `remote` \| `none`) |
+| `turbo-cache-port` | Local port the embedded turbo cache server bound to (empty when not started) |
+| `cache-hit` | Cache status (`true` \| `partial` \| `false`) |
 | `lockfiles` | Comma-separated list of detected lockfiles |
 | `cache-paths` | Comma-separated list of cached paths |
 
@@ -197,6 +208,20 @@ The action automatically caches dependencies based on your package manager and l
 - **Automatic setup** -- no configuration needed
 
 Cache hit status is available in the `cache-hit` output.
+
+### Turbo build cache
+
+When `turbo.json` is detected, the action starts an embedded remote cache server
+(GitHub Actions cache or S3 backend) that Turborepo writes to directly; the
+`turbo-cache-backend` output reports which backend is active. Turbo's local
+artifact cache (`**/.turbo/cache`) is also file-cached as a fast local-restore
+layer, while `**/.turbo/runs` and the other `.turbo` subdirectories are excluded.
+To use Vercel Remote Cache instead, supply `turbo-token` + `turbo-team`
+(passthrough mode).
+
+## Job summary
+
+The action writes a job-summary panel to the GitHub run, summarizing the runtimes and package manager it set up, whether Biome was installed, the active Turbo cache backend and mode, the dependency-cache hit status and the install outcome, with a collapsed section listing the cache key and lockfiles. Collapsed step lines also report their result inline, so the detected configuration, the Turbo cache backend and the cache hit are visible without expanding each group. Writing the summary is non-fatal — if it fails the action logs a warning and continues.
 
 ## Troubleshooting
 

@@ -3,8 +3,9 @@ import { ActionCacheTest, ActionLoggerTest, ActionStateTest } from "@savvy-web/g
 import { Effect, Layer, LogLevel, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { CacheError } from "./errors/errors.js";
-import { post } from "./post.js";
+import { makePost, post } from "./post.js";
 import { saveCache } from "./services/cache.js";
+import { STATE_KEYS } from "./state.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -160,5 +161,23 @@ describe("post action (saveCache integration)", () => {
 		const warnings = captured.filter((e) => e.level === "WARN");
 		expect(warnings.length).toBeGreaterThan(0);
 		expect(warnings.some((w) => w.message.includes("Post-action error"))).toBe(true);
+	});
+
+	it("kills the turbo server when state is present", async () => {
+		const killed: Array<number> = [];
+		const spy = (pid: number): void => {
+			killed.push(pid);
+		};
+
+		const cache = ActionCacheTest.empty();
+		const state = ActionStateTest.empty();
+		// Seed turbo server state; no cache-state so post exits early after teardown
+		state.entries.set(STATE_KEYS.turboServerState, JSON.stringify({ pid: 555, port: 41230, backend: "github" }));
+
+		const layer = Layer.mergeAll(ActionCacheTest.layer(cache), ActionStateTest.layer(state));
+
+		await run(makePost(spy), layer);
+
+		expect(killed).toContain(555);
 	});
 });

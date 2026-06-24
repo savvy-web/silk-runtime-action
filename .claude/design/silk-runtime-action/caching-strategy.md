@@ -3,12 +3,13 @@ status: current
 module: silk-runtime-action
 category: performance
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-06-23
+last-synced: 2026-06-23
 completeness: 92
 related:
   - ./architecture.md
   - ./effect-service-model.md
+  - ./turbo-remote-cache.md
 dependencies: []
 ---
 
@@ -103,7 +104,7 @@ class CacheState extends Schema.Class<CacheState>("CacheState")({
 }) {}
 ```
 
-`restored=true` means main got an exact hit and post should skip the save. Persisted under `STATE_KEYS.cacheState = "cache-state"`.
+`restored=true` means main got an exact hit and post should skip the save. Persisted under `STATE_KEYS.cacheState = "cache-state"`. `src/state.ts` also defines `TurboServerState` (under `STATE_KEYS.turboServerState`) carrying the embedded server's pid for post-phase teardown — see [turbo remote cache](./turbo-remote-cache.md).
 
 This replaces the previous inline `CacheStateSchema` with a `hit: "exact" | "partial" | "none"` literal. The new shape collapses partial/none into a single `restored=false` because post only needs the binary save/skip decision.
 
@@ -159,18 +160,17 @@ For multi-runtime setups (e.g., Node + Deno) the cache paths from both PMs are m
 
 ### Cache path merging (`getCombinedCacheConfig`)
 
-For each active PM, call `getCacheConfig(pm)` (runs the detection command, falls back to platform defaults). Union the cache-path and lockfile-pattern sets. Add tool cache paths for all runtimes (including Biome). Sort absolute paths before glob patterns. The program then appends `additional-cache-paths` and `**/.turbo` (when Turbo is detected).
+For each active PM, call `getCacheConfig(pm)` (runs the detection command, falls back to platform defaults). Union the cache-path and lockfile-pattern sets. Add tool cache paths for all runtimes (including Biome). Sort absolute paths before glob patterns. The program then appends `additional-cache-paths` and, when Turbo is detected, `**/.turbo/cache` via `turboLocalCachePaths` (see below).
+
+### Turbo local cache layer
+
+When `turbo.json` is detected, `turboLocalCachePaths` (in `src/program.ts`) adds `**/.turbo/cache` — Turbo's local task-output artifact cache — to the file-cached paths. This is a fast local-restore layer that complements the embedded remote cache (see [turbo remote cache](./turbo-remote-cache.md)). Only `.turbo/cache` is cached; `.turbo/runs` (run summaries), `.turbo/cookies` and `.turbo/daemon` are deliberately excluded. A restored stale `runs` summary would break "latest run = current run" detection by tools that parse `turbo --summarize` output; cookies and the daemon directory are ephemeral.
 
 ### Lockfile detection (`findLockFiles`)
 
-```ts
-const excludes = "!**/node_modules/**\n!**/.git/**";
-const patternsStr = [...patterns, excludes].join("\n");
-const matches = yield* glob.glob(patternsStr).pipe(Effect.catchAll(() => Effect.succeed([])));
-return [...matches].sort();
-```
+`findLockFiles` builds a single newline-separated patterns string with `!`-prefix excludes (via `buildLockfileGlobPatterns` in `src/services/cache.ts`) and passes it to `Glob.glob`. Errors are caught and demoted to an empty list (cache restore continues without any lockfile contribution).
 
-A single newline-separated patterns string with `!`-prefix excludes is passed to `Glob.glob`. Errors are caught and demoted to an empty list (cache restore continues without any lockfile contribution).
+Beyond `node_modules` and `.git`, the excludes cover test and fixture trees — `**/__fixtures__/**`, `**/__tests__/**`, `**/__test__/**` — so a fixture lockfile (e.g. `__fixtures__/turbo-monorepo/pnpm-lock.yaml`) never pollutes the cache key. See `buildLockfileGlobPatterns` for the exact exclude list.
 
 ### Lockfile hashing (`hashFiles`)
 
@@ -208,6 +208,7 @@ yield* Step.groupStep("Cache save", saveCache());
 **Internal:**
 
 - [Architecture](./architecture.md) -- pipeline shape, cross-phase state diagram.
+- [Turbo remote cache](./turbo-remote-cache.md) -- embedded remote cache that the `.turbo/cache` file layer complements.
 - [Effect service model](./effect-service-model.md) -- service tags, `Schema.TaggedError`, layer composition.
 
 **Source files:**

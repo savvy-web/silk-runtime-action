@@ -6,20 +6,20 @@ Source code architecture, build process, and development guidelines for the silk
 
 ## Architecture Overview
 
-The action is written as an **Effect-based program** using `@savvy-web/github-action-effects` (^2.0.0) for GitHub Action service abstractions. All side effects (file I/O, command execution, caching, outputs) flow through Effect services rather than direct API calls.
+The action is written as an **Effect-based program** using `@savvy-web/github-action-effects` (^2.2.2) for GitHub Action service abstractions. All side effects (file I/O, command execution, caching, outputs) flow through Effect services rather than direct API calls.
 
 Key architectural properties:
 
 - **Zero `@actions/*` dependencies** -- `github-action-effects` implements the GitHub Actions runtime protocol natively (V2 Twirp protocol with Azure Blob Storage for caching, native process execution, etc.)
 - **Inputs via Effect Config API** -- `Config.string`, `Config.boolean`, `Config.withDefault` backed by a `ConfigProvider` that reads GitHub Actions input environment variables; `ActionInput.*` combinators for multi-value inputs
 - **Logging via Step.\* namespace** -- `Step.groupStep` for collapsible sections that buffer output and expand on failure; `Step.success` for canonical success lines
-- **Build via rsbuild** -- `@savvy-web/github-action-builder` ^0.7.1 uses rsbuild under the hood
+- **Build via rsbuild** -- `@savvy-web/github-action-builder` ^0.7.12 uses rsbuild under the hood; `entries.workers` bundles the detached `turbo-server.ts` as a third entry
 
 For a full architectural spec see `.claude/design/silk-runtime-action/architecture.md`.
 
 ## Entry Points
 
-The action has two lifecycle hooks:
+The action has two lifecycle hooks plus a detached worker bundle:
 
 ```yaml
 runs:
@@ -29,8 +29,9 @@ runs:
 ```
 
 - **[main.ts](main.ts)** -> `dist/main.js` -- Thin entry that calls `Action.run(program, { layer: MainLive })`
-- **[program.ts](program.ts)** -> `dist/main.js` (bundled) -- Effect pipeline that detects config, installs runtimes, sets up package manager, caches dependencies, and sets outputs
-- **[post.ts](post.ts)** -> `dist/post.js` -- Saves the dependency cache after the job completes; reads `CacheState` from main, no-op on exact hit (non-fatal; errors and defects are logged as warnings via `Effect.catchAll` + `Effect.catchAllDefect`)
+- **[program.ts](program.ts)** -> `dist/main.js` (bundled) -- Effect pipeline that detects config, installs runtimes, sets up package manager, caches dependencies, optionally starts the embedded turbo remote cache, and sets outputs
+- **[post.ts](post.ts)** -> `dist/post.js` -- Saves the dependency cache and stops the turbo cache server after the job completes; reads `CacheState`/`TurboServerState` from main, no-op on exact hit (non-fatal; errors and defects are logged as warnings via `Effect.catchAll` + `Effect.catchAllDefect`)
+- **[turbo-server.ts](turbo-server.ts)** -> `dist/turbo-server.js` -- Detached turbo remote-cache server spawned by main (not a lifecycle hook); built as a third entry via `entries.workers`
 
 ## Source Modules
 
@@ -46,15 +47,16 @@ Top-level Effect pipeline (the main phase). Contains the `program` export plus h
 - `installDependencies` -- Lockfile-aware install for the detected package manager
 - `setupPackageManager` -- Activates the correct PM version via corepack or npm global install
 - `getActivePackageManagers` -- Determines which PMs are active from runtimes
+- turbo cache activation -- delegates to `services/turbo-cache/apply.ts` (`turboLocalCachePaths` selects `**/.turbo/cache`, excluding `.turbo/runs`)
 - `setOutputs` -- Sets all action outputs from pipeline results
 
 ### [post.ts](post.ts)
 
-Post-action: reads `CacheState` via `ActionState.getOptional`, skips when missing or `restored===true`, otherwise calls `saveCache()` inside a `Step.groupStep`. Wrapped in `Effect.catchAll` + `Effect.catchAllDefect` so post-action failures never fail the workflow.
+Post-action: reads `CacheState` via `ActionState.getOptional`, skips when missing or `restored===true`, otherwise calls `saveCache()` inside a `Step.groupStep`; also reads `TurboServerState` and stops the embedded turbo cache server. Wrapped in `Effect.catchAll` + `Effect.catchAllDefect` so post-action failures never fail the workflow.
 
 ### [state.ts](state.ts)
 
-Cross-phase state schemas. Exports `CacheState` (`Schema.Class` with `key`, `paths`, `restored`) and `STATE_KEYS` constant for use with `ActionState.save`/`get`.
+Cross-phase state schemas. Exports `CacheState` (`Schema.Class` with `key`, `paths`, `restored`), `TurboServerState` (embedded cache server pid/port for post-action teardown), and `STATE_KEYS` constant for use with `ActionState.save`/`get`.
 
 ### [layers/app.ts](layers/app.ts)
 
@@ -89,6 +91,22 @@ Pure Effect functions for configuration loading and detection:
 - `detectBiome` -- Checks `biome-version` input, then reads `$schema` from `biome.jsonc`/`biome.json`
 - `detectTurbo` -- Returns `true` if `turbo.json` exists
 
+### [services/summary.ts](services/summary.ts)
+
+Runtime-setup logging helpers: builds the job-summary panel via `GithubMarkdown.*` and formats the enriched per-step lines emitted during setup.
+
+### [services/turbo-cache/](services/turbo-cache/)
+
+Embedded turbo remote cache implementation, orchestrated by `apply.ts` and wired into `program.ts`:
+
+- `codec.ts` -- Turbo artifact byte codec (round-trips `x-artifact-duration`)
+- `activation.ts` -- Resolves cache mode/backend (`github` | `s3` | `remote` | `none`) from inputs and `turbo.json` detection
+- `handler.ts` -- Turbo `/v8/artifacts` HTTP contract implemented over a library `BlobStore`
+- `lifecycle.ts` -- Spawns/waits-for/stops the detached `turbo-server.ts`; persists `TurboServerState`
+- `apply.ts` -- Top-level orchestration the program calls to activate and start the cache
+
+For the full design see `.claude/design/silk-runtime-action/turbo-remote-cache.md`.
+
 ### [schemas/domain.ts](schemas/domain.ts)
 
 Effect Schema definitions:
@@ -121,7 +139,11 @@ Build is configured in [`action.config.ts`](../action.config.ts) at the repo roo
 
 ```typescript
 export default defineConfig({
-  entries: { main: "src/main.ts", post: "src/post.ts" },
+  entries: {
+    main: "src/main.ts",
+    post: "src/post.ts",
+    workers: { "turbo-server": "src/turbo-server.ts" },
+  },
   build: { minify: true },
   persistLocal: { enabled: true, path: ".github/actions/local" },
 });
@@ -133,7 +155,7 @@ Run the build:
 pnpm build
 ```
 
-This uses `@savvy-web/github-action-builder` (^0.7.1, rsbuild-based) to bundle both entry points to `dist/` and copy a testing variant to `.github/actions/local/`.
+This uses `@savvy-web/github-action-builder` (^0.7.12, rsbuild-based) to bundle all three entry points (`main`, `post`, and the `turbo-server` worker) to `dist/` and copy a testing variant to `.github/actions/local/`.
 
 **Always commit `dist/` and `.github/actions/local/` after building.**
 

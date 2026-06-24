@@ -9,11 +9,19 @@
  */
 
 import { homedir, arch as osArch, platform as osPlatform, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { FileSystem } from "@effect/platform";
-import { ActionInput, ActionOutputs, CommandRunner, Step, ToolInstaller } from "@savvy-web/github-action-effects";
+import {
+	ActionInput,
+	ActionOutputs,
+	ActionState,
+	CommandRunner,
+	Step,
+	ToolInstaller,
+} from "@savvy-web/github-action-effects";
 import type { Context } from "effect";
-import { Config, Effect, Option } from "effect";
+import { Config, Effect, Option, Redacted } from "effect";
 import { binaryMap as biomeBinaryMap } from "./descriptors/biome.js";
 import { DependencyInstallError, PackageManagerSetupError } from "./errors/errors.js";
 import type { PackageManagerEntry, RuntimeEntry } from "./schemas/domain.js";
@@ -27,6 +35,12 @@ import {
 	formatCauseDetail,
 	installerLayerFor,
 } from "./services/runtime-installer.js";
+import { buildRuntimeSummary, formatCacheLine, formatDetectLine, formatTurboLine } from "./services/summary.js";
+import { resolveTurboCache } from "./services/turbo-cache/activation.js";
+import type { TurboApplyResult } from "./services/turbo-cache/apply.js";
+import { applyTurboCache } from "./services/turbo-cache/apply.js";
+import { spawnTurboServer, waitForServer } from "./services/turbo-cache/lifecycle.js";
+import { CacheState, STATE_KEYS } from "./state.js";
 
 /**
  * Install Biome CLI as a raw binary using ToolInstaller primitives.
@@ -306,6 +320,13 @@ export const setOutputs = (
 		yield* outputs.set("cache-paths", cachePaths.join(","));
 	});
 
+/**
+ * File-cache paths for Turbo's local artifact cache. Only `.turbo/cache` (the
+ * task-output cache) is included; `.turbo/runs` (run summaries),
+ * `.turbo/cookies`, and `.turbo/daemon` are excluded.
+ */
+export const turboLocalCachePaths = (turboDetected: boolean): string[] => (turboDetected ? ["**/.turbo/cache"] : []);
+
 // ---------------------------------------------------------------------------
 // Main pipeline
 // ---------------------------------------------------------------------------
@@ -313,6 +334,16 @@ export const setOutputs = (
 /* v8 ignore start -- pipeline orchestration; individual functions tested separately */
 export const program = Effect.gen(function* () {
 	const outputs = yield* ActionOutputs;
+
+	// Quiet noisy tool chatter from our OWN install steps. Set on this process
+	// only (NOT exported) so it never affects the consumer's later job steps.
+	// HUSKY=0 also correctly skips git-hook install in CI.
+	yield* Effect.sync(() => {
+		process.env.NPM_CONFIG_UPDATE_NOTIFIER = "false";
+		process.env.NPM_CONFIG_FUND = "false";
+		process.env.HUSKY = "0";
+		process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT = "0";
+	});
 
 	// 1. Parse configuration
 	const config = yield* Step.groupStep(
@@ -333,6 +364,15 @@ export const program = Effect.gen(function* () {
 			if (turbo) {
 				yield* Effect.log("Detected Turbo configuration");
 			}
+
+			yield* Step.success(
+				formatDetectLine({
+					runtimes,
+					packageManager,
+					biome: Option.isSome(biome) ? biome.value : null,
+					turbo,
+				}),
+			);
 
 			return { runtimes, packageManager, biome, turbo };
 		}),
@@ -363,31 +403,80 @@ export const program = Effect.gen(function* () {
 	const cacheBust = yield* Config.string("cache-bust").pipe(Config.withDefault(""));
 	const cacheBustValue = cacheBust && cacheBust !== "false" ? cacheBust : undefined;
 
-	// Build final cache paths: base + additional inputs + turbo
-	const turboPaths = config.turbo ? ["**/.turbo"] : [];
-	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths, ...turboPaths];
+	// Turbo's local artifact cache (.turbo/cache) is file-cached as a fast
+	// local-restore layer alongside the embedded remote cache. .turbo/runs
+	// (run summaries) is deliberately excluded — a restored stale summary would
+	// break "latest run = current run" detection by tools that parse
+	// `turbo --summarize` output; cookies/daemon are ephemeral.
+	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths, ...turboLocalCachePaths(config.turbo)];
 
 	yield* Effect.logDebug(`Active PMs: ${activePackageManagers.join(", ")}`);
 	yield* Effect.logDebug(`Lockfiles found: ${lockfiles.length > 0 ? lockfiles.join(", ") : "(none)"}`);
 	yield* Effect.logDebug(`Cache paths (${finalCachePaths.length}): ${finalCachePaths.join(", ")}`);
 
-	// Handle turbo env vars
-	if (config.turbo) {
-		const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
-		const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
-		if (turboToken !== "") {
-			yield* outputs.exportVariable("TURBO_TOKEN", turboToken);
-		}
-		if (turboTeam !== "") {
-			yield* outputs.exportVariable("TURBO_TEAM", turboTeam);
-		}
-	}
+	// Resolve and apply turbo remote cache strategy.
+	const turboResult = yield* Step.groupStep(
+		"Turbo remote cache",
+		Effect.gen(function* () {
+			const cacheMode =
+				(yield* Config.string("turbo-cache").pipe(Config.withDefault("auto"))) === "off" ? "off" : "auto";
+			const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
+			const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
+			const prefix = yield* Config.string("turbo-cache-prefix").pipe(Config.withDefault(""));
+
+			// Secrets: read redacted, register with the runner's log mask, then
+			// unwrap for transport. setSecret takes plaintext (it tells the runner
+			// what to redact); Redacted guards against accidental logging in main.
+			const s3Secret = yield* Config.redacted("turbo-s3-secret-access-key").pipe(Config.withDefault(Redacted.make("")));
+			const s3Session = yield* Config.redacted("turbo-s3-session-token").pipe(Config.withDefault(Redacted.make("")));
+			for (const secret of [turboToken, Redacted.value(s3Secret), Redacted.value(s3Session)]) {
+				if (secret !== "") yield* outputs.setSecret(secret);
+			}
+
+			const s3 = {
+				bucket: yield* Config.string("turbo-s3-bucket").pipe(Config.withDefault("")),
+				region: yield* Config.string("turbo-s3-region").pipe(Config.withDefault("")),
+				endpoint: yield* Config.string("turbo-s3-endpoint").pipe(Config.withDefault("")),
+				accessKeyId: yield* Config.string("turbo-s3-access-key-id").pipe(Config.withDefault("")),
+				secretAccessKey: Redacted.value(s3Secret),
+				sessionToken: Redacted.value(s3Session),
+				prefix: yield* Config.string("turbo-s3-prefix").pipe(Config.withDefault("")),
+			};
+			const resolution = resolveTurboCache({
+				turboDetected: config.turbo,
+				cacheMode,
+				turboToken,
+				turboTeam,
+				s3,
+			});
+			const turboApplied = yield* applyTurboCache(resolution, {
+				serverEntry: join(dirname(fileURLToPath(import.meta.url)), "turbo-server.js"),
+				prefix,
+				spawn: spawnTurboServer,
+				waitForReady: waitForServer,
+			});
+			yield* Step.success(formatTurboLine(turboApplied.backend, turboApplied.port));
+			return turboApplied;
+		}).pipe(
+			Effect.catchAll((error) =>
+				Effect.logWarning(`Turbo cache setup error: ${error instanceof Error ? error.message : String(error)}`).pipe(
+					Effect.as<TurboApplyResult>({ backend: "none", port: null }),
+				),
+			),
+			// Also swallow synchronous defects (e.g. a throw inside spawn) so turbo
+			// cache setup can never fail the action — matches post.ts's posture.
+			Effect.catchAllDefect((defect) =>
+				Effect.logWarning(
+					`Turbo cache setup defect: ${defect instanceof Error ? defect.message : String(defect)}`,
+				).pipe(Effect.as<TurboApplyResult>({ backend: "none", port: null })),
+			),
+		),
+	);
 
 	// 3. Restore cache (non-fatal)
 	const cacheResult = yield* Step.groupStep(
 		"Restore cache",
 		Effect.gen(function* () {
-			// Diagnostic: check which cache env vars are available
 			const cacheEnvDiag = [
 				`ACTIONS_CACHE_URL: ${process.env.ACTIONS_CACHE_URL ? "set" : "NOT SET"}`,
 				`ACTIONS_RESULTS_URL: ${process.env.ACTIONS_RESULTS_URL ? "set" : "NOT SET"}`,
@@ -396,25 +485,35 @@ export const program = Effect.gen(function* () {
 			].join(", ");
 			yield* Effect.logDebug(`Cache env diagnostic: ${cacheEnvDiag}`);
 
-			return yield* restoreCache({
+			const hit = yield* restoreCache({
 				cachePaths: finalCachePaths,
 				runtimes: runtimeEntries,
 				packageManager: { name: config.packageManager.name, version: config.packageManager.version },
 				lockfiles,
 				...(cacheBustValue ? { cacheBust: cacheBustValue } : {}),
-			});
-		}).pipe(
-			Effect.catchTag("CacheError", (e) =>
-				Effect.gen(function* () {
-					yield* Effect.logWarning(`Cache restore failed: ${e.reason}`);
-					const detail = formatCauseDetail(e);
-					if (detail) {
-						yield* Effect.logWarning(`Cache restore cause detail: ${detail}`);
-					}
-					return "none" as const;
-				}),
-			),
-		),
+			}).pipe(
+				Effect.catchTag("CacheError", (e) =>
+					Effect.gen(function* () {
+						yield* Effect.logWarning(`Cache restore failed: ${e.reason}`);
+						const detail = formatCauseDetail(e);
+						if (detail) {
+							yield* Effect.logWarning(`Cache restore cause detail: ${detail}`);
+						}
+						return "none" as const;
+					}),
+				),
+				// restoreCache also calls state.save (ActionStateError) — never let a
+				// non-CacheError failure escape and fail the action; degrade to a miss.
+				Effect.catchAll((e) =>
+					Effect.gen(function* () {
+						yield* Effect.logWarning(`Cache restore failed: ${e instanceof Error ? e.message : String(e)}`);
+						return "none" as const;
+					}),
+				),
+			);
+			yield* Step.success(formatCacheLine(hit, lockfiles.length));
+			return hit;
+		}),
 	);
 
 	// 4. Install runtimes
@@ -456,6 +555,31 @@ export const program = Effect.gen(function* () {
 
 	// 8. Set outputs
 	yield* setOutputs(outputs, installed, config, cacheResult, lockfiles, finalCachePaths);
+	yield* outputs.set("turbo-cache-backend", turboResult.backend);
+	yield* outputs.set("turbo-cache-port", turboResult.port === null ? "" : String(turboResult.port));
+
+	// Job summary panel (non-fatal — never fail the action over a summary write).
+	const state = yield* ActionState;
+	const cacheStateOpt = yield* state.getOptional(STATE_KEYS.cacheState, CacheState);
+	const cacheKey = Option.isSome(cacheStateOpt) ? cacheStateOpt.value.key : "";
+	yield* outputs
+		.summary(
+			buildRuntimeSummary({
+				runtimes: config.runtimes.map((r) => ({ name: r.name, version: r.version })),
+				packageManager: { name: config.packageManager.name, version: config.packageManager.version },
+				biome: Option.isSome(config.biome) ? config.biome.value : null,
+				turbo: { backend: turboResult.backend, port: turboResult.port },
+				cacheHit: cacheResult,
+				dependenciesInstalled: installDeps,
+				cacheKey,
+				lockfiles,
+			}),
+		)
+		.pipe(
+			Effect.catchAll((e) =>
+				Effect.logWarning(`Failed to write job summary: ${e instanceof Error ? e.message : String(e)}`),
+			),
+		);
 
 	// 9. Summary
 	yield* Step.groupStep(

@@ -113,7 +113,7 @@ test-node:
 
   steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Test fixture
       uses: ./.github/actions/test-fixture
@@ -188,7 +188,7 @@ test-my-feature:
   runs-on: ubuntu-latest
   steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Test fixture
       uses: ./.github/actions/test-fixture

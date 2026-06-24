@@ -3,12 +3,13 @@ status: current
 module: silk-runtime-action
 category: integration
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-06-23
+last-synced: 2026-06-23
 completeness: 88
 related:
   - ./architecture.md
   - ./testing-strategy.md
+  - ./turbo-remote-cache.md
 dependencies: []
 ---
 
@@ -32,7 +33,7 @@ The action is built using `@savvy-web/github-action-builder` (^0.7.1, rsbuild-ba
 
 **Key features:**
 
-- Two entry points compiled to ES module bundles (`main.js`, `post.js`).
+- Three entry points compiled to ES module bundles: `main.js`, `post.js` and the `turbo-server.js` worker bundle.
 - Minification enabled.
 - Automatic local testing copy at `.github/actions/local/`.
 - ES module marker (`dist/package.json` with `"type": "module"`).
@@ -55,7 +56,11 @@ See `action.config.ts`:
 
 ```ts
 export default defineConfig({
-  entries: { main: "src/main.ts", post: "src/post.ts" },
+  entries: {
+    main: "src/main.ts",
+    post: "src/post.ts",
+    workers: { "turbo-server": "src/turbo-server.ts" },
+  },
   build: {
     minify: true,
     ignore: ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"],
@@ -64,17 +69,21 @@ export default defineConfig({
 });
 ```
 
+The `workers` entry produces `dist/turbo-server.js`, the detached embedded turbo remote-cache server that main spawns at runtime. It is not a GitHub Actions lifecycle hook (only `main` and `post` are referenced in `action.yml`). See [turbo remote cache](./turbo-remote-cache.md).
+
 ### Build output
 
 ```text
 dist/                            # Production build (committed)
   main.js
   post.js
+  turbo-server.js
   package.json                   # { "type": "module" }
 
 .github/actions/local/dist/      # Local testing copy (committed)
   main.js
   post.js
+  turbo-server.js
   package.json
 ```
 
@@ -129,7 +138,7 @@ rsbuild gives tree shaking, dead code elimination and ES module output compatibl
 
 1. `github-action-builder build` reads `action.config.ts`.
 2. Cleans `dist/` and `.github/actions/local/dist/`.
-3. Compiles TypeScript via rsbuild with two entry points.
+3. Compiles TypeScript via rsbuild with the three entry points (`main`, `post`, `turbo-server`).
 4. Applies the `ignore` list (stubs the three cyclonedx optional plugins).
 5. Writes minified bundles to `dist/`.
 6. Creates `dist/package.json` with `{ "type": "module" }`.
@@ -174,6 +183,7 @@ Optional (declared in `optionalDependencies`, never installed and ignored at bui
 **Internal:**
 
 - [Architecture](./architecture.md) -- entry topology.
+- [Turbo remote cache](./turbo-remote-cache.md) -- what the `turbo-server` bundle does at runtime.
 - [Testing strategy](./testing-strategy.md) -- how the local copy is exercised by fixture tests.
 
 **Source files:**

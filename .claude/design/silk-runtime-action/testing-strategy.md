@@ -3,13 +3,14 @@ status: current
 module: silk-runtime-action
 category: testing
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-06-23
+last-synced: 2026-06-23
 completeness: 90
 related:
   - ./architecture.md
   - ./effect-service-model.md
   - ./build-and-distribution.md
+  - ./turbo-remote-cache.md
 dependencies: []
 ---
 
@@ -209,6 +210,10 @@ Cache fixtures run as a pair of dependent jobs:
 1. **Create cache** -- first run installs everything and saves the cache.
 2. **Restore cache** -- second run should restore from cache and emit `cache-hit=true`.
 
+### Turbo remote cache e2e
+
+`__fixtures__/turbo-monorepo/` plus `.github/workflows/test-turbo-cache.yml` prove the embedded turbo remote cache (see [turbo remote cache](./turbo-remote-cache.md)) end to end via a double-build pattern: run `turbo run` twice and assert the second build is a remote cache hit. Three scenarios cover the lifecycle: within a single job, across jobs via `needs:` (the artifact survives because it lands in the backing `BlobStore`, not in process memory), and against the S3 backend backed by a MinIO service container. These run the built action (`dist/turbo-server.js`), exercising the spawn → probe → teardown path that unit tests deliberately exclude from coverage (`/* v8 ignore */` on `spawnTurboServer` and the server entry).
+
 ### Common issues
 
 | Issue | Cause | Fix |
@@ -227,6 +232,7 @@ Cache fixtures run as a pair of dependent jobs:
 - [Architecture](./architecture.md) -- pipeline shape under test.
 - [Effect service model](./effect-service-model.md) -- service tag definitions and layer composition.
 - [Build and distribution](./build-and-distribution.md) -- how the local copy used by fixture tests is produced.
+- [Turbo remote cache](./turbo-remote-cache.md) -- subsystem exercised by the e2e double-build fixture.
 
 **Context files:**
 

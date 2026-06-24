@@ -7,8 +7,8 @@ and information for developers working on this action.
 
 ### Prerequisites
 
-* **Node.js 24+** (specified in `devEngines.runtime` in `package.json`)
-* **pnpm 10+** (specified in `devEngines.packageManager` in `package.json`)
+* **Node.js** at the version specified in `devEngines.runtime` in `package.json`
+* **pnpm** at the version specified in `devEngines.packageManager` in `package.json`
 
 ### Installation
 
@@ -27,7 +27,7 @@ pnpm install
 
 1. **Create a branch** for your feature or fix
 2. **Make your changes** in the `src/` directory
-3. **Add or update tests** in `__test__/`
+3. **Add or update tests** co-located next to the source module (e.g. `src/services/cache.test.ts`)
 4. **Run tests** to ensure everything works
 5. **Build the action** (required before committing!)
 6. **Commit your changes** including built files
@@ -105,13 +105,13 @@ pnpm build             # Build action with @savvy-web/github-action-builder
 
 ### Unit Tests
 
-Unit tests are in `__test__/` and use Vitest:
+Unit tests are co-located with their source modules in `src/` (e.g. `src/services/cache.test.ts`) and use Vitest:
 
 ```bash
 pnpm test
 ```
 
-See [**test**/CLAUDE.md](__test__/CLAUDE.md) for testing guidelines.
+See [src/CLAUDE.md](src/CLAUDE.md) for testing guidelines.
 
 ### Integration Tests
 
@@ -159,35 +159,37 @@ Full test suite across:
 
 ```text
 .
-├── src/                     # TypeScript source code
-│   ├── main.ts              # Main action logic (Effect pipeline)
-│   ├── post.ts              # Post-action hook (cache save)
-│   ├── config.ts            # devEngines parsing and detection helpers
-│   ├── cache.ts             # Cache operations (restore/save)
-│   ├── runtime-installer.ts # RuntimeInstaller service + descriptor layers
-│   ├── schemas.ts           # Effect Schema definitions
-│   ├── errors.ts            # TaggedError hierarchy
-│   ├── emoji.ts             # Log formatting helpers
-│   └── descriptors/         # Per-runtime download descriptors
-│       ├── node.ts
-│       ├── bun.ts
-│       ├── deno.ts
-│       └── biome.ts
-├── dist/                    # Compiled JavaScript (committed!)
+├── src/                          # TypeScript source code (tests co-located as *.test.ts)
+│   ├── main.ts                   # Thin entry: Action.run(program, { layer: MainLive })
+│   ├── post.ts                   # Post-action hook (cache save, turbo server teardown)
+│   ├── program.ts                # Main Effect pipeline
+│   ├── state.ts                  # Cross-phase state schemas (CacheState, TurboServerState)
+│   ├── turbo-server.ts           # Detached turbo remote-cache server entry
+│   ├── layers/app.ts             # MainLive layer composition
+│   ├── services/                 # Effect services
+│   │   ├── runtime-installer.ts  # RuntimeInstaller service + descriptor layers
+│   │   ├── cache.ts              # Dependency cache operations (restore/save)
+│   │   ├── config-loader.ts      # devEngines parsing and detection helpers
+│   │   ├── summary.ts            # Job-summary panel and step-line formatters
+│   │   └── turbo-cache/          # Embedded turbo remote cache implementation
+│   ├── descriptors/              # Per-runtime download descriptors (node, bun, deno, biome)
+│   ├── schemas/domain.ts         # Effect Schema definitions
+│   └── errors/errors.ts          # TaggedError hierarchy
+├── dist/                         # Compiled JavaScript (committed!)
 │   ├── main.js
 │   ├── post.js
+│   ├── turbo-server.js
 │   └── package.json
-├── __test__/                # Unit tests
-├── __fixtures__/            # Integration test fixtures
+├── __fixtures__/                 # Integration test fixtures
 ├── .github/
 │   ├── actions/
-│   │   ├── test-fixture/   # Unified test helper
-│   │   └── local/          # Local copy of action for testing (committed!)
-│   └── workflows/          # CI/CD workflows
-├── action.config.ts         # Build configuration for github-action-builder
-├── action.yml               # Action definition
-├── package.json             # Dependencies and scripts
-└── CLAUDE.md                # Detailed documentation
+│   │   ├── test-fixture/         # Unified test helper
+│   │   └── local/                # Local copy of action for testing (committed!)
+│   └── workflows/                # CI/CD workflows
+├── action.config.ts              # Build configuration for github-action-builder
+├── action.yml                    # Action definition
+├── package.json                  # Dependencies and scripts
+└── CLAUDE.md                     # Detailed documentation
 ```
 
 ## Documentation
@@ -195,8 +197,7 @@ Full test suite across:
 This repository uses modular documentation:
 
 * **[CLAUDE.md](CLAUDE.md)** - Comprehensive developer documentation
-* **[src/CLAUDE.md](src/CLAUDE.md)** - Source code architecture
-* **[**test**/CLAUDE.md](__test__/CLAUDE.md)** - Unit testing guidelines
+* **[src/CLAUDE.md](src/CLAUDE.md)** - Source code architecture and testing guidelines
 * **[**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md)** - Test fixtures
 * **[.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md)** - Workflow
   testing patterns

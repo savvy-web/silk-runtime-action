@@ -247,15 +247,37 @@ export const getCombinedCacheConfig = (
 	});
 
 /**
- * Finds lockfiles matching glob patterns using the Glob service.
- * Supports simple filenames and glob patterns. Excludes node_modules and .git.
+ * Glob exclusions applied to lockfile discovery. Lockfiles only count at the
+ * repo root or real workspace package directories — never inside dependencies
+ * (`node_modules`), VCS internals (`.git`), or test/fixture trees, which often
+ * carry files named like real lockfiles and would otherwise pollute the cache
+ * key. Covers `__fixtures__/`, `__test__/...` (incl. nested `fixtures`), and the
+ * Jest `__tests__/` convention at any depth.
+ */
+export const LOCKFILE_GLOB_EXCLUDES = [
+	"!**/node_modules/**",
+	"!**/.git/**",
+	"!**/__fixtures__/**",
+	"!**/__tests__/**",
+	"!**/__test__/**",
+] as const;
+
+/**
+ * Build the newline-separated glob string for lockfile discovery: the include
+ * patterns followed by {@link LOCKFILE_GLOB_EXCLUDES}.
+ */
+export const buildLockfileGlobPatterns = (patterns: string[]): string =>
+	[...patterns, ...LOCKFILE_GLOB_EXCLUDES].join("\n");
+
+/**
+ * Finds lockfiles matching glob patterns using the Glob service. Excludes
+ * dependencies, VCS internals, and test/fixture trees (see
+ * {@link LOCKFILE_GLOB_EXCLUDES}).
  */
 export const findLockFiles = (patterns: string[]) =>
 	Effect.gen(function* () {
 		const glob = yield* Glob;
-		// Build a single patterns string: include patterns + exclude patterns using ! prefix
-		const excludes = "!**/node_modules/**\n!**/.git/**";
-		const patternsStr = [...patterns, excludes].join("\n");
+		const patternsStr = buildLockfileGlobPatterns(patterns);
 		const matches = yield* glob
 			.glob(patternsStr)
 			.pipe(Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<string>)));

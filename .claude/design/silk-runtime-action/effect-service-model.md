@@ -3,13 +3,14 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-06-23
+last-synced: 2026-06-23
 completeness: 92
 related:
   - ./architecture.md
   - ./runtime-installation.md
   - ./testing-strategy.md
+  - ./turbo-remote-cache.md
 dependencies: []
 ---
 
@@ -59,9 +60,15 @@ Every side effect (file I/O, process execution, caching, output setting, logging
 | `services/runtime-installer.ts` | `ToolInstaller`, `CommandRunner`, `ActionOutputs` |
 | `program.ts` | All of the above + `FileSystem.FileSystem` for `installDependencies` |
 | `program.installBiome` | `ToolInstaller`, `ActionOutputs`, `FileSystem.FileSystem` |
+| `services/turbo-cache/apply.ts` | `ActionOutputs`, `ActionState` |
+| `services/turbo-cache/handler.ts` | `BlobStore` |
 | `post.ts` | `ActionCache`, `ActionState` |
 
 `Action.run` provides `ActionOutputsLive`, `ActionLoggerLive` and the `ConfigProvider` automatically. Everything else is composed in `MainLive` (`src/layers/app.ts`) and `PostLive` (`src/post.ts`).
+
+### Detached server runtime
+
+`src/turbo-server.ts` runs as a standalone detached process, not under `Action.run`. It builds its own `BlobStore` layer (`GitHubBlobStoreLive` or `S3BlobStoreLive`, each provided `NodeHttpClient.layer`) and drives the handler with a `ManagedRuntime` from a plain `node:http` server. Secrets reach it as plain env vars and are re-wrapped with `Redacted.make` before constructing the S3 layer. See [turbo remote cache](./turbo-remote-cache.md).
 
 ### Input access pattern
 
@@ -97,7 +104,7 @@ Each phase of `program.ts` is wrapped in `Step.groupStep(title, effect)`:
 - On success: collapses the group and emits a single summary line (`Step.success(...)` if called inside).
 - On failure: expands the group and prints the buffered lines so the failure context is visible.
 
-`Step.success("X")` is the canonical success-line API; it replaces the previous `formatSuccess` + `Effect.log` pattern. Markdown helpers for job summaries are available via `GithubMarkdown.*` from the library if needed (none used today).
+`Step.success("X")` is the canonical success-line API; it replaces the previous `formatSuccess` + `Effect.log` pattern. Job-summary markdown is built with `GithubMarkdown.*` (heading/table/details/list) in `src/services/summary.ts` and written via `outputs.summary` (non-fatal).
 
 ---
 
@@ -195,6 +202,7 @@ Non-fatal demotion uses `Effect.catchTag` or `Effect.catchAll`:
 
 - [Architecture](./architecture.md) -- topology and layer composition overview.
 - [Runtime installation](./runtime-installation.md) -- the one place a `Context.Tag` service is defined locally.
+- [Turbo remote cache](./turbo-remote-cache.md) -- `BlobStore` service, `ManagedRuntime` detached entry, `Redacted` secrets.
 - [Testing strategy](./testing-strategy.md) -- library Test layers, `ConfigProvider.fromMap`, hand-rolled mock cases.
 
 **Context files:**
