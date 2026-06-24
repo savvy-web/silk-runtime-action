@@ -1,5 +1,106 @@
 # @savvy-web/silk-runtime-action
 
+## 1.1.0
+
+### Features
+
+* [`c2ac82a`](https://github.com/savvy-web/silk-runtime-action/commit/c2ac82aca9614f7a7bc25c205ce6c75f6d2817b2) ### Runtime-setup job summary and richer logs
+
+The action now writes a GitHub job-summary panel describing the runtime setup —
+a table of runtime(s), package manager, Biome, Turbo cache (backend and mode),
+dependency-cache hit, and dependency install status, with a collapsed
+"Cache details" section listing the cache key and lockfiles. The summary write
+is non-fatal: a failure logs a warning and never fails the action.
+
+Collapsed step lines now surface their outcome inline, so you no longer have to
+expand a group to see what happened:
+
+* **Detect configuration** shows the detected runtimes, package manager, Biome,
+  and whether Turbo was found.
+* **Turbo remote cache** shows the active backend and server readiness
+  (e.g. `github · server ready (:41230)`), or `passthrough (Vercel)` / `disabled`.
+* **Restore cache** shows `exact hit` / `partial hit` / `miss` with the lockfile
+  count.
+
+- [`c2ac82a`](https://github.com/savvy-web/silk-runtime-action/commit/c2ac82aca9614f7a7bc25c205ce6c75f6d2817b2) ### Embedded Turborepo remote cache server
+
+When `turbo.json` is detected, the action now auto-starts a local cache server
+(bundled as `dist/turbo-server.js`) that persists Turborepo artifacts across
+CI runs. Two backends are supported:
+
+* **GitHub Actions cache** (default) — zero-config; uses the existing
+  `ACTIONS_CACHE_URL` / `ACTIONS_RUNTIME_TOKEN` environment that the runner
+  provides.
+* **S3-compatible storage** — activated via the new `turbo-s3-*` inputs;
+  uses SigV4 request signing internally (no `aws-sdk` dependency).
+
+When `turbo-token` + `turbo-team` are both set the server acts as a passthrough
+to the external Vercel Remote Cache instead of one of the local backends.
+
+The server round-trips Turbo's `x-artifact-duration` header (stored on PUT,
+returned on GET) so Turborepo reports an accurate `timeSaved` on remote cache
+hits, matching local-hit behavior.
+
+**New inputs:**
+
+| Input                        | Description                                                                                                                                                                                     |
+| :--------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turbo-cache`                | Cache mode: `auto` (default) starts the embedded server when `turbo.json` is present; `off` disables. Backend is auto-selected: S3 if `turbo-s3-bucket` is set, otherwise GitHub Actions cache. |
+| `turbo-cache-prefix`         | Key prefix/namespace for embedded turbo cache artifacts (default: `""`)                                                                                                                         |
+| `turbo-s3-bucket`            | S3 bucket name                                                                                                                                                                                  |
+| `turbo-s3-region`            | AWS region (default: `""`)                                                                                                                                                                      |
+| `turbo-s3-endpoint`          | Custom S3-compatible endpoint URL                                                                                                                                                               |
+| `turbo-s3-access-key-id`     | AWS access key ID                                                                                                                                                                               |
+| `turbo-s3-secret-access-key` | AWS secret access key                                                                                                                                                                           |
+| `turbo-s3-session-token`     | AWS session token (optional)                                                                                                                                                                    |
+| `turbo-s3-prefix`            | S3 key prefix (default: `""`)                                                                                                                                                                   |
+
+**New outputs:**
+
+| Output                | Description                                          |
+| :-------------------- | :--------------------------------------------------- |
+| `turbo-cache-backend` | Active backend (`github`, `s3`, `remote`, or `none`) |
+| `turbo-cache-port`    | Port the local server is listening on                |
+
+**Behavior change:** the embedded remote cache server provides artifact-level
+caching (faster and more granular than the old whole-`**/.turbo` file cache).
+Turbo's local artifact cache (`**/.turbo/cache`) is still file-cached as a fast
+local-restore layer, but `**/.turbo/runs` (run summaries) and the other `.turbo`
+subdirectories are no longer cached.
+
+### Bug Fixes
+
+* [`c2ac82a`](https://github.com/savvy-web/silk-runtime-action/commit/c2ac82aca9614f7a7bc25c205ce6c75f6d2817b2) ### Lockfile discovery ignores test and fixture directories
+
+Cache-key generation hashes the repository's lockfiles. Lockfile discovery now
+excludes test and fixture trees — `__fixtures__/`, `__test__/` (including nested
+`fixtures/`), and the Jest `__tests__/` convention — at any depth, in addition
+to the existing `node_modules/` and `.git/` exclusions. Repositories that keep
+fixture lockfiles (files named like real lockfiles, used by tests) no longer
+have those files pollute the dependency cache key, which previously caused
+spurious cache invalidation when a fixture changed. Real lockfiles at the
+workspace root or in workspace packages are still discovered.
+
+### Dependencies
+
+* | [`c2ac82a`](https://github.com/savvy-web/silk-runtime-action/commit/c2ac82aca9614f7a7bc25c205ce6c75f6d2817b2) | Dependency    | Type    | Action  | From    | To |
+  | :------------------------------------------------------------------------------------------------------------ | :------------ | :------ | :------ | :------ | -- |
+  | @effect/platform                                                                                              | dependency    | updated | ^0.96.1 | ^0.96.2 |    |
+  | effect                                                                                                        | dependency    | updated | ^3.21.3 | ^3.21.4 |    |
+  | @savvy-web/github-action-effects                                                                              | dependency    | updated | ^2.1.4  | ^2.2.2  |    |
+  | @savvy-web/github-action-builder                                                                              | devDependency | updated | ^0.7.10 | ^0.7.12 |    |
+  | @savvy-web/silk                                                                                               | devDependency | updated | ^1.1.0  | ^1.3.0  |    |
+  | @savvy-web/vitest                                                                                             | devDependency | updated | ^1.5.0  | ^1.5.1  |    |
+
+### Quieter install logs
+
+The action silences noisy chatter from its own install steps — npm update and
+funding notices and husky `prepare` output — by setting `NPM_CONFIG_UPDATE_NOTIFIER`,
+`NPM_CONFIG_FUND`, `HUSKY`, and `COREPACK_ENABLE_DOWNLOAD_PROMPT` on its own
+process only. These are not exported, so they do not affect later steps in your
+job (and `HUSKY=0` correctly skips git-hook installation in CI). The package
+manager's own install summary is preserved.
+
 ## 1.0.5
 
 ### Bug Fixes
