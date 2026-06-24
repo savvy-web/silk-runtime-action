@@ -51,6 +51,13 @@ describe("killProcess", () => {
 			}),
 		).not.toThrow();
 	});
+	it("never signals a non-positive pid (process-group footgun)", () => {
+		const calls: Array<number> = [];
+		const spy = (pid: number) => calls.push(pid);
+		killProcess(-1, spy);
+		killProcess(0, spy);
+		expect(calls).toEqual([]);
+	});
 });
 
 it("exposes the default port", () => {

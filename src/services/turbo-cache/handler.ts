@@ -69,7 +69,11 @@ export const makeTurboHandler =
 			if (req.method === "GET") {
 				const blob = yield* store.get(key);
 				if (Option.isNone(blob)) return { status: 404, headers: {} };
-				const { tag, durationMs, body } = decodeArtifact(blob.value);
+				const decoded = decodeArtifact(blob.value);
+				// A malformed/truncated frame decodes to null — treat as a miss so
+				// Turbo rebuilds rather than receiving a corrupt artifact.
+				if (decoded === null) return { status: 404, headers: {} };
+				const { tag, durationMs, body } = decoded;
 				const headers: Record<string, string> = {
 					"content-type": "application/octet-stream",
 					"x-artifact-duration": String(durationMs),

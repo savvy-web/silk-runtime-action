@@ -463,6 +463,13 @@ export const program = Effect.gen(function* () {
 					Effect.as<TurboApplyResult>({ backend: "none", port: null }),
 				),
 			),
+			// Also swallow synchronous defects (e.g. a throw inside spawn) so turbo
+			// cache setup can never fail the action — matches post.ts's posture.
+			Effect.catchAllDefect((defect) =>
+				Effect.logWarning(
+					`Turbo cache setup defect: ${defect instanceof Error ? defect.message : String(defect)}`,
+				).pipe(Effect.as<TurboApplyResult>({ backend: "none", port: null })),
+			),
 		),
 	);
 
@@ -492,6 +499,14 @@ export const program = Effect.gen(function* () {
 						if (detail) {
 							yield* Effect.logWarning(`Cache restore cause detail: ${detail}`);
 						}
+						return "none" as const;
+					}),
+				),
+				// restoreCache also calls state.save (ActionStateError) — never let a
+				// non-CacheError failure escape and fail the action; degrade to a miss.
+				Effect.catchAll((e) =>
+					Effect.gen(function* () {
+						yield* Effect.logWarning(`Cache restore failed: ${e instanceof Error ? e.message : String(e)}`);
 						return "none" as const;
 					}),
 				),

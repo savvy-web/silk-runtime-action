@@ -17,11 +17,20 @@ export const encodeArtifact = (tag: string | null, durationMs: number, body: Uin
 	return out;
 };
 
-/** Inverse of {@link encodeArtifact}. */
-export const decodeArtifact = (blob: Uint8Array): { tag: string | null; durationMs: number; body: Uint8Array } => {
+/**
+ * Inverse of {@link encodeArtifact}. Returns `null` for a malformed frame —
+ * a blob shorter than the 8-byte header, or a `tagLen` that runs past the
+ * blob — so a truncated/corrupt artifact is treated as a cache miss rather
+ * than decoded into mis-sliced tag/body and served to Turbo.
+ */
+export const decodeArtifact = (
+	blob: Uint8Array,
+): { tag: string | null; durationMs: number; body: Uint8Array } | null => {
+	if (blob.byteLength < 8) return null;
 	const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
 	const tagLen = view.getUint32(0, false);
 	const durationMs = view.getUint32(4, false);
+	if (8 + tagLen > blob.byteLength) return null;
 	const tag = tagLen > 0 ? new TextDecoder().decode(blob.subarray(8, 8 + tagLen)) : null;
 	return { tag, durationMs, body: blob.subarray(8 + tagLen) };
 };

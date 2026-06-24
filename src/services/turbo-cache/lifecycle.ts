@@ -91,6 +91,10 @@ export const waitForServer = (
 
 /** Kill a pid with SIGTERM, swallowing "already gone" errors. */
 export const killProcess = (pid: number, kill: (pid: number, signal?: string) => void = process.kill): void => {
+	// Never signal a non-positive pid. process.kill(-1, ...) / kill(0, ...) target
+	// the caller's whole process group, and spawnTurboServer returns -1 when the
+	// child never got a pid — signalling the group would take out the runner.
+	if (pid <= 0) return;
 	try {
 		kill(pid, "SIGTERM");
 	} catch {
