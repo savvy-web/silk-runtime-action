@@ -1,5 +1,11 @@
 # @savvy-web/silk-runtime-action
 
+## 1.1.2
+
+### Bug Fixes
+
+* [`8bcba52`](https://github.com/savvy-web/silk-runtime-action/commit/8bcba52277be8b79e4d106f98fd67f04b58e92d2) Explicitly declare `@types/node` version.
+
 ## 1.1.1
 
 ### Dependencies
