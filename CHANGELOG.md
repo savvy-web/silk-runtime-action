@@ -1,5 +1,20 @@
 # @savvy-web/silk-runtime-action
 
+## 1.1.1
+
+### Dependencies
+
+* [`f48ae13`](https://github.com/savvy-web/silk-runtime-action/commit/f48ae13d768922a92560fd5af44460b85085603c) | Dependency | Type | Action | From | To |
+  \| :------------------------------- | :------------ | :------ | :----- | :----- |
+  \| @savvy-web/github-action-effects | dependency | updated | ^2.3.1 | ^2.3.3 |
+  \| @savvy-web/github-action-builder | devDependency | updated | ^0.8.0 | ^1.0.1 |
+  \| @savvy-web/silk | devDependency | updated | ^1.3.4 | ^1.3.5 |
+
+- [`fd57381`](https://github.com/savvy-web/silk-runtime-action/commit/fd57381d2925c07a5d3618b657847b01aa4f07ab) | Dependency | Type | Action | From | To |
+  \| :------------------------------- | :------------ | :------ | :----- | :----- |
+  \| @savvy-web/github-action-effects | dependency | updated | ^2.3.0 | ^2.3.1 |
+  \| @savvy-web/silk | devDependency | updated | ^1.3.3 | ^1.3.4 |
+
 ## 1.1.0
 
 ### Features
