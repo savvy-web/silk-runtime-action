@@ -58,6 +58,7 @@ jobs:
             @savvy-web/pnpm-plugin-silk
           dependencies: |
             @savvy-web/*
+            @vitest-agent/*
           run: |
             pnpm savvy init
             pnpm build
