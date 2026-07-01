@@ -1,6 +1,14 @@
 packages:
   - .
 autoInstallPeers: true
+catalogs:
+  silk:
+    "@effect/cluster": ^0.59.0
+    "@effect/platform": ^0.96.2
+    "@effect/platform-node": ^0.107.0
+    "@effect/rpc": ^0.75.1
+    "@effect/sql": ^0.51.1
+    effect: ^3.21.4
 configDependencies:
   "@savvy-web/pnpm-plugin-silk": 0.18.0+sha512-jCfqTFQpeocI+kKo3uNkpIEuAthh2zFqNEMQvRNXMmXzyHq/mZ7ou4hGdbLRjcLo4wGPlpRHtufkrCPH2AraNg==
 minimumReleaseAgeExclude:
