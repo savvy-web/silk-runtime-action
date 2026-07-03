@@ -80,8 +80,8 @@ importers:
         specifier: catalog:silk
         version: 3.21.4
       jsonc-effect:
-        specifier: ^0.2.1
-        version: 0.2.1(effect@3.21.4)
+        specifier: ^0.3.0
+        version: 0.3.0(effect@3.21.4)
     devDependencies:
       '@savvy-web/github-action-builder':
         specifier: ^1.0.3
@@ -2378,11 +2378,6 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
-
-  jsonc-effect@0.2.1:
-    resolution: {integrity: sha512-gqxLlEStGJwmrRJZ3VyJbeb3m3yL+zptGGJrL30x0pxu2XgaWHbwM+YyruJtx4e3qXctWG79Fqyx8+VE/zNOUg==}
-    peerDependencies:
-      effect: '>=3.21.0'
 
   jsonc-effect@0.3.0:
     resolution: {integrity: sha512-V0T5h2lP00K9xwdT2Js2OBdb/glCwOAerzOgvmRnF9jF+6ZezhpvRJAjx2QrlJHSd3vlb9gXXmIroQOYB2RSKg==}
@@ -6335,10 +6330,6 @@ snapshots:
   json-with-bigint@3.5.8: {}
 
   json5@2.2.3: {}
-
-  jsonc-effect@0.2.1(effect@3.21.4):
-    dependencies:
-      effect: 3.21.4
 
   jsonc-effect@0.3.0(effect@3.21.4):
     dependencies:

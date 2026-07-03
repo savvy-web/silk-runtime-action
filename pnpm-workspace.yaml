@@ -1,25 +1,5 @@
 packages:
   - .
 autoInstallPeers: true
-catalogs:
-  silk:
-    "@effect/cluster": ^0.59.0
-    "@effect/platform": ^0.96.2
-    "@effect/platform-node": ^0.107.0
-    "@effect/rpc": ^0.75.1
-    "@effect/sql": ^0.51.1
-    effect: ^3.21.4
 configDependencies:
   "@savvy-web/pnpm-plugin-silk": 0.19.0+sha512-g2IsUkl6ERf7VbC64pYRva4eIDFsUqTwfbikN7BpFfGvbDA0G+Qk/p6F/lvbRLr9tyMcW1OVnABrD9nb7zgcxg==
-minimumReleaseAgeExclude:
-  - "@vitest-agent/cli@1.0.0"
-  - "@vitest-agent/mcp@1.0.0"
-  - "@vitest-agent/plugin@1.0.0"
-  - "@vitest-agent/reporter@1.0.0"
-  - "@vitest-agent/sdk@1.0.0"
-  - "@vitest-agent/sidecar-darwin-arm64@1.0.0"
-  - "@vitest-agent/sidecar-linux-arm64@1.0.0"
-  - "@vitest-agent/sidecar-linux-x64@1.0.0"
-  - "@vitest-agent/sidecar-win32-x64@1.0.0"
-  - "@vitest-agent/sidecar@1.0.0"
-  - "@vitest-agent/ui@1.0.0"
