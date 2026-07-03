@@ -10,7 +10,7 @@ catalogs:
     "@effect/sql": ^0.51.1
     effect: ^3.21.4
 configDependencies:
-  "@savvy-web/pnpm-plugin-silk": 0.18.0+sha512-jCfqTFQpeocI+kKo3uNkpIEuAthh2zFqNEMQvRNXMmXzyHq/mZ7ou4hGdbLRjcLo4wGPlpRHtufkrCPH2AraNg==
+  "@savvy-web/pnpm-plugin-silk": 0.19.0+sha512-g2IsUkl6ERf7VbC64pYRva4eIDFsUqTwfbikN7BpFfGvbDA0G+Qk/p6F/lvbRLr9tyMcW1OVnABrD9nb7zgcxg==
 minimumReleaseAgeExclude:
   - "@vitest-agent/cli@1.0.0"
   - "@vitest-agent/mcp@1.0.0"
