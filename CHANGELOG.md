@@ -1,5 +1,19 @@
 # @savvy-web/silk-runtime-action
 
+## 1.1.4
+
+### Dependencies
+
+* | Dependency                       | Type          | Action  | From    | To            |                                                                       |
+  | -------------------------------- | ------------- | ------- | ------- | ------------- | --------------------------------------------------------------------- |
+  | @changesets/cli                  | devDependency | added   | —       | ^3.0.0-next.8 |                                                                       |
+  | @savvy-web/github-action-builder | devDependency | updated | ^1.0.3  | ^1.1.0        |                                                                       |
+  | @savvy-web/silk                  | devDependency | updated | ^1.3.11 | ^2.0.0        | [#158][#158] Thanks [@spencerbeggs](https://github.com/spencerbeggs)! |
+
+### Patch Changes
+
+[#158]: https://github.com/savvy-web/silk-runtime-action/pull/158
+
 ## 1.1.3
 
 ### Dependencies
