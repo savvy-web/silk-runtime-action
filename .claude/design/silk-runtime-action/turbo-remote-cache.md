@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: integration
 created: 2026-06-23
-updated: 2026-06-23
-last-synced: 2026-06-23
+updated: 2026-07-05
+last-synced: 2026-07-05
 completeness: 90
 related:
   - ./architecture.md
@@ -157,10 +157,6 @@ See `src/services/turbo-cache/codec.ts`. Frame layout: 4-byte big-endian tag len
 ### Bundling
 
 `src/turbo-server.ts` is a third bundle entry declared as `entries.workers` in `action.config.ts`, producing `dist/turbo-server.js`. Main resolves the entry path relative to its own bundle (`import.meta.url`). See [build and distribution](./build-and-distribution.md).
-
-### Dogfooded dependencies
-
-The `BlobStore` service (`GitHubBlobStoreLive`, `S3BlobStoreLive`) and the builder `workers` entry support are dogfooded from `../systems/packages/*` and are not yet published. The action runs the committed `dist`, so the bundled artifact already contains these APIs.
 
 ---
 

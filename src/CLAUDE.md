@@ -6,14 +6,14 @@ Source code architecture, build process, and development guidelines for the silk
 
 ## Architecture Overview
 
-The action is written as an **Effect-based program** using `@savvy-web/github-action-effects` (^2.2.2) for GitHub Action service abstractions. All side effects (file I/O, command execution, caching, outputs) flow through Effect services rather than direct API calls.
+The action is written as an **Effect-based program** using `@savvy-web/github-action-effects` (range declared in `package.json`) for GitHub Action service abstractions. All side effects (file I/O, command execution, caching, outputs) flow through Effect services rather than direct API calls.
 
 Key architectural properties:
 
 - **Zero `@actions/*` dependencies** -- `github-action-effects` implements the GitHub Actions runtime protocol natively (V2 Twirp protocol with Azure Blob Storage for caching, native process execution, etc.)
 - **Inputs via Effect Config API** -- `Config.string`, `Config.boolean`, `Config.withDefault` backed by a `ConfigProvider` that reads GitHub Actions input environment variables; `ActionInput.*` combinators for multi-value inputs
 - **Logging via Step.\* namespace** -- `Step.groupStep` for collapsible sections that buffer output and expand on failure; `Step.success` for canonical success lines
-- **Build via rsbuild** -- `@savvy-web/github-action-builder` ^0.7.12 uses rsbuild under the hood; `entries.workers` bundles the detached `turbo-server.ts` as a third entry
+- **Build via rsbuild** -- `@savvy-web/github-action-builder` uses rsbuild under the hood; `entries.workers` bundles the detached `turbo-server.ts` as a third entry
 
 For a full architectural spec see `.claude/design/silk-runtime-action/architecture.md`.
 
@@ -155,7 +155,7 @@ Run the build:
 pnpm build
 ```
 
-This uses `@savvy-web/github-action-builder` (^0.7.12, rsbuild-based) to bundle all three entry points (`main`, `post`, and the `turbo-server` worker) to `dist/` and copy a testing variant to `.github/actions/local/`.
+This uses `@savvy-web/github-action-builder` (rsbuild-based) to bundle all three entry points (`main`, `post`, and the `turbo-server` worker) to `dist/` and copy a testing variant to `.github/actions/local/`.
 
 **Always commit `dist/` and `.github/actions/local/` after building.**
 

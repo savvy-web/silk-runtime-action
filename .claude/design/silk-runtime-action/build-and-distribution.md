@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: integration
 created: 2026-03-21
-updated: 2026-06-23
-last-synced: 2026-06-23
+updated: 2026-07-05
+last-synced: 2026-07-05
 completeness: 88
 related:
   - ./architecture.md
@@ -29,7 +29,7 @@ Build pipeline, bundle configuration, distribution strategy and the local testin
 
 ## Overview
 
-The action is built using `@savvy-web/github-action-builder` (^0.7.1, rsbuild-based) and produces compiled JavaScript bundles that are committed to git. GitHub Actions runs the action from the checked-out source -- there is no build step in the Actions runtime -- so the compiled output must be present in the repo.
+The action is built using `@savvy-web/github-action-builder` (^1.1.0, rsbuild-based; `package.json` is authoritative for the range) and produces compiled JavaScript bundles that are committed to git. GitHub Actions runs the action from the checked-out source -- there is no build step in the Actions runtime -- so the compiled output must be present in the repo.
 
 **Key features:**
 
@@ -112,13 +112,13 @@ runs:
 
 GitHub Actions loads the action directly from the repository at the specified ref. There is no build step in the Actions runtime, so the compiled JavaScript must be present in the repository. This applies to every JavaScript GitHub Action.
 
-### Builder version (^0.7.1)
+### Builder version (^1.1.0)
 
-The builder was upgraded from 0.5.0 to ^0.7.1 as part of the v2 standardization. 0.7.1 supports the `build.ignore` list and matches the rsbuild plugin contract expected by the rest of the savvy-web action stack.
+The builder tracks the published `@savvy-web/github-action-builder` line; `package.json` is authoritative for the exact range. Builder 1.1.0 added a `build.nativeDynamicImports` option for bundles that must preserve native dynamic imports — it is deliberately not set here because the production bundle contains no dynamic-import packages (the build emits zero rspack critical-dependency warnings).
 
 ### `ignore` list for cyclonedx optional plugins
 
-`@savvy-web/github-action-effects` pulls in `@cyclonedx/cyclonedx-library` transitively. That library ships optional plugins -- XML serializers and validators (`xmlbuilder2`, `libxmljs2`) and a draft-2019 JSON validator (`ajv-formats-draft2019`) -- that the action never invokes. They are not installed in production (declared as `optionalDependencies`), so the bundler must not try to resolve them.
+`@savvy-web/github-action-effects` pulls in `@cyclonedx/cyclonedx-library` transitively. That library ships optional plugins -- XML serializers and validators (`xmlbuilder2`, `libxmljs2`) and a draft-2019 JSON validator (`ajv-formats-draft2019`) -- that the action never invokes. They are not declared as dependencies at all and are never installed, so the bundler must not try to resolve them.
 
 `ignore` is the right knob here, not `externals`. `ignore` rewrites the import to a throwing stub; cyclonedx's `_optPlug` wrapper try/catches that throw and falls through to its non-XML/non-draft-2019 code path. `externals` would mean "available at runtime" -- which is the opposite of true.
 
@@ -146,21 +146,22 @@ rsbuild gives tree shaking, dead code elimination and ES module output compatibl
 
 ### Dependencies
 
-Production (bundled):
+`package.json` is authoritative for exact ranges. Topology:
 
-- `@savvy-web/github-action-effects` ^2.0.0 -- GitHub Actions runtime protocol.
-- `effect`, `@effect/platform`, `@effect/platform-node` -- Effect framework.
+Production (bundled into `dist/`):
+
+- `@savvy-web/github-action-effects` -- GitHub Actions runtime protocol.
+- `effect`, `@effect/platform`, `@effect/platform-node` and related Effect packages -- Effect framework, pinned via the `silk` catalog in `pnpm-workspace.yaml`.
 - `jsonc-effect` -- Biome config parsing.
-- Related Effect packages transitively.
 
 Dev (not bundled):
 
-- `@savvy-web/github-action-builder` ^0.7.1 -- build tool.
-- `@savvy-web/vitest`, `@savvy-web/changesets`, `@savvy-web/commitlint`, `@savvy-web/lint-staged` -- tooling.
+- `@savvy-web/github-action-builder` -- build tool.
+- `@savvy-web/silk` -- release/CI tooling providing the `savvy` CLI used by `ci:version`.
+- `@changesets/cli` -- declared explicitly because `@savvy-web/silk` 2.x peers on a changesets v3 prerelease that pnpm auto-install-peers will not resolve on its own; only the `savvy` CLI consumes it, nothing in `src/` does.
+- `@vitest-agent/plugin`, `@types/node` -- test and type tooling.
 
-Optional (declared in `optionalDependencies`, never installed and ignored at build time):
-
-- `xmlbuilder2`, `libxmljs2`, `ajv-formats-draft2019`.
+The cyclonedx optional plugins (`xmlbuilder2`, `libxmljs2`, `ajv-formats-draft2019`) are not declared as dependencies; the `ignore` list stubs their imports at build time.
 
 ### TypeScript configuration
 
@@ -172,7 +173,7 @@ Optional (declared in `optionalDependencies`, never installed and ignored at bui
 ### Release process
 
 1. `pnpm changeset` to record changes.
-2. Changesets workflow opens a release PR.
+2. Changesets workflow opens a release PR. Version application runs through the `savvy` CLI (`ci:version` script) from `@savvy-web/silk`, which uses the changesets v3 engine as of silk 2.x -- this affects only release tooling, never the action source or bundles.
 3. Merging the PR bumps `package.json` and `CHANGELOG.md`, then creates a GitHub release with tags.
 4. Users reference by tag (e.g., `savvy-web/silk-runtime-action@v1`).
 

@@ -88,14 +88,14 @@ Repositories using this action **MUST** have a `package.json` in their root dire
 **Technical stack:**
 
 * **Runtime framework:** [Effect](https://effect.website) for typed errors, dependency injection, and service composition
-* **GitHub Action services:** `@savvy-web/github-action-effects` ^2.2.2 — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, `BlobStore` (GitHub Actions cache / S3 SigV4 backends) backing the embedded turbo remote cache, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
-* **Build tool:** `@savvy-web/github-action-builder` ^0.7.12 (rsbuild-based) configured via `action.config.ts`; `entries.workers` bundles the detached `src/turbo-server.ts` as a third entry.
+* **GitHub Action services:** `@savvy-web/github-action-effects` (range declared in `package.json`) — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, `BlobStore` (GitHub Actions cache / S3 SigV4 backends) backing the embedded turbo remote cache, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
+* **Build tool:** `@savvy-web/github-action-builder` (rsbuild-based, range declared in `package.json`) configured via `action.config.ts`; `entries.workers` bundles the detached `src/turbo-server.ts` as a third entry.
 * **Cross-phase state:** `src/state.ts` defines `CacheState` and `TurboServerState` (Schema.Class) plus `STATE_KEYS`; `main` writes, `post` reads.
 * **Platform I/O:** `@effect/platform` (FileSystem)
 * **Action type:** Compiled Node.js action (uses `node24` runtime, see `action.yml`)
-* **Package manager:** pnpm 11.8.0 (specified in package.json)
-* **Node.js version:** 26.3.1 (specified in package.json devEngines.runtime)
-* **Linting:** Biome 2.4.16 with strict rules
+* **Package manager:** pnpm — exact version pinned in `package.json` (`packageManager` and `devEngines.packageManager`)
+* **Node.js version:** exact version pinned in `package.json` `devEngines.runtime`
+* **Linting:** Biome with strict rules (version pinned via `biome.jsonc` `$schema` and the `@savvy-web/silk` preset)
 * **Testing:** Vitest with Effect test layers + fixture-based workflow tests
 * **Type checking:** TypeScript with native preview build (`@typescript/native-preview`)
 * **Direct dependencies:** Zero `@actions/*` packages -- all GitHub Actions integration is provided by `github-action-effects`
@@ -446,7 +446,7 @@ Uses Changesets for versioning:
 
 ## Build Process
 
-The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` ^0.7.12 (rsbuild-based).
+The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` (rsbuild-based; range declared in `package.json`).
 
 ### What Gets Built
 

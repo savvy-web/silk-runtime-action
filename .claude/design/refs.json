@@ -10,8 +10,8 @@
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/build-and-distribution.md",
-			"hash": "70f5dc5e7c111ce2651270a291e43b85dcee1b78aea69f5480e023f7079e4397",
-			"recordedAt": "2026-06-23"
+			"hash": "5dedaa1916900fbb7aa906ee2772b572466acc02503cb3714fbe75514c9a1e29",
+			"recordedAt": "2026-07-05"
 		},
 		{
 			"source": "CLAUDE.md",
@@ -40,8 +40,8 @@
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/turbo-remote-cache.md",
-			"hash": "dc2e3085f9c54c255dd12009c64fbd030d37649b8cc2dc8535617efee5fd1292",
-			"recordedAt": "2026-06-23"
+			"hash": "1ed7c93f6da639c1d8b571b546a14ef6f76c78ec18329863b1c98a53f52abcf1",
+			"recordedAt": "2026-07-05"
 		}
 	]
 }
