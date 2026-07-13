@@ -15,7 +15,8 @@
 		"**/.git",
 		"**/docs/superpowers",
 		"**/__test__/**/fixtures/**",
-		"**/__fixtures__/**"
+		"**/__fixtures__/**",
+		"**/.repos"
 	],
 	"customRules": ["@savvy-web/silk/changesets/markdownlint"],
 	"config": {
