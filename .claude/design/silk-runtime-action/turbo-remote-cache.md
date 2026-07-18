@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: integration
 created: 2026-06-23
-updated: 2026-07-05
-last-synced: 2026-07-05
+updated: 2026-07-17
+last-synced: 2026-07-17
 completeness: 90
 related:
   - ./architecture.md
@@ -132,7 +132,7 @@ Turbo sends `x-artifact-duration` (artifact generation time) on PUT and expects 
 
 ### Non-fatal degradation
 
-Turbo cache is strictly additive. `applyTurboCache` and the surrounding `program.ts` step both `catchAll` to a `{ backend: "none" }` warning, and the handler itself catches all errors to a 500 rather than crashing the server. A misconfigured bucket or an unreachable cache never fails the consumer's build.
+Turbo cache is strictly additive. `applyTurboCache` and the surrounding `program.ts` step both `Effect.catch` (v4's rename of `catchAll`) to a `{ backend: "none" }` warning, and the handler itself catches all errors to a 500 rather than crashing the server. A misconfigured bucket or an unreachable cache never fails the consumer's build.
 
 ### Secrets handled as `Redacted`
 
@@ -152,7 +152,7 @@ See `src/services/turbo-cache/codec.ts`. Frame layout: 4-byte big-endian tag len
 
 ### Spawn spec and backend wiring
 
-`buildSpawnSpec` (in `lifecycle.ts`) carries all config to the child through `TURBOGHA_*` env vars (port, prefix, token, backend and the S3 fields). The detached entry `src/turbo-server.ts` reads those env vars, builds the matching `BlobStore` layer (`GitHubBlobStoreLive` or `S3BlobStoreLive`, each provided `NodeHttpClient.layer`), and drives the handler through a `ManagedRuntime` from a plain `node:http` server.
+`buildSpawnSpec` (in `lifecycle.ts`) carries all config to the child through `TURBOGHA_*` env vars (port, prefix, token, backend and the S3 fields). The detached entry `src/turbo-server.ts` reads those env vars, builds the matching `BlobStore` layer (`GitHubBlobStoreLive` or `S3BlobStoreLive`, each provided `NodeHttpClient.layerUndici` — the v4 Node HTTP layer, from `@effect/platform-node`), and drives the handler through a `ManagedRuntime` from a plain `node:http` server.
 
 ### Bundling
 

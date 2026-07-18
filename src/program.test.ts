@@ -1,4 +1,3 @@
-import { FileSystem } from "@effect/platform";
 import { ActionCache, ActionOutputs, Step } from "@savvy-web/github-action-effects";
 import {
 	ActionCacheError,
@@ -10,7 +9,7 @@ import {
 	GlobTest,
 	ToolInstallerTest,
 } from "@savvy-web/github-action-effects/testing";
-import { ConfigProvider, Effect, Exit, Layer, Logger, Option } from "effect";
+import { ConfigProvider, Effect, Exit, FileSystem, Layer, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	getActivePackageManagers,
@@ -143,7 +142,7 @@ const pipeline: Effect.Effect<void, any, any> = Effect.gen(function* () {
 	// 5. Install Biome (non-fatal)
 	if (Option.isSome(config.biome)) {
 		yield* Step.groupStep("Install Biome", Effect.log(`Biome ${config.biome.value} (test stub)`)).pipe(
-			Effect.catchAll(() => Effect.void),
+			Effect.catch(() => Effect.void),
 		);
 	}
 
@@ -174,8 +173,7 @@ const MULTI_RUNTIME_PACKAGE_JSON = JSON.stringify({
 	},
 });
 
-const makeConfigProvider = (inputs: Record<string, string> = {}) =>
-	ConfigProvider.fromMap(new Map(Object.entries(inputs)));
+const makeConfigProvider = (inputs: Record<string, string> = {}) => ConfigProvider.fromUnknown(inputs);
 
 // ---------------------------------------------------------------------------
 // Base layer builder
@@ -238,9 +236,9 @@ const buildBaseLayer = (opts: {
 const runPipeline = (layer: Layer.Layer<any>, configProvider: ConfigProvider.ConfigProvider) =>
 	Effect.runPromise(
 		(pipeline as Effect.Effect<void, never, never>).pipe(
-			Effect.withConfigProvider(configProvider),
+			Effect.provideService(ConfigProvider.ConfigProvider, configProvider),
 			Effect.provide(layer),
-			Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
+			Effect.provide(Logger.layer([])),
 		),
 	);
 
@@ -250,9 +248,9 @@ const runPipelineExit = (layer: Layer.Layer<any>, configProvider: ConfigProvider
 	Effect.runPromise(
 		Effect.exit(
 			(pipeline as Effect.Effect<void, never, never>).pipe(
-				Effect.withConfigProvider(configProvider),
+				Effect.provideService(ConfigProvider.ConfigProvider, configProvider),
 				Effect.provide(layer),
-				Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
+				Effect.provide(Logger.layer([])),
 			),
 		),
 	);
@@ -444,7 +442,7 @@ describe("installDependencies", () => {
 		return Effect.runPromise(
 			(installDependencies(pm) as Effect.Effect<void, unknown, never>).pipe(
 				Effect.provide(layer as never),
-				Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
+				Effect.provide(Logger.layer([])),
 			),
 		);
 	};
@@ -515,7 +513,7 @@ describe("setupPackageManager", () => {
 		Effect.runPromise(
 			(setupPackageManager(pm, version) as Effect.Effect<void, unknown, never>).pipe(
 				Effect.provide(CommandRunnerTest.layer(responses) as never),
-				Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
+				Effect.provide(Logger.layer([])),
 			),
 		);
 

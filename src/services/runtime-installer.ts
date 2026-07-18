@@ -59,24 +59,26 @@ export interface InstalledRuntime {
 }
 
 /**
- * Service tag for installing a specific runtime.
- *
- * Context.Tag class form so callers can `yield* RuntimeInstaller` and
- * downstream typing resolves through the static tag identity.
+ * Service shape for installing a specific runtime.
  */
-export class RuntimeInstaller extends Context.Tag("RuntimeInstaller")<
-	RuntimeInstaller,
-	{
-		readonly install: (
-			version: string,
-		) => Effect.Effect<InstalledRuntime, RuntimeInstallError, ToolInstaller | CommandRunner | ActionOutputs>;
-	}
->() {}
+export interface RuntimeInstallerShape {
+	readonly install: (
+		version: string,
+	) => Effect.Effect<InstalledRuntime, RuntimeInstallError, ToolInstaller | CommandRunner | ActionOutputs>;
+}
+
+/**
+ * Service for installing a specific runtime.
+ *
+ * Context.Service class form so callers can `yield* RuntimeInstaller` and
+ * downstream typing resolves through the static service identity.
+ */
+export class RuntimeInstaller extends Context.Service<RuntimeInstaller, RuntimeInstallerShape>()("RuntimeInstaller") {}
 
 /**
  * Factory: creates a RuntimeInstaller from a descriptor.
  */
-export const makeRuntimeInstaller = (descriptor: RuntimeDescriptor): Context.Tag.Service<typeof RuntimeInstaller> => ({
+export const makeRuntimeInstaller = (descriptor: RuntimeDescriptor): RuntimeInstallerShape => ({
 	install: (version) =>
 		Effect.gen(function* () {
 			const toolInstaller = yield* ToolInstaller;
@@ -117,7 +119,7 @@ export const makeRuntimeInstaller = (descriptor: RuntimeDescriptor): Context.Tag
 
 			return { name: descriptor.name, version, path: toolPath } satisfies InstalledRuntime;
 		}).pipe(
-			Effect.catchAll((error) =>
+			Effect.catch((error) =>
 				Effect.fail(
 					new RuntimeInstallError({
 						runtime: descriptor.name,
@@ -149,12 +151,15 @@ export const installerLayerFor = (name: string): Layer.Layer<RuntimeInstaller, R
 		case "deno":
 			return DenoInstallerLive;
 		default:
-			return Layer.fail(
-				new RuntimeInstallError({
-					runtime: name,
-					version: "unknown",
-					reason: `Unknown runtime: ${name}`,
-				}),
+			return Layer.effect(
+				RuntimeInstaller,
+				Effect.fail(
+					new RuntimeInstallError({
+						runtime: name,
+						version: "unknown",
+						reason: `Unknown runtime: ${name}`,
+					}),
+				),
 			);
 	}
 };

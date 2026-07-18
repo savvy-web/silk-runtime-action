@@ -35,8 +35,8 @@ const liveLayer: Layer.Layer<BlobStore> =
 					? { sessionToken: Redacted.make(process.env.TURBOGHA_S3_SESSION_TOKEN) }
 					: {}),
 				...(process.env.TURBOGHA_S3_PREFIX ? { prefix: process.env.TURBOGHA_S3_PREFIX } : {}),
-			}).pipe(Layer.provide(NodeHttpClient.layer))
-		: GitHubBlobStoreLive.pipe(Layer.provide(NodeHttpClient.layer));
+			}).pipe(Layer.provide(NodeHttpClient.layerUndici))
+		: GitHubBlobStoreLive.pipe(Layer.provide(NodeHttpClient.layerUndici));
 
 const runtime = ManagedRuntime.make(liveLayer);
 const handler = makeTurboHandler({ prefix, expectedToken: token });

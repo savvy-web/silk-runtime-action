@@ -20,7 +20,7 @@ import { Layer } from "effect";
 /* v8 ignore start -- pure layer wiring */
 
 export const MainLive = Layer.mergeAll(
-	ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layer)),
+	ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layerUndici)),
 	ToolInstallerLive,
 	CommandRunnerLive,
 	ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),

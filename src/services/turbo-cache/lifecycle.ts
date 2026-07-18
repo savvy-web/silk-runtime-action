@@ -79,13 +79,11 @@ export const waitForServer = (
 		catch: () => new Error("not ready"),
 	});
 	return probe.pipe(
-		Effect.retry(
-			Schedule.intersect(
-				Schedule.spaced(`${opts.delayMillis ?? 150} millis`),
-				Schedule.recurs((opts.attempts ?? 40) - 1),
-			),
-		),
-		Effect.catchAll(() => Effect.succeed(false)),
+		Effect.retry({
+			schedule: Schedule.spaced(`${opts.delayMillis ?? 150} millis`),
+			times: (opts.attempts ?? 40) - 1,
+		}),
+		Effect.catch(() => Effect.succeed(false)),
 	);
 };
 

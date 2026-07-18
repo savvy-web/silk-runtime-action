@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-06-23
-last-synced: 2026-06-23
+updated: 2026-07-17
+last-synced: 2026-07-17
 completeness: 92
 related:
   - ./effect-service-model.md
@@ -35,7 +35,7 @@ Top-level architecture of the Effect-based GitHub Action that sets up JavaScript
 
 The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
 
-Built on the Effect framework using `@savvy-web/github-action-effects` (^2.0.0) for all GitHub Actions runtime interactions. The library implements the GitHub Actions runtime protocol natively (V2 Twirp caching, Azure Blob Storage, native process execution) so the action has zero `@actions/*` direct or transitive dependencies.
+Built on the Effect framework (v4, `effect@4.0.0-beta.98` via `catalog:effect`) using `@savvy-web/github-action-effects` (v4 line; range in `package.json`) for all GitHub Actions runtime interactions. The library implements the GitHub Actions runtime protocol natively (V2 Twirp caching, Azure Blob Storage, native process execution) so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` package is dissolved into core `effect` (`FileSystem`, `Path`, HTTP client all import from `effect`); only Node-specific platform layers ship separately in `@effect/platform-node`.
 
 **Design principles:**
 
@@ -78,9 +78,9 @@ Built on the Effect framework using `@savvy-web/github-action-effects` (^2.0.0) 
 | State | `src/state.ts` | `CacheState`, `TurboServerState` (`Schema.Class`) and `STATE_KEYS` |
 | Config | `src/services/config-loader.ts` | `loadPackageJson`, `parseDevEngines`, `detectBiome`, `detectTurbo` |
 | Cache | `src/services/cache.ts` | Key generation, restore/save, lockfile detection via `Glob`, cache path resolution |
-| Runtime installer | `src/services/runtime-installer.ts` | `RuntimeInstaller` (`Context.Tag` class), `makeRuntimeInstaller`, per-runtime layers |
+| Runtime installer | `src/services/runtime-installer.ts` | `RuntimeInstaller` (`Context.Service` class + `RuntimeInstallerShape`), `makeRuntimeInstaller`, per-runtime layers |
 | Schemas | `src/schemas/domain.ts` | `AbsoluteVersion`, `DevEngines`, typed name literals |
-| Errors | `src/errors/errors.ts` | `Schema.TaggedError` hierarchy + `ActionError` union |
+| Errors | `src/errors/errors.ts` | `Schema.TaggedErrorClass` hierarchy + `ActionError` union |
 | Descriptors | `src/descriptors/{node,bun,deno,biome}.ts` | Per-runtime download descriptors; Biome `binaryMap` |
 | Build config | `action.config.ts` | `@savvy-web/github-action-builder` entry points (incl. `workers`), minify and ignore list |
 
@@ -121,7 +121,7 @@ action.yml (node24 runtime)
             |
             +-- services/turbo-cache (killProcess on saved pid)
             +-- services/cache.ts (saveCache)
-            +-- catchAll + catchAllDefect (post never fails workflow)
+            +-- catch + catchDefect (post never fails workflow)
 ```
 
 ### Layer composition
@@ -132,7 +132,7 @@ action.yml (node24 runtime)
 
 ```ts
 Layer.mergeAll(
-  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layer)),
+  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layerUndici)),
   ToolInstallerLive,
   CommandRunnerLive,
   ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
@@ -142,13 +142,13 @@ Layer.mergeAll(
 );
 ```
 
-`ActionCacheLive` requires `NodeHttpClient` for the V2 Twirp protocol. `ActionStateLive` requires `NodeFileSystem` for state file persistence. `GlobLive` is provided by the library and backs both `findLockFiles` (`Glob.glob`) and the lockfile hash (`Glob.hashFiles`).
+`ActionCacheLive` requires `NodeHttpClient` for the V2 Twirp protocol; in v4 the Node HTTP layer is `NodeHttpClient.layerUndici`. `ActionStateLive` requires `NodeFileSystem` for state file persistence. `GlobLive` is provided by the library and backs both `findLockFiles` (`Glob.glob`) and the lockfile hash (`Glob.hashFiles`).
 
 **PostLive** in `src/post.ts`:
 
 ```ts
 Layer.mergeAll(
-  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layer)),
+  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layerUndici)),
   ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
 );
 ```
@@ -159,11 +159,11 @@ Layer.mergeAll(
 
 ### Effect framework for action logic
 
-Typed error channels (`Schema.TaggedError`), service composition (`Layer.mergeAll`), and built-in config/logging map naturally to GitHub Actions concerns. `@savvy-web/github-action-effects` provides the service wrappers; the action consumes them.
+Typed error channels (`Schema.TaggedErrorClass`), service composition (`Layer.mergeAll`), and built-in config/logging map naturally to GitHub Actions concerns. `@savvy-web/github-action-effects` provides the service wrappers; the action consumes them.
 
 ### Zero `@actions/*` dependencies
 
-`github-action-effects` ^2.0.0 implements the runtime protocol natively (V2 Twirp cache, Azure Blob Storage, native process execution via `@effect/platform`). Eliminates version conflicts, shrinks the bundle and removes the need for pnpm overrides or patches.
+`github-action-effects` (v4 line) implements the runtime protocol natively (V2 Twirp cache, Azure Blob Storage, native process execution via core `effect` platform APIs — `@effect/platform` was folded into `effect` in v4). Eliminates version conflicts, shrinks the bundle and removes the need for pnpm overrides or patches.
 
 ### devEngines-only configuration
 
@@ -183,7 +183,7 @@ Per-runtime data (URLs, archive types, verify commands) lives in `src/descriptor
 
 ### Non-fatal demotion
 
-Cache restore (`Effect.catchTag("CacheError", ...)`), Biome install (`Effect.catchAll`) and the entire post action (`Effect.catchAll` + `Effect.catchAllDefect`) demote failures to warnings. Optional operations never fail the job.
+Cache restore (`Effect.catchTag("CacheError", ...)`), Biome install (`Effect.catch`) and the entire post action (`Effect.catch` + `Effect.catchDefect`) demote failures to warnings. In v4 `catchAll`/`catchAllDefect` are renamed to `catch`/`catchDefect`. Optional operations never fail the job.
 
 ### Cross-phase state via ActionState
 
@@ -210,7 +210,7 @@ The main pipeline runs sequential steps inside a single `Effect.gen`. Most are w
 
 ### Error hierarchy
 
-See `src/errors/errors.ts`. All errors are `Schema.TaggedError` subclasses with computed `.message` getters. The `ActionError` union covers the fatal errors propagating through the pipeline. `CacheError` is non-fatal during restore (caught and demoted) and fatal-but-swallowed in post (caught by the post-action `catchAll`).
+See `src/errors/errors.ts`. All errors are `Schema.TaggedErrorClass` subclasses with computed `.message` getters. The `ActionError` union covers the fatal errors propagating through the pipeline. `CacheError` is non-fatal during restore (caught and demoted) and fatal-but-swallowed in post (caught by the post-action `catch`).
 
 ---
 
@@ -222,7 +222,7 @@ See `src/errors/errors.ts`. All errors are `Schema.TaggedError` subclasses with 
 package.json
     |
     v
-loadPackageJson (FileSystem.readFileString -> JSON.parse -> Schema.decodeUnknown)
+loadPackageJson (FileSystem.readFileString -> JSON.parse -> Schema.decodeUnknownEffect)
     |
     v
 DevEngines { packageManager, runtime: RuntimeEntry | RuntimeEntry[] }
@@ -289,9 +289,11 @@ Main                                  Post
 | `BlobStore` | Blob put/get/has (GitHub cache or S3/SigV4) | turbo-server.ts, services/turbo-cache/handler.ts |
 | `GithubMarkdown` | Job-summary markdown helpers | services/summary.ts |
 
-### `@effect/platform` services
+### Core `effect` platform services
 
-- `FileSystem.FileSystem` -- file read/access in `config-loader.ts` and `program.installDependencies`.
+In v4 the platform abstractions live in core `effect` (the standalone `@effect/platform` package is gone):
+
+- `FileSystem.FileSystem` -- file read/access in `config-loader.ts` and `program.installDependencies`, imported from `effect`. Node implementations (`NodeFileSystem.layer`, `NodeHttpClient.layerUndici`) still come from `@effect/platform-node`.
 
 ---
 

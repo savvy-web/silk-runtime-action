@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: testing
 created: 2026-03-21
-updated: 2026-06-23
-last-synced: 2026-06-23
+updated: 2026-07-17
+last-synced: 2026-07-17
 completeness: 90
 related:
   - ./architecture.md
@@ -36,8 +36,9 @@ Unit tests run in Vitest with library-provided Effect Test layers from `@savvy-w
 
 - Tests are co-located with their source modules (no `__test__/` directory).
 - Library Test layers expose a state object (`*Test.empty()`) and a layer factory (`*Test.layer(state)`). Tests assert against the state.
-- Hand-rolled `Layer.succeed(Tag, {...})` mocks are reserved for failure-injection cases.
-- Config inputs are injected via `ConfigProvider.fromMap`.
+- Hand-rolled `Layer.succeed(Tag, Tag.of({...}))` mocks are reserved for failure-injection cases.
+- Config inputs are injected via `ConfigProvider.fromUnknown` (v4; replaces v3's `ConfigProvider.fromMap`).
+- Logger output is silenced with `Logger.layer([])` and captured with `Logger.layer([Logger.make(...)])`.
 - Fixture tests run on Ubuntu, macOS and Windows.
 
 **When to load this doc:**
@@ -168,29 +169,46 @@ await program.pipe(Effect.provide(layer), Effect.runPromise);
 
 ### Hand-rolled failure mocks
 
-Reserved for tests that need to inject a specific error. Example shape:
+Reserved for tests that need to inject a specific error. In v4 the service class exposes a `.of` constructor that type-checks the shape, so the old `as unknown as` cast is no longer needed:
 
 ```ts
-const cacheLayerSavingFails = Layer.succeed(ActionCache, {
-  restore: () => Effect.succeed(Option.none()),
-  save: () => Effect.fail(new ActionCacheError(...)),
-} as unknown as Context.Tag.Service<typeof ActionCache>);
+const failingCacheLayer: Layer.Layer<ActionCache> = Layer.succeed(
+  ActionCache,
+  ActionCache.of({
+    save: () => Effect.fail(new CacheError({ operation: "save", reason: "test failure" })) as never,
+    restore: () => Effect.succeed(Option.none()),
+  }),
+);
 ```
 
-Use the `as unknown as` cast only when the mock genuinely cannot satisfy the full service shape.
+`Tag.of({...})` validates the shape at compile time. An `as never` on an individual method is only needed to satisfy the method's requirements channel.
 
 ### Config input injection
 
-Inputs are read via `Config`/`ActionInput.*` against the `ConfigProvider`. Tests override values via `ConfigProvider.fromMap`:
+Inputs are read via `Config`/`ActionInput.*` against the `ConfigProvider`. In v4, tests build a provider with `ConfigProvider.fromUnknown` (v3's `ConfigProvider.fromMap` is gone) and provide it as a service with `Effect.provideService`:
 
 ```ts
-const configLayer = Layer.setConfigProvider(
-  ConfigProvider.fromMap(new Map([
-    ["install-deps", "false"],
-    ["biome-version", "2.3.14"],
-  ])),
+const configProvider = ConfigProvider.fromUnknown({
+  "install-deps": "false",
+  "biome-version": "2.3.14",
+});
+
+await program.pipe(
+  Effect.provideService(ConfigProvider.ConfigProvider, configProvider),
+  Effect.runPromise,
 );
 ```
+
+### Logging in tests
+
+Effect v4 removed `Logger.replace`/`Logger.none`. Tests silence log output with `Logger.layer([])`, and capture it with a custom logger plus a minimum log level:
+
+```ts
+Logger.layer([Logger.make(({ logLevel, message }) => captured.push({ level: logLevel, message: String(message) }))]);
+// paired with: Layer.succeed(References.MinimumLogLevel, "All")
+```
+
+`LogLevel` is now a string union (`"Warn"`, `"Info"`, `"All"`, …). Asserting on a failure `Cause` uses `Cause.findErrorOption(cause)` (v4) rather than v3's `Cause.failureOption` / `_tag === "Fail"` pattern.
 
 ### Fixture test infrastructure
 
@@ -219,7 +237,7 @@ Cache fixtures run as a pair of dependent jobs:
 | Issue | Cause | Fix |
 | --- | --- | --- |
 | "Effect service not found" | Missing layer in `Layer.mergeAll` | Add the corresponding `*Test.layer(state)` |
-| Config values not picked up | No `ConfigProvider` layer | Add `Layer.setConfigProvider(ConfigProvider.fromMap(...))` |
+| Config values not picked up | No `ConfigProvider` provided | Add `Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(...))` |
 | Test passes locally, fails in CI | Platform-specific behavior | Check `process.platform` branching |
 | Hash-of-hashes mismatch with old fixtures | Hash algorithm changed (see caching-strategy.md) | Regenerate expected hashes |
 

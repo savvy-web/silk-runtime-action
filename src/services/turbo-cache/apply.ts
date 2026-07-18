@@ -68,7 +68,7 @@ export const applyTurboCache = (
 		// Turbo cache is an enhancement: never let its setup error fail the action.
 		// `ActionState.save` / `exportVariable` carry ActionStateError/ActionOutputError;
 		// demote any to a warning and fall back to "none".
-		Effect.catchAll((e) =>
+		Effect.catch((e) =>
 			Effect.logWarning(`Turbo cache setup error: ${e instanceof Error ? e.message : String(e)}`).pipe(
 				Effect.as<TurboApplyResult>({ backend: "none", port: null }),
 			),

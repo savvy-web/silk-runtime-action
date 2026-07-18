@@ -39,11 +39,11 @@ export const makePost = (kill: (pid: number) => void = killProcess) =>
 		yield* Step.groupStep("Cache save", saveCache());
 	}).pipe(
 		// Post-action never fails the workflow — log typed errors as warnings.
-		Effect.catchAll((error) =>
+		Effect.catch((error) =>
 			Effect.logWarning(`Post-action error: ${error instanceof Error ? error.message : String(error)}`),
 		),
 		// Defense-in-depth: also swallow programming defects.
-		Effect.catchAllDefect((defect) =>
+		Effect.catchDefect((defect) =>
 			Effect.logWarning(`Post-action defect: ${defect instanceof Error ? defect.message : String(defect)}`),
 		),
 	);
@@ -55,7 +55,7 @@ export const post = makePost();
  * ActionCacheLive needs NodeHttpClient for the V2 Twirp cache protocol.
  */
 export const PostLive = Layer.mergeAll(
-	ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layer)),
+	ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layerUndici)),
 	ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
 );
 

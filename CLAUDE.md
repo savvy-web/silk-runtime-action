@@ -87,11 +87,12 @@ Repositories using this action **MUST** have a `package.json` in their root dire
 
 **Technical stack:**
 
-* **Runtime framework:** [Effect](https://effect.website) for typed errors, dependency injection, and service composition
+* **Runtime framework:** [Effect](https://effect.website) **v4** (`effect@4.0.0-beta.98` via `catalog:effect`) for typed errors, dependency injection, and service composition. In v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` live in `effect`); only Node platform layers ship separately in `@effect/platform-node`. Services are class-based `Context.Service` (not `Context.Tag`) with exported `*Shape` companion types.
 * **GitHub Action services:** `@savvy-web/github-action-effects` (range declared in `package.json`) — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, `BlobStore` (GitHub Actions cache / S3 SigV4 backends) backing the embedded turbo remote cache, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
 * **Build tool:** `@savvy-web/github-action-builder` (rsbuild-based, range declared in `package.json`) configured via `action.config.ts`; `entries.workers` bundles the detached `src/turbo-server.ts` as a third entry.
 * **Cross-phase state:** `src/state.ts` defines `CacheState` and `TurboServerState` (Schema.Class) plus `STATE_KEYS`; `main` writes, `post` reads.
-* **Platform I/O:** `@effect/platform` (FileSystem)
+* **Platform I/O:** `FileSystem` from core `effect`; Node platform layers from `@effect/platform-node` (`NodeFileSystem.layer`, `NodeHttpClient.layerUndici`)
+* **JSONC parsing:** `@effected/jsonc` (`Jsonc`)
 * **Action type:** Compiled Node.js action (uses `node24` runtime, see `action.yml`)
 * **Package manager:** pnpm — exact version pinned in `package.json` (`packageManager` and `devEngines.packageManager`)
 * **Node.js version:** exact version pinned in `package.json` `devEngines.runtime`
@@ -168,6 +169,8 @@ We author every dependency in the table below, so a bug or missing API in one ca
 | `@savvy-web/github-action-builder` | `savvy-web/systems` | `../systems/packages/github-action-builder` |
 
 Both packages live inside the `systems` monorepo. Both are direct-only dependencies with no transitive duplication path, so `pnpm link ../<path>` is the linking mechanism for either. The `pnpm-workspace.yaml` `overrides` mechanism is not needed here unless a future first-party transitive dependency is introduced.
+
+**Effect v4 API authority:** `.repos/effect-smol` is a vendored, read-only git submodule pinned to `effect@4.0.0-beta.98` — consult it as the source of truth for Effect v4 APIs (the surface diverges from v3 docs on the website). Managed via `savvy repos` / the `silk:repos` skill; do not edit it.
 
 **Procedure:**
 

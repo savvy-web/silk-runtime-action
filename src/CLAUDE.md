@@ -30,7 +30,7 @@ runs:
 
 - **[main.ts](main.ts)** -> `dist/main.js` -- Thin entry that calls `Action.run(program, { layer: MainLive })`
 - **[program.ts](program.ts)** -> `dist/main.js` (bundled) -- Effect pipeline that detects config, installs runtimes, sets up package manager, caches dependencies, optionally starts the embedded turbo remote cache, and sets outputs
-- **[post.ts](post.ts)** -> `dist/post.js` -- Saves the dependency cache and stops the turbo cache server after the job completes; reads `CacheState`/`TurboServerState` from main, no-op on exact hit (non-fatal; errors and defects are logged as warnings via `Effect.catchAll` + `Effect.catchAllDefect`)
+- **[post.ts](post.ts)** -> `dist/post.js` -- Saves the dependency cache and stops the turbo cache server after the job completes; reads `CacheState`/`TurboServerState` from main, no-op on exact hit (non-fatal; errors and defects are logged as warnings via `Effect.catch` + `Effect.catchDefect`)
 - **[turbo-server.ts](turbo-server.ts)** -> `dist/turbo-server.js` -- Detached turbo remote-cache server spawned by main (not a lifecycle hook); built as a third entry via `entries.workers`
 
 ## Source Modules
@@ -52,7 +52,7 @@ Top-level Effect pipeline (the main phase). Contains the `program` export plus h
 
 ### [post.ts](post.ts)
 
-Post-action: reads `CacheState` via `ActionState.getOptional`, skips when missing or `restored===true`, otherwise calls `saveCache()` inside a `Step.groupStep`; also reads `TurboServerState` and stops the embedded turbo cache server. Wrapped in `Effect.catchAll` + `Effect.catchAllDefect` so post-action failures never fail the workflow.
+Post-action: reads `CacheState` via `ActionState.getOptional`, skips when missing or `restored===true`, otherwise calls `saveCache()` inside a `Step.groupStep`; also reads `TurboServerState` and stops the embedded turbo cache server. Wrapped in `Effect.catch` + `Effect.catchDefect` so post-action failures never fail the workflow.
 
 ### [state.ts](state.ts)
 
@@ -60,7 +60,7 @@ Cross-phase state schemas. Exports `CacheState` (`Schema.Class` with `key`, `pat
 
 ### [layers/app.ts](layers/app.ts)
 
-`MainLive` layer composition. Merges every library and Node platform layer the program needs: `ActionCacheLive` (with `NodeHttpClient`), `ToolInstallerLive`, `CommandRunnerLive`, `ActionStateLive` (with `NodeFileSystem`), `ActionEnvironmentLive`, `GlobLive`, `NodeFileSystem.layer`.
+`MainLive` layer composition. Merges every library and Node platform layer the program needs: `ActionCacheLive` (provided `NodeHttpClient.layerUndici`), `ToolInstallerLive`, `CommandRunnerLive`, `ActionStateLive` (provided `NodeFileSystem.layer`), `ActionEnvironmentLive`, `GlobLive`, `NodeFileSystem.layer`. Node layers come from `@effect/platform-node`; `FileSystem` itself is core `effect` (v4).
 
 ### [services/cache.ts](services/cache.ts)
 
@@ -77,8 +77,9 @@ Effect functions backed by `ActionCache`, `ActionState`, `ActionEnvironment`, `C
 ### [services/runtime-installer.ts](services/runtime-installer.ts)
 
 - `RuntimeDescriptor` interface -- Describes how to download and install a tool
-- `RuntimeInstaller` `Context.Tag` class -- Service tag with a single `install(version)` method
-- `makeRuntimeInstaller` -- Factory that creates a `RuntimeInstaller` service shape from a descriptor; uses `ToolInstaller` primitives (`download`, `extractTar`/`extractZip`, `cacheDir`); wraps failures in `RuntimeInstallError`
+- `RuntimeInstallerShape` interface -- Service shape with a single `install(version)` method
+- `RuntimeInstaller` `Context.Service` class (v4 form: `Context.Service<RuntimeInstaller, RuntimeInstallerShape>()("RuntimeInstaller")`) -- callers `yield* RuntimeInstaller`
+- `makeRuntimeInstaller` -- Factory that builds a `RuntimeInstallerShape` from a descriptor; uses `ToolInstaller` primitives (`download`, `extractTar`/`extractZip`, `cacheDir`); wraps failures in `RuntimeInstallError` via `Effect.catch`
 - Pre-built layers: `NodeInstallerLive`, `BunInstallerLive`, `DenoInstallerLive`
 - `installerLayerFor(name)` -- Returns the appropriate layer by runtime name
 
@@ -86,7 +87,7 @@ Effect functions backed by `ActionCache`, `ActionState`, `ActionEnvironment`, `C
 
 Pure Effect functions for configuration loading and detection:
 
-- `loadPackageJson` -- Reads and decodes `package.json` via `FileSystem`, wraps failures in `ConfigError`
+- `loadPackageJson` -- Reads `package.json` via core-`effect` `FileSystem`, parses with `Jsonc` (`@effected/jsonc`), decodes via Schema, wraps failures in `ConfigError`
 - `parseDevEngines` -- Normalises `devEngines.runtime` from object/array to always-array
 - `detectBiome` -- Checks `biome-version` input, then reads `$schema` from `biome.jsonc`/`biome.json`
 - `detectTurbo` -- Returns `true` if `turbo.json` exists
@@ -112,13 +113,13 @@ For the full design see `.claude/design/silk-runtime-action/turbo-remote-cache.m
 Effect Schema definitions:
 
 - `AbsoluteVersion` -- Rejects semver range operators
-- `RuntimeName` / `PackageManagerName` -- `Schema.Literal` unions
+- `RuntimeName` / `PackageManagerName` -- `Schema.Literals` unions
 - `RuntimeEntry` / `PackageManagerEntry` -- Validated structs
 - `DevEngines` -- Complete devEngines schema
 
 ### [errors/errors.ts](errors/errors.ts)
 
-`Schema.TaggedError` hierarchy with computed `.message` getters:
+`Schema.TaggedErrorClass` hierarchy (v4) with computed `.message` getters; payloads validated and round-trip cleanly through `ActionState`:
 
 | Tag | Fields | When thrown |
 | --- | ------- | ----------- |
@@ -224,7 +225,7 @@ yield* Step.success(`Biome ${version}`);
 
 ### Error handling
 
-Use tagged errors (`ConfigError`, `RuntimeInstallError`, etc.) and handle them with `Effect.catchTag`. Non-fatal steps use `Effect.catchAll` or `Effect.catchTag` to demote failures to warnings.
+Use tagged errors (`ConfigError`, `RuntimeInstallError`, etc.) and handle them with `Effect.catchTag`. Non-fatal steps use `Effect.catch` or `Effect.catchTag` to demote failures to warnings.
 
 ### Testing
 
@@ -240,7 +241,7 @@ expect(outputs.outputs.find((o) => o.name === "node-version")?.value).toBe("24.1
 
 Test layers expose mutable state objects that capture method calls. Asserting against the state is preferred over mocking individual methods. For failure-injection cases (e.g., simulating `ActionCache.save` errors), a hand-rolled `Layer.succeed(Tag, {...})` mock is still acceptable.
 
-Action inputs are overridden via `ConfigProvider.fromMap(new Map([["input-name", "value"]]))`.
+Action inputs are overridden via `ConfigProvider.fromUnknown({ "input-name": "value" })`.
 
 Tests are co-located with their source modules. See [errors/errors.test.ts](errors/errors.test.ts), [services/cache.test.ts](services/cache.test.ts), [program.test.ts](program.test.ts), [post.test.ts](post.test.ts) for representative patterns.
 
