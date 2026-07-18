@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-05-28
-last-synced: 2026-05-28
+updated: 2026-07-17
+last-synced: 2026-07-17
 completeness: 92
 related:
   - ./architecture.md
@@ -62,19 +62,19 @@ Descriptor implementations live in `src/descriptors/{node,bun,deno}.ts`. New run
 
 Biome is **not** a `RuntimeDescriptor`. `src/descriptors/biome.ts` exports a `binaryMap` (platform/arch -> binary file name). `installBiome` in `src/program.ts` consumes it directly and uses `ToolInstaller.download` + `ToolInstaller.cacheFile` to install a single executable. URL pattern: `https://github.com/biomejs/biome/releases/download/%40biomejs%2Fbiome%40{version}/{binaryName}`.
 
-### `RuntimeInstaller` service tag
+### `RuntimeInstaller` service
 
 ```ts
-export class RuntimeInstaller extends Context.Tag("RuntimeInstaller")<
-  RuntimeInstaller,
-  {
-    readonly install: (version: string) =>
-      Effect.Effect<InstalledRuntime, RuntimeInstallError, ToolInstaller | CommandRunner | ActionOutputs>;
-  }
->() {}
+export interface RuntimeInstallerShape {
+  readonly install: (
+    version: string,
+  ) => Effect.Effect<InstalledRuntime, RuntimeInstallError, ToolInstaller | CommandRunner | ActionOutputs>;
+}
+
+export class RuntimeInstaller extends Context.Service<RuntimeInstaller, RuntimeInstallerShape>()("RuntimeInstaller") {}
 ```
 
-Note the `Context.Tag` class form (replaces the old `Context.GenericTag` + separate interface). Callers `yield* RuntimeInstaller` and downstream typing resolves through the static tag identity.
+Note the Effect v4 `Context.Service` class form with an exported `RuntimeInstallerShape` companion interface (replaces v3's `Context.Tag`/`Context.GenericTag` + inline object shape). Callers `yield* RuntimeInstaller` and downstream typing resolves through the static service identity.
 
 `InstalledRuntime`:
 
@@ -125,9 +125,9 @@ Descriptors carry no `postInstall` hook or side-effectful methods. Package manag
 
 Biome distributes a single binary, not a compressed archive. `RuntimeInstaller` uses the archive flow (`extractTar`/`extractZip` + `cacheDir`); Biome uses `ToolInstaller.download` + `ToolInstaller.cacheFile`. The two are distinct enough that sharing the abstraction would mean adding flags to every descriptor.
 
-### `Context.Tag` class + per-iteration layer swap
+### `Context.Service` class + per-iteration layer swap
 
-The main pipeline installs multiple runtimes in sequence; each needs a different descriptor. The `Context.Tag` class form lets callers `yield* RuntimeInstaller` directly. The per-iteration `Effect.provide(installerLayerFor(rt.name))` swaps the implementation cleanly inside the `Effect.forEach`. The older `GenericTag` form has been retired -- it required `Effect.flatMap` to access the service value, which is still used here for typing reasons but is no longer mandatory at the tag boundary.
+The main pipeline installs multiple runtimes in sequence; each needs a different descriptor. The v4 `Context.Service` class form lets callers `yield* RuntimeInstaller` directly. The per-iteration `Effect.provide(installerLayerFor(rt.name))` swaps the implementation cleanly inside the `Effect.forEach`. The v3 `Context.Tag`/`GenericTag` form has been retired across the codebase. Note that `installerLayerFor`'s fallback for an unknown runtime is `Layer.effect(RuntimeInstaller, Effect.fail(new RuntimeInstallError(...)))` — v4 has no `Layer.fail`, so a failing layer is expressed as `Layer.effect(tag, Effect.fail(...))`.
 
 ---
 
@@ -145,7 +145,7 @@ For the full implementation see `src/services/runtime-installer.ts`. High level:
 6. Caches with `toolInstaller.cacheDir(extractedDir, descriptor.name, version)`.
 7. Adds `binSubPath`-adjusted path to PATH via `outputs.addPath`.
 8. Verifies with `runner.exec(descriptor.verifyCommand[0], [...descriptor.verifyCommand.slice(1)])`.
-9. All failures wrapped in `RuntimeInstallError` via `Effect.catchAll` + `extractErrorReason`.
+9. All failures wrapped in `RuntimeInstallError` via `Effect.catch` (v4's rename of `catchAll`) + `extractErrorReason`.
 
 ### Package manager setup (`program.setupPackageManager`)
 
@@ -159,7 +159,7 @@ Runs after all runtimes are installed.
 
 ### `installBiome` (in `program.ts`)
 
-See `src/program.ts`. Look up binary name from `binaryMap[platform][arch]`, download via `ToolInstaller.download`, cache as a single file via `ToolInstaller.cacheFile(downloadedPath, finalName, "biome", version)`, `chmod 0o755` on non-Windows, add cached dir to PATH, emit `Step.success(\`Biome ${version}\`)`. Entire effect is wrapped in`Effect.catchAll` at the call site so Biome failures never fail the workflow.
+See `src/program.ts`. Look up binary name from `binaryMap[platform][arch]`, download via `ToolInstaller.download`, cache as a single file via `ToolInstaller.cacheFile(downloadedPath, finalName, "biome", version)`, `chmod 0o755` on non-Windows, add cached dir to PATH, emit `Step.success(\`Biome ${version}\`)`. Entire effect is wrapped in`Effect.catch` at the call site so Biome failures never fail the workflow.
 
 ### Dependency installation (`program.installDependencies`)
 

@@ -82,4 +82,4 @@ export const makeTurboHandler =
 				return { status: 200, headers, body };
 			}
 			return { status: 405, headers: {} };
-		}).pipe(Effect.catchAll(() => Effect.succeed<TurboResponse>({ status: 500, headers: {} })));
+		}).pipe(Effect.catch(() => Effect.succeed<TurboResponse>({ status: 500, headers: {} })));

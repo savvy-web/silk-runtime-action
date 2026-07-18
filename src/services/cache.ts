@@ -169,7 +169,7 @@ export const detectCachePath = (pm: PackageManager) =>
 					// Try Yarn Berry first
 					const berry = yield* runner
 						.execCapture("yarn", ["config", "get", "cacheFolder"], opts)
-						.pipe(Effect.orElse(() => Effect.succeed({ exitCode: 1, stdout: "", stderr: "" })));
+						.pipe(Effect.catch(() => Effect.succeed({ exitCode: 1, stdout: "", stderr: "" })));
 					if (berry.stdout.trim() && berry.stdout.trim() !== "undefined") {
 						return berry.stdout.trim();
 					}
@@ -195,7 +195,7 @@ export const detectCachePath = (pm: PackageManager) =>
 					return null;
 				}
 			}
-		}).pipe(Effect.orElse(() => Effect.succeed(null)));
+		}).pipe(Effect.catch(() => Effect.succeed(null)));
 
 		return detected;
 	});
@@ -278,9 +278,7 @@ export const findLockFiles = (patterns: string[]) =>
 	Effect.gen(function* () {
 		const glob = yield* Glob;
 		const patternsStr = buildLockfileGlobPatterns(patterns);
-		const matches = yield* glob
-			.glob(patternsStr)
-			.pipe(Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<string>)));
+		const matches = yield* glob.glob(patternsStr).pipe(Effect.catch(() => Effect.succeed([] as ReadonlyArray<string>)));
 		return [...matches].sort();
 	});
 
@@ -294,9 +292,7 @@ const hashFiles = (files: string[]) =>
 		const glob = yield* Glob;
 		// Join file paths as a newline-separated pattern string for Glob.hashFiles
 		const patternsStr = files.join("\n");
-		const result = yield* glob
-			.hashFiles(patternsStr)
-			.pipe(Effect.catchAll(() => Effect.succeed(Option.none<string>())));
+		const result = yield* glob.hashFiles(patternsStr).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
 		return Option.getOrElse(result, () => "").substring(0, 8);
 	});
 

@@ -1,6 +1,6 @@
 import { ActionCache } from "@savvy-web/github-action-effects";
 import { ActionCacheTest, ActionLoggerTest, ActionStateTest } from "@savvy-web/github-action-effects/testing";
-import { Effect, Layer, LogLevel, Logger, Option } from "effect";
+import { Effect, Layer, Logger, Option, References } from "effect";
 import { describe, expect, it } from "vitest";
 import { CacheError } from "./errors/errors.js";
 import { makePost, post } from "./post.js";
@@ -18,10 +18,7 @@ const asLayer = (l: AnyLayer): Layer.Layer<never> => l as Layer.Layer<never>;
 // biome-ignore lint/suspicious/noExplicitAny: test mock requires any for mocked effect results
 const run = <A>(effect: Effect.Effect<A, any, any>, layer: AnyLayer): Promise<A> =>
 	Effect.runPromise(
-		effect.pipe(
-			Effect.provide(asLayer(layer)),
-			Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
-		) as Effect.Effect<A, never, never>,
+		effect.pipe(Effect.provide(asLayer(layer)), Effect.provide(Logger.layer([]))) as Effect.Effect<A, never, never>,
 	);
 
 /**
@@ -29,15 +26,17 @@ const run = <A>(effect: Effect.Effect<A, any, any>, layer: AnyLayer): Promise<A>
  * Used to verify Effect.logWarning calls.
  */
 const capturingLoggerLayer = (entries: Array<{ level: string; message: string }>): Layer.Layer<never> =>
-	Logger.replace(
-		Logger.defaultLogger,
-		Logger.make(({ logLevel, message }) => {
-			entries.push({
-				level: logLevel.label,
-				message: Array.isArray(message) ? message.map(String).join(" ") : String(message),
-			});
-		}),
-	).pipe(Layer.provide(Logger.minimumLogLevel(LogLevel.All)));
+	Layer.mergeAll(
+		Logger.layer([
+			Logger.make(({ logLevel, message }) => {
+				entries.push({
+					level: logLevel,
+					message: Array.isArray(message) ? message.map(String).join(" ") : String(message),
+				});
+			}),
+		]),
+		Layer.succeed(References.MinimumLogLevel, "All"),
+	);
 
 const runWithLogger = <A>(
 	effect: Effect.Effect<A, unknown, unknown>,
@@ -133,8 +132,8 @@ describe("post action (saveCache integration)", () => {
 	});
 
 	it("post catches typed CacheError from saveCache and logs warning (does not fail)", async () => {
-		// Regression test: Effect.catchAllDefect alone does not catch typed
-		// CacheError. Without an outer Effect.catchAll, a save failure would
+		// Regression test: Effect.catchDefect alone does not catch typed
+		// CacheError. Without an outer Effect.catch, a save failure would
 		// propagate and fail the workflow. The post.ts pipe must catch both.
 		const state = ActionStateTest.empty();
 		state.entries.set("cache-state", JSON.stringify({ key: "test-key", paths: ["/cache/path"], restored: false }));
@@ -158,7 +157,7 @@ describe("post action (saveCache integration)", () => {
 		await expect(runWithLogger(post, layer, capturingLoggerLayer(captured))).resolves.toBeUndefined();
 
 		// Should have logged a warning about the post-action error.
-		const warnings = captured.filter((e) => e.level === "WARN");
+		const warnings = captured.filter((e) => e.level === "Warn");
 		expect(warnings.length).toBeGreaterThan(0);
 		expect(warnings.some((w) => w.message.includes("Post-action error"))).toBe(true);
 	});

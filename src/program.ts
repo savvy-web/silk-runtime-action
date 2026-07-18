@@ -11,7 +11,7 @@
 import { homedir, arch as osArch, platform as osPlatform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FileSystem } from "@effect/platform";
+import type { ActionOutputsShape } from "@savvy-web/github-action-effects";
 import {
 	ActionInput,
 	ActionOutputs,
@@ -20,8 +20,7 @@ import {
 	Step,
 	ToolInstaller,
 } from "@savvy-web/github-action-effects";
-import type { Context } from "effect";
-import { Config, Effect, Option, Redacted } from "effect";
+import { Config, Effect, FileSystem, Option, Redacted } from "effect";
 import { binaryMap as biomeBinaryMap } from "./descriptors/biome.js";
 import { DependencyInstallError, PackageManagerSetupError } from "./errors/errors.js";
 import type { PackageManagerEntry, RuntimeEntry } from "./schemas/domain.js";
@@ -79,7 +78,7 @@ export const installBiome = (
 		yield* outputs.addPath(cachedDir);
 
 		yield* Step.success(`Biome ${version}`);
-	}).pipe(Effect.catchAll((error) => Effect.fail(new Error(`Biome install failed: ${error}`))));
+	}).pipe(Effect.catch((error) => Effect.fail(new Error(`Biome install failed: ${error}`))));
 
 /**
  * Determines active package managers from the set of installed runtimes
@@ -114,7 +113,7 @@ export const installDependencies = (
 		const fileExists = (path: string) =>
 			fs.access(path).pipe(
 				Effect.map(() => true),
-				Effect.orElse(() => Effect.succeed(false)),
+				Effect.catch(() => Effect.succeed(false)),
 			);
 
 		if (packageManager === "deno") {
@@ -197,7 +196,7 @@ export const setupPackageManager = (
 					const npmCacheDir = join(homedir(), ".npm");
 					yield* runner
 						.exec("sudo", ["chown", "-R", `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`, npmCacheDir])
-						.pipe(Effect.catchAll(() => Effect.void));
+						.pipe(Effect.catch(() => Effect.void));
 				} else {
 					yield* runner.exec("npm", ["install", "-g", `npm@${version}`], { streaming: true });
 				}
@@ -232,7 +231,7 @@ export const setupPackageManager = (
 
 			yield* Effect.log("Enabling corepack...");
 			yield* runner.exec("corepack", ["enable"], { cwd }).pipe(
-				Effect.catchAll(() =>
+				Effect.catch(() =>
 					// Retry after removing stale shims (EEXIST from cached Node installs)
 					Effect.gen(function* () {
 						const whichNode = yield* runner.execCapture("which", ["node"], { cwd });
@@ -241,7 +240,7 @@ export const setupPackageManager = (
 						const shims = ["pnpm", "pnpx", "yarn", "yarnpkg", "npm", "npx"];
 						const exts = ["", ".js", ".cmd", ".ps1"];
 						const allShims = shims.flatMap((s) => exts.map((e) => join(binDir, `${s}${e}`)));
-						yield* runner.exec("rm", ["-f", ...allShims]).pipe(Effect.catchAll(() => Effect.void));
+						yield* runner.exec("rm", ["-f", ...allShims]).pipe(Effect.catch(() => Effect.void));
 						yield* runner.exec("corepack", ["enable"], { cwd, streaming: true });
 					}),
 				),
@@ -278,7 +277,7 @@ export const setupPackageManager = (
  * Sets all action outputs from the pipeline results.
  */
 export const setOutputs = (
-	outputs: Context.Tag.Service<ActionOutputs>,
+	outputs: ActionOutputsShape,
 	installed: ReadonlyArray<InstalledRuntime>,
 	config: {
 		readonly packageManager: PackageManagerEntry;
@@ -458,14 +457,14 @@ export const program = Effect.gen(function* () {
 			yield* Step.success(formatTurboLine(turboApplied.backend, turboApplied.port));
 			return turboApplied;
 		}).pipe(
-			Effect.catchAll((error) =>
+			Effect.catch((error) =>
 				Effect.logWarning(`Turbo cache setup error: ${error instanceof Error ? error.message : String(error)}`).pipe(
 					Effect.as<TurboApplyResult>({ backend: "none", port: null }),
 				),
 			),
 			// Also swallow synchronous defects (e.g. a throw inside spawn) so turbo
 			// cache setup can never fail the action — matches post.ts's posture.
-			Effect.catchAllDefect((defect) =>
+			Effect.catchDefect((defect) =>
 				Effect.logWarning(
 					`Turbo cache setup defect: ${defect instanceof Error ? defect.message : String(defect)}`,
 				).pipe(Effect.as<TurboApplyResult>({ backend: "none", port: null })),
@@ -504,7 +503,7 @@ export const program = Effect.gen(function* () {
 				),
 				// restoreCache also calls state.save (ActionStateError) — never let a
 				// non-CacheError failure escape and fail the action; degrade to a miss.
-				Effect.catchAll((e) =>
+				Effect.catch((e) =>
 					Effect.gen(function* () {
 						yield* Effect.logWarning(`Cache restore failed: ${e instanceof Error ? e.message : String(e)}`);
 						return "none" as const;
@@ -546,7 +545,7 @@ export const program = Effect.gen(function* () {
 		yield* Step.groupStep(
 			"Install Biome",
 			installBiome(biomeVersion).pipe(
-				Effect.catchAll((e) =>
+				Effect.catch((e) =>
 					Effect.logWarning(`Biome installation failed: ${e instanceof Error ? e.message : String(e)}`),
 				),
 			),
@@ -576,7 +575,7 @@ export const program = Effect.gen(function* () {
 			}),
 		)
 		.pipe(
-			Effect.catchAll((e) =>
+			Effect.catch((e) =>
 				Effect.logWarning(`Failed to write job summary: ${e instanceof Error ? e.message : String(e)}`),
 			),
 		);

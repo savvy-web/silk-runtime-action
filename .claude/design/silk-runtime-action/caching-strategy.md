@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: performance
 created: 2026-03-21
-updated: 2026-06-23
-last-synced: 2026-06-23
+updated: 2026-07-17
+last-synced: 2026-07-17
 completeness: 92
 related:
   - ./architecture.md
@@ -176,7 +176,7 @@ Beyond `node_modules` and `.git`, the excludes cover test and fixture trees — 
 
 ```ts
 const patternsStr = files.join("\n");
-const result = yield* glob.hashFiles(patternsStr).pipe(Effect.catchAll(() => Effect.succeed(Option.none<string>())));
+const result = yield* glob.hashFiles(patternsStr).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
 return Option.getOrElse(result, () => "").substring(0, 8);
 ```
 
@@ -209,7 +209,7 @@ yield* Step.groupStep("Cache save", saveCache());
 
 - [Architecture](./architecture.md) -- pipeline shape, cross-phase state diagram.
 - [Turbo remote cache](./turbo-remote-cache.md) -- embedded remote cache that the `.turbo/cache` file layer complements.
-- [Effect service model](./effect-service-model.md) -- service tags, `Schema.TaggedError`, layer composition.
+- [Effect service model](./effect-service-model.md) -- `Context.Service` classes, `Schema.TaggedErrorClass`, layer composition.
 
 **Source files:**
 

@@ -1,6 +1,5 @@
-import { FileSystem } from "@effect/platform";
-import { Config, Effect, Option, Schema } from "effect";
-import { parse as parseJsonc } from "jsonc-effect";
+import { Jsonc } from "@effected/jsonc";
+import { Config, Effect, FileSystem, Option, Schema } from "effect";
 import { ConfigError } from "../errors/errors.js";
 import { DevEngines } from "../schemas/domain.js";
 
@@ -33,7 +32,7 @@ export const loadPackageJson = Effect.gen(function* () {
 			}),
 	});
 
-	const packageJson = yield* Schema.decodeUnknown(Schema.Struct({ devEngines: DevEngines }))(raw).pipe(
+	const packageJson = yield* Schema.decodeUnknownEffect(Schema.Struct({ devEngines: DevEngines }))(raw).pipe(
 		Effect.mapError(
 			(cause) =>
 				new ConfigError({
@@ -75,13 +74,13 @@ export const detectBiome = Effect.gen(function* () {
 	const configFile = yield* Effect.gen(function* () {
 		const hasJsonc = yield* fs.access("biome.jsonc").pipe(
 			Effect.map(() => true),
-			Effect.orElse(() => Effect.succeed(false)),
+			Effect.catch(() => Effect.succeed(false)),
 		);
 		if (hasJsonc) return Option.some("biome.jsonc");
 
 		const hasJson = yield* fs.access("biome.json").pipe(
 			Effect.map(() => true),
-			Effect.orElse(() => Effect.succeed(false)),
+			Effect.catch(() => Effect.succeed(false)),
 		);
 		if (hasJson) return Option.some("biome.json");
 
@@ -95,9 +94,9 @@ export const detectBiome = Effect.gen(function* () {
 	// 3. Read the config file and extract version from $schema URL
 	const configContent = yield* fs
 		.readFileString(configFile.value, "utf-8")
-		.pipe(Effect.orElse(() => Effect.succeed("{}")));
+		.pipe(Effect.catch(() => Effect.succeed("{}")));
 
-	const parsed = yield* parseJsonc(configContent).pipe(Effect.orElse(() => Effect.succeed({} as unknown)));
+	const parsed = yield* Jsonc.parse(configContent).pipe(Effect.catch(() => Effect.succeed({} as unknown)));
 	const schema = (parsed as { $schema?: string }).$schema;
 	if (!schema) {
 		return Option.none<string>();
@@ -119,7 +118,7 @@ export const detectTurbo = Effect.gen(function* () {
 	const fs = yield* FileSystem.FileSystem;
 	const exists = yield* fs.access("turbo.json").pipe(
 		Effect.map(() => true),
-		Effect.orElse(() => Effect.succeed(false)),
+		Effect.catch(() => Effect.succeed(false)),
 	);
 	return exists;
 });

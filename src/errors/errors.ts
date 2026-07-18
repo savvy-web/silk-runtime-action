@@ -1,7 +1,7 @@
 /**
  * Schema-based tagged errors with computed messages.
  *
- * Uses Schema.TaggedError so payloads are validated, errors round-trip
+ * Uses Schema.TaggedErrorClass so payloads are validated, errors round-trip
  * cleanly through ActionState, and downstream callers get a typed `.message`
  * getter for surfacing in logs.
  *
@@ -10,14 +10,14 @@
 
 import { Schema } from "effect";
 
-const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
+const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 
 /* v8 ignore start -- pure data carriers */
 
 /**
  * Error thrown when configuration is invalid or missing.
  */
-export class ConfigError extends Schema.TaggedError<ConfigError>()("ConfigError", {
+export class ConfigError extends Schema.TaggedErrorClass<ConfigError>()("ConfigError", {
 	reason: NonEmptyString,
 	file: Schema.optional(Schema.String),
 	cause: Schema.optional(Schema.Unknown),
@@ -30,7 +30,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("ConfigError"
 /**
  * Error thrown when a runtime (node, bun, deno) fails to install.
  */
-export class RuntimeInstallError extends Schema.TaggedError<RuntimeInstallError>()("RuntimeInstallError", {
+export class RuntimeInstallError extends Schema.TaggedErrorClass<RuntimeInstallError>()("RuntimeInstallError", {
 	runtime: NonEmptyString,
 	version: NonEmptyString,
 	reason: NonEmptyString,
@@ -44,7 +44,7 @@ export class RuntimeInstallError extends Schema.TaggedError<RuntimeInstallError>
 /**
  * Error thrown when setting up a package manager fails.
  */
-export class PackageManagerSetupError extends Schema.TaggedError<PackageManagerSetupError>()(
+export class PackageManagerSetupError extends Schema.TaggedErrorClass<PackageManagerSetupError>()(
 	"PackageManagerSetupError",
 	{
 		packageManager: NonEmptyString,
@@ -61,11 +61,14 @@ export class PackageManagerSetupError extends Schema.TaggedError<PackageManagerS
 /**
  * Error thrown when installing dependencies fails.
  */
-export class DependencyInstallError extends Schema.TaggedError<DependencyInstallError>()("DependencyInstallError", {
-	packageManager: NonEmptyString,
-	reason: NonEmptyString,
-	cause: Schema.optional(Schema.Unknown),
-}) {
+export class DependencyInstallError extends Schema.TaggedErrorClass<DependencyInstallError>()(
+	"DependencyInstallError",
+	{
+		packageManager: NonEmptyString,
+		reason: NonEmptyString,
+		cause: Schema.optional(Schema.Unknown),
+	},
+) {
 	get message(): string {
 		return `Failed to install dependencies with ${this.packageManager}: ${this.reason}`;
 	}
@@ -74,8 +77,8 @@ export class DependencyInstallError extends Schema.TaggedError<DependencyInstall
 /**
  * Error thrown when a cache operation fails.
  */
-export class CacheError extends Schema.TaggedError<CacheError>()("CacheError", {
-	operation: Schema.Literal("save", "restore", "key-generation"),
+export class CacheError extends Schema.TaggedErrorClass<CacheError>()("CacheError", {
+	operation: Schema.Literals(["save", "restore", "key-generation"]),
 	reason: NonEmptyString,
 	cause: Schema.optional(Schema.Unknown),
 }) {

@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: meta
 created: 2026-03-21
-updated: 2026-07-05
-last-synced: 2026-07-05
+updated: 2026-07-17
+last-synced: 2026-07-17
 completeness: 100
 related: []
 dependencies: []
@@ -19,8 +19,8 @@ Navigation index for all design documentation in the silk-runtime-action project
 | Document | Status | Completeness | Description |
 | --- | --- | --- | --- |
 | [architecture.md](./architecture.md) | current | 92% | Entry topology, module map, `MainLive`/`PostLive` composition |
-| [effect-service-model.md](./effect-service-model.md) | current | 92% | Service tags, `Schema.TaggedError`, `Step.*` namespace, Config API |
-| [runtime-installation.md](./runtime-installation.md) | current | 92% | `RuntimeInstaller` `Context.Tag` class, descriptors, PM setup, Biome |
+| [effect-service-model.md](./effect-service-model.md) | current | 92% | `Context.Service` classes, `Schema.TaggedErrorClass`, `Step.*` namespace, Config API |
+| [runtime-installation.md](./runtime-installation.md) | current | 92% | `RuntimeInstaller` `Context.Service` class, descriptors, PM setup, Biome |
 
 ## Performance
 
@@ -46,4 +46,4 @@ Navigation index for all design documentation in the silk-runtime-action project
 - **Total documents:** 7
 - **Current:** 7
 - **Average completeness:** 91%
-- **Last updated:** 2026-07-05
+- **Last updated:** 2026-07-17

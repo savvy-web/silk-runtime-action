@@ -5,7 +5,7 @@ import {
 	ToolInstallerError,
 	ToolInstallerTest,
 } from "@savvy-web/github-action-effects/testing";
-import { Effect, Exit, Layer, Logger, Option } from "effect";
+import { Cause, Effect, Exit, Layer, Logger, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { RuntimeInstallError } from "../errors/errors.js";
 import type { RuntimeDescriptor } from "./runtime-installer.js";
@@ -32,9 +32,7 @@ const nodeTestDescriptor: RuntimeDescriptor = {
 const runInstall = (version: string, descriptor: RuntimeDescriptor, testLayer: Layer.Layer<any>) => {
 	const installer = makeRuntimeInstaller(descriptor);
 	return Effect.runPromise(
-		installer
-			.install(version)
-			.pipe(Effect.provide(testLayer), Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none))),
+		installer.install(version).pipe(Effect.provide(testLayer), Effect.provide(Logger.layer([]))),
 	);
 };
 
@@ -42,11 +40,7 @@ const runInstall = (version: string, descriptor: RuntimeDescriptor, testLayer: L
 const runInstallExit = (version: string, descriptor: RuntimeDescriptor, testLayer: Layer.Layer<any>) => {
 	const installer = makeRuntimeInstaller(descriptor);
 	return Effect.runPromise(
-		Effect.exit(
-			installer
-				.install(version)
-				.pipe(Effect.provide(testLayer), Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none))),
-		),
+		Effect.exit(installer.install(version).pipe(Effect.provide(testLayer), Effect.provide(Logger.layer([])))),
 	);
 };
 
@@ -132,9 +126,9 @@ describe("makeRuntimeInstaller", () => {
 			const exit = await runInstallExit("24.11.0", nodeTestDescriptor, testLayer);
 
 			expect(Exit.isFailure(exit)).toBe(true);
-			if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-				const err = exit.cause.error as RuntimeInstallError;
-				expect(err).toBeInstanceOf(RuntimeInstallError);
+			const err = Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
+			expect(err).toBeInstanceOf(RuntimeInstallError);
+			if (err instanceof RuntimeInstallError) {
 				expect(err.runtime).toBe("node");
 				expect(err.version).toBe("24.11.0");
 				expect(err.reason).toContain("Network error");
@@ -156,9 +150,9 @@ describe("makeRuntimeInstaller", () => {
 			const exit = await runInstallExit("24.11.0", nodeTestDescriptor, testLayer);
 
 			expect(Exit.isFailure(exit)).toBe(true);
-			if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-				const err = exit.cause.error as RuntimeInstallError;
-				expect(err).toBeInstanceOf(RuntimeInstallError);
+			const err = Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
+			expect(err).toBeInstanceOf(RuntimeInstallError);
+			if (err instanceof RuntimeInstallError) {
 				expect(err.runtime).toBe("node");
 				expect(err.version).toBe("24.11.0");
 			}
@@ -174,14 +168,15 @@ describe("makeRuntimeInstaller", () => {
 					mod.RuntimeInstaller.pipe(
 						Effect.flatMap((i) => i.install("1.0.0")),
 						Effect.provide(layer),
-						Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none)),
+						Effect.provide(Logger.layer([])),
 					) as unknown as Effect.Effect<never, RuntimeInstallError>,
 				),
 			);
 			expect(Exit.isFailure(exit)).toBe(true);
-			if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-				expect(exit.cause.error).toBeInstanceOf(RuntimeInstallError);
-				expect((exit.cause.error as RuntimeInstallError).reason).toContain("Unknown runtime: unknown");
+			const err = Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
+			expect(err).toBeInstanceOf(RuntimeInstallError);
+			if (err instanceof RuntimeInstallError) {
+				expect(err.reason).toContain("Unknown runtime: unknown");
 			}
 		});
 

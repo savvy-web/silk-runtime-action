@@ -1,5 +1,4 @@
-import { FileSystem } from "@effect/platform";
-import { ConfigProvider, Effect, Exit, Layer, Option } from "effect";
+import { ConfigProvider, Effect, Exit, FileSystem, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { ConfigError } from "../errors/errors.js";
 import { detectBiome, detectTurbo, loadPackageJson, parseDevEngines } from "./config-loader.js";
@@ -56,9 +55,11 @@ const makeFileSystemLayer = (
 const runDetectBiome = (inputs: Record<string, string>, fsLayer: Layer.Layer<FileSystem.FileSystem>) => {
 	// Build a ConfigProvider that maps input names directly (no prefix transformation).
 	// This simulates how ActionsConfigProvider resolves Config.string("biome-version").
-	const configProvider = ConfigProvider.fromMap(new Map(Object.entries(inputs)));
+	const configProvider = ConfigProvider.fromUnknown(inputs);
 
-	return Effect.runPromise(Effect.provide(Effect.withConfigProvider(detectBiome, configProvider), fsLayer));
+	return Effect.runPromise(
+		Effect.provide(detectBiome.pipe(Effect.provideService(ConfigProvider.ConfigProvider, configProvider)), fsLayer),
+	);
 };
 
 // ---------------------------------------------------------------------------
@@ -153,7 +154,7 @@ describe("loadPackageJson", () => {
 	it("surfaces a ConfigError instance (not a generic error)", async () => {
 		const layer = makeFileSystemLayer({});
 		const exit = await Effect.runPromise(
-			Effect.exit(Effect.provide(loadPackageJson.pipe(Effect.catchAll((e) => Effect.succeed(e))), layer)),
+			Effect.exit(Effect.provide(loadPackageJson.pipe(Effect.catch((e) => Effect.succeed(e))), layer)),
 		);
 
 		expect(Exit.isSuccess(exit)).toBe(true);

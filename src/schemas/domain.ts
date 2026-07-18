@@ -4,32 +4,30 @@ import { Schema } from "effect";
  * Validates that a version string is absolute (no semver ranges).
  * Rejects strings containing: ^, ~, >, <, =, *, x, X
  */
-export const AbsoluteVersion = Schema.String.pipe(
-	Schema.filter(
-		(v) => {
-			// Reject semver range operators and wildcards
-			const hasRangeOperators = /[~^<>=*xX]/.test(v);
-			if (hasRangeOperators) {
-				return false;
-			}
-			// Must match basic semver format: digits.digits.digits with optional prerelease/build
-			const semverPattern = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$/;
-			return semverPattern.test(v);
-		},
-		{ message: () => "Must be an absolute version (e.g., '24.11.0'), not a semver range" },
-	),
+export const AbsoluteVersion = Schema.String.check(
+	Schema.makeFilter((v) => {
+		const invalid = "Must be an absolute version (e.g., '24.11.0'), not a semver range";
+		// Reject semver range operators and wildcards
+		const hasRangeOperators = /[~^<>=*xX]/.test(v);
+		if (hasRangeOperators) {
+			return invalid;
+		}
+		// Must match basic semver format: digits.digits.digits with optional prerelease/build
+		const semverPattern = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$/;
+		return semverPattern.test(v) ? undefined : invalid;
+	}),
 );
 
 /**
  * Supported runtime names
  */
-export const RuntimeName = Schema.Literal("node", "bun", "deno");
+export const RuntimeName = Schema.Literals(["node", "bun", "deno"]);
 export type RuntimeName = typeof RuntimeName.Type;
 
 /**
  * Supported package manager names
  */
-export const PackageManagerName = Schema.Literal("npm", "pnpm", "yarn", "bun", "deno");
+export const PackageManagerName = Schema.Literals(["npm", "pnpm", "yarn", "bun", "deno"]);
 export type PackageManagerName = typeof PackageManagerName.Type;
 
 /**
@@ -67,6 +65,6 @@ export type PackageManagerEntry = typeof PackageManagerEntry.Type;
  */
 export const DevEngines = Schema.Struct({
 	packageManager: PackageManagerEntry,
-	runtime: Schema.Union(RuntimeEntry, Schema.Array(RuntimeEntry)),
+	runtime: Schema.Union([RuntimeEntry, Schema.Array(RuntimeEntry)]),
 });
 export type DevEngines = typeof DevEngines.Type;
