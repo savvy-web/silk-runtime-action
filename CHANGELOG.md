@@ -1,5 +1,20 @@
 # @savvy-web/silk-runtime-action
 
+## 1.2.2
+
+### Dependencies
+
+* | Dependency                       | Type       | Action  | From          | To             |                                                                              |
+  | -------------------------------- | ---------- | ------- | ------------- | -------------- | ---------------------------------------------------------------------------- |
+  | @effect/platform-node            | dependency | updated | 4.0.0-beta.99 | 4.0.0-beta.101 |                                                                              |
+  | @effected/jsonc                  | dependency | updated | ^0.5.0        | ^0.5.1         |                                                                              |
+  | @savvy-web/github-action-effects | dependency | updated | ^3.0.4        | ^3.0.5         |                                                                              |
+  | effect                           | dependency | updated | 4.0.0-beta.99 | 4.0.0-beta.101 | [#195][#195] Thanks [@savvy-web-bot](https://github.com/apps/savvy-web-bot)! |
+
+### Patch Changes
+
+[#195]: https://github.com/savvy-web/silk-runtime-action/pull/195
+
 ## 1.2.1
 
 ### Dependencies
