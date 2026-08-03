@@ -442,7 +442,13 @@ describe("installDependencies", () => {
 			// off the *child's* environment, so the prepends are what make the
 			// manager findable at all under a shell. Keyed by whatever spelling
 			// this process has, so the assertion holds on a Windows host too.
-			expect(log.spawns[0]?.env).toEqual({ [pathKey]: `C:\\tool\\.bin${delimiter}${process.env[pathKey] ?? ""}` });
+			//
+			// The delimiter is the **target's** `;`, not the host's, because the
+			// platform is now an argument all the way down rather than an implicit
+			// read of the host's `node:path`. Production never told the two apart —
+			// the platform is always the runner's — but a POSIX host driving the
+			// win32 branch did, and it silently joined a Windows PATH with `:`.
+			expect(log.spawns[0]?.env).toEqual({ [pathKey]: `C:\\tool\\.bin;${process.env[pathKey] ?? ""}` });
 			expect(log.spawns[0]?.extendEnv).toBe(true);
 		}),
 	);

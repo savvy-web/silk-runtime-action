@@ -121,13 +121,33 @@ describe("lockfilePatterns", () => {
 });
 
 describe("cachePaths", () => {
-	it("uses each manager's default store directory on POSIX", () => {
+	it("uses each manager's default store directory on Linux", () => {
 		expect(cachePaths(pathOptions({ packageManagers: ["npm"] }))).toContain("/home/runner/.npm");
 		expect(cachePaths(pathOptions({ packageManagers: ["pnpm"] }))).toContain("/home/runner/.local/share/pnpm/store");
-		expect(cachePaths(pathOptions({ packageManagers: ["yarn"] }))).toContain("/home/runner/.yarn/cache");
-		expect(cachePaths(pathOptions({ packageManagers: ["yarn"] }))).toContain("/home/runner/.cache/yarn");
+		// Classic and Berry both, because the manager's major is not known here.
+		const yarn = cachePaths(pathOptions({ packageManagers: ["yarn"] }));
+		expect(yarn).toContain("/home/runner/.cache/yarn");
+		expect(yarn).toContain("/home/runner/.yarn/berry/cache");
 		expect(cachePaths(pathOptions({ packageManagers: ["bun"] }))).toContain("/home/runner/.bun/install/cache");
 		expect(cachePaths(pathOptions({ packageManagers: ["deno"] }))).toContain("/home/runner/.cache/deno");
+	});
+
+	it("uses each manager's default store directory on macOS", () => {
+		// The platform the old hand-rolled table was wrong about: it archived
+		// pnpm's *linux* store here, so a macOS job cached an empty directory and
+		// restored nothing. Classic's macOS cache is under `~/Library/Caches`,
+		// which that table did not have a cell for at all.
+		const macos = { platform: "darwin", home: "/Users/runner" };
+		expect(cachePaths(pathOptions({ ...macos, packageManagers: ["npm"] }))).toContain("/Users/runner/.npm");
+		expect(cachePaths(pathOptions({ ...macos, packageManagers: ["pnpm"] }))).toContain(
+			"/Users/runner/Library/pnpm/store",
+		);
+		const yarn = cachePaths(pathOptions({ ...macos, packageManagers: ["yarn"] }));
+		expect(yarn).toContain("/Users/runner/Library/Caches/Yarn");
+		expect(yarn).toContain("/Users/runner/.yarn/berry/cache");
+		expect(cachePaths(pathOptions({ ...macos, packageManagers: ["bun"] }))).toContain(
+			"/Users/runner/.bun/install/cache",
+		);
 	});
 
 	it("uses each manager's default store directory on Windows", () => {
@@ -138,11 +158,13 @@ describe("cachePaths", () => {
 		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["pnpm"] }))).toContain(
 			"C:\\Users\\runneradmin\\AppData\\Local\\pnpm\\store",
 		);
-		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["yarn"] }))).toContain(
-			"C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Cache",
-		);
+		const yarn = cachePaths(pathOptions({ ...windows, packageManagers: ["yarn"] }));
+		expect(yarn).toContain("C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Cache");
+		expect(yarn).toContain("C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Berry\\cache");
+		// bun documents no Windows divergence: the cache is under the user profile
+		// on every platform, not `AppData` as the table this replaces claimed.
 		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["bun"] }))).toContain(
-			"C:\\Users\\runneradmin\\AppData\\Local\\bun\\install\\cache",
+			"C:\\Users\\runneradmin\\.bun\\install\\cache",
 		);
 		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["deno"] }))).toContain(
 			"C:\\Users\\runneradmin\\AppData\\Local\\deno",

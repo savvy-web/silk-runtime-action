@@ -34,17 +34,17 @@
 		"@effected/commands": "^0.2.0",
 		"@effected/git": "^0.5.1",
 		"@effected/github": "^0.2.1",
-		"@effected/github-actions": "^0.3.0",
+		"@effected/github-actions": "^0.4.0",
 		"@effected/glob": "^0.2.1",
 		"@effected/jsonc": "^0.5.1",
-		"@effected/lockfiles": "^0.2.3",
+		"@effected/lockfiles": "^0.3.0",
 		"@effected/markdown": "^0.4.1",
-		"@effected/npm": "^0.7.0",
-		"@effected/package-json": "^0.7.0",
+		"@effected/npm": "^0.8.0",
+		"@effected/package-json": "^0.7.1",
 		"@effected/runtimes": "^0.2.2",
 		"@effected/sbom": "^0.2.1",
 		"@effected/semver": "^0.3.0",
-		"@effected/workspaces": "^0.9.2",
+		"@effected/workspaces": "^0.9.3",
 		"@effected/yaml": "^0.6.0",
 		"effect": "catalog:effect"
 	},
@@ -52,7 +52,7 @@
 		"@effect/vitest": "catalog:effect",
 		"@savvy-web/github-action-builder": "^2.1.1",
 		"@savvy-web/silk": "^3.2.11",
-		"@vitest-agent/plugin": "^2.0.10"
+		"@vitest-agent/plugin": "^2.0.11"
 	},
 	"packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72",
 	"engines": {

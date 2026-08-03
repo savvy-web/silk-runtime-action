@@ -125,9 +125,16 @@ const makeLayer = (options: {
 		stateTest(options.saves ?? [], options.save),
 		options.fs ?? fileSystemTest(options.files),
 		Path.layer,
+		// `GITHUB_REF_NAME` is what the branch is read off now that `GitHubContext`
+		// owns the fallback — the runner sets it on every event, and the raw
+		// `GITHUB_REF` parse it replaces is the reason it was once absent here.
+		// `GITHUB_HEAD_REF: ""` stays: the empty string is what the runner really
+		// writes on a non-PR event, and decoding it as absent is the trap the kit
+		// exists to encode.
 		ActionEnvironment.layerTest({
 			GITHUB_WORKSPACE: WORKSPACE,
 			GITHUB_REF: "refs/heads/main",
+			GITHUB_REF_NAME: "main",
 			GITHUB_HEAD_REF: "",
 			RUNNER_TOOL_CACHE: TOOL_CACHE,
 			...options.env,
@@ -351,8 +358,15 @@ describe("restoreCache", () => {
 		Effect.gen(function* () {
 			const head: Array<Restore> = [];
 			const push: Array<Restore> = [];
-			yield* run(makeLayer({ restores: head, env: { GITHUB_HEAD_REF: "feature", GITHUB_REF: "refs/heads/main" } }));
-			yield* run(makeLayer({ restores: push, env: { GITHUB_REF: "refs/heads/feature" } }));
+			// The pull request's own shape: `GITHUB_REF_NAME` is the useless
+			// `12/merge`, and only `GITHUB_HEAD_REF` names the branch a human means.
+			yield* run(
+				makeLayer({
+					restores: head,
+					env: { GITHUB_HEAD_REF: "feature", GITHUB_REF: "refs/pull/12/merge", GITHUB_REF_NAME: "12/merge" },
+				}),
+			);
+			yield* run(makeLayer({ restores: push, env: { GITHUB_REF: "refs/heads/feature", GITHUB_REF_NAME: "feature" } }));
 
 			// Same branch by two routes, so the pull request restores what the branch
 			// itself saved.
@@ -364,10 +378,31 @@ describe("restoreCache", () => {
 		Effect.gen(function* () {
 			const main: Array<Restore> = [];
 			const dev: Array<Restore> = [];
-			yield* run(makeLayer({ restores: main, env: { GITHUB_REF: "refs/heads/main" } }));
-			yield* run(makeLayer({ restores: dev, env: { GITHUB_REF: "refs/heads/dev" } }));
+			yield* run(makeLayer({ restores: main, env: { GITHUB_REF: "refs/heads/main", GITHUB_REF_NAME: "main" } }));
+			yield* run(makeLayer({ restores: dev, env: { GITHUB_REF: "refs/heads/dev", GITHUB_REF_NAME: "dev" } }));
 
 			expect(askedFor(main[0])).not.toBe(askedFor(dev[0]));
+		}),
+	);
+
+	it.effect("keys a tag push under the tag, and still falls back across to a branch", () =>
+		Effect.gen(function* () {
+			const tag: Array<Restore> = [];
+			const branch: Array<Restore> = [];
+			yield* run(makeLayer({ restores: tag, env: { GITHUB_REF: "refs/tags/v1.3.0", GITHUB_REF_NAME: "v1.3.0" } }));
+			yield* run(makeLayer({ restores: branch, env: { GITHUB_REF: "refs/heads/main", GITHUB_REF_NAME: "main" } }));
+
+			// The one divergence from the raw-`GITHUB_REF` chain `GitHubContext.branch`
+			// replaced: that chain saw a ref which was not `refs/heads/*` and answered
+			// `""`, so every tag in the repository shared the one contextless bucket.
+			// A tag now gets a segment of its own.
+			expect(askedFor(tag[0])).not.toBe(askedFor(branch[0]));
+			// Which costs nothing on a cold tag, because depth 3 of RESTORE_DEPTHS
+			// drops the branch segment: the first run on a new tag still restores
+			// what the branch it was cut from saved.
+			const [, crossBranch] = ladderOf(tag[0]);
+			expect(crossBranch).toBeDefined();
+			expect(ladderOf(branch[0])).toContain(crossBranch);
 		}),
 	);
 

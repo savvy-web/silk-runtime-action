@@ -49,17 +49,20 @@ Consuming repositories **MUST** have a root `package.json` with:
   `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient`
   live there); only Node platform layers ship separately, in `@effect/platform-node`.
   Services are class-based `Context.Service` with exported `*Shape` companion types.
-* **Action services:** `@effected/github-actions` (`^0.3.0`) — zero `@actions/*` deps.
+* **Action services:** `@effected/github-actions` (`^0.4.0`) — zero `@actions/*` deps.
   Imported: `Action`, `ActionCache`, `ActionEnvironment`, `ActionInput`, `ActionLogger`,
   `ActionOutputs` (incl. `layerDetached`), `ActionState`, `BlobStore` /
-  `GitHubCacheBlobStore`, `CacheKey`, `DetachedProcess`, `GitHubMarkdown`,
-  `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
-* **Other first-party imports:** `@effected/npm` (`PackageManagerPin`), `@effected/semver`
-  (`SemVer.ExactVersionString`, backs `AbsoluteVersion`), `@effected/jsonc` (`Jsonc.parse`).
-  Remaining `@effected/*` entries (`commands`, `git`, `github`, `glob`, `lockfiles`,
-  `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`) are declared but not
-  imported by `src/` — `devEngines` is decoded locally in `steps/load-config.ts`. Every
-  range is a published caret; no overrides, links or patches.
+  `GitHubCacheBlobStore`, `CacheKey` (incl. `digest`), `ChildEnv`, `DetachedProcess`,
+  `GitHubMarkdown`, `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
+  `GitHubContext.branch` (off `ActionEnvironment.github`) is the branch fallback chain.
+* **Other first-party imports:** `@effected/npm` (`PackageManagerPin`,
+  `PackageManagerCache.defaultDirectory` — the cited default-cache-directory table),
+  `@effected/lockfiles` (`filenamesFor`), `@effected/semver` (`SemVer.ExactVersionString`,
+  backs `AbsoluteVersion`), `@effected/jsonc` (`Jsonc.parse`). Remaining `@effected/*`
+  entries (`commands`, `git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`,
+  `sbom`, `workspaces`, `yaml`) are declared but not imported by `src/` — `devEngines` is
+  decoded locally in `steps/load-config.ts`. Every range is a published caret; no overrides,
+  links or patches.
 * **Build:** `@savvy-web/github-action-builder` (rsbuild) via `action.config.ts`.
 * **Cross-phase state:** `src/state.ts` — `CacheState`, `TurboServerState` (`Schema.Class`),
   `STATE_KEYS`; `main` writes, `post` reads.
@@ -104,7 +107,9 @@ committed `dist`, **not** `node_modules`.
 **Current state: nothing is linked.** `pnpm-workspace.yaml` carries no `overrides:` entry
 and every range is a published caret. The rebuild's dogfood loop closed **2026-08-03** with
 the effected release wave — `github-actions@0.3.0`, `npm@0.7.0`, `package-json@0.7.0`,
-`semver@0.3.0`.
+`semver@0.3.0` — and its post-loop sweep landed the same day as
+`github-actions@0.4.0`, `npm@0.8.0`, `lockfiles@0.3.0`, adopted here in the #207 cleanup
+round.
 
 Cross-repo iteration runs through the **dogfood mailbox protocol** (`.claude/dogfood/`, the
 `silk:dogfood` skill): a request goes upstream, the upstream session builds and hands back,

@@ -1,5 +1,4 @@
-import { delimiter } from "node:path";
-import { ActionLogger } from "@effected/github-actions";
+import { ActionLogger, ChildEnv } from "@effected/github-actions";
 import type { PlatformError } from "effect";
 import { Data, Effect, FileSystem, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -81,20 +80,6 @@ const anyLockfile = (fs: FileSystem.FileSystem, lockfiles: ReadonlyArray<string>
 	);
 
 /**
- * The environment variable this process spells `PATH` with.
- *
- * @remarks
- * Windows spells it `Path`, and its environment block is case-insensitive. Node
- * does in fact cope: `normalizeSpawnArguments` de-duplicates the merged
- * environment case-insensitively on win32, keeping the lexicographically-first
- * key — so a `PATH` added beside an inherited `Path` would win, by an
- * undocumented internal that nothing obliges Node to keep. Reusing the spelling
- * the process already has means not depending on it.
- */
-const pathKeyOf = (env: Record<string, string | undefined>): string =>
-	Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
-
-/**
  * The child environment for everything this action installed.
  *
  * @remarks
@@ -114,45 +99,23 @@ const pathKeyOf = (env: Record<string, string | undefined>): string =>
  * rather than by absolute path, for the same reason: the children inherit
  * `PATH`, not the absolute path their parent was invoked with.
  *
- * Order is the caller's, and it is significant — the manager's own shim
+ * `ChildEnv.prependPath` owns the two traps this used to spell out itself — the
+ * Windows `Path` casing the merged block has to be written through, and the
+ * `extendEnv: true` that keeps `env` a merge rather than a wholesale
+ * replacement, which is why the whole pair is spread rather than just `.env`.
+ * Order stays the caller's and stays significant: the manager's own shim
  * directory leads, so it wins any name collision with a runtime of the same
- * name. `extendEnv` is what keeps this a *prepend* rather than a replacement:
- * without it the child would run with `PATH` and nothing else.
+ * name.
+ *
+ * The empty case is this function's own, because the kit's signature refuses it
+ * by construction — nothing to prepend means no `env` key at all, not an entry
+ * holding only the inherited value.
  */
-const childEnv = (pathPrepends: ReadonlyArray<string>): ChildProcess.CommandOptions => {
-	if (pathPrepends.length === 0) return {};
-	const key = pathKeyOf(process.env);
-	return { env: { [key]: [...pathPrepends, process.env[key] ?? ""].join(delimiter) }, extendEnv: true };
+const childEnv = (pathPrepends: ReadonlyArray<string>, platform: string): ChildProcess.CommandOptions => {
+	const [first, ...rest] = pathPrepends;
+	if (first === undefined) return {};
+	return ChildEnv.prependPath([first, ...rest], { base: process.env, platform });
 };
-
-/**
- * Whether the manager has to be launched through a shell rather than directly.
- *
- * @remarks
- * On Windows every node-based manager on `PATH` is a `.cmd` batch shim, not a
- * real executable: `CreateProcess` cannot execute one, and since
- * CVE-2024-27980 Node refuses to pass `.cmd`/`.bat` to it at all unless a shell
- * is asked for. Spawning `pnpm` by bare name therefore fails at launch —
- * `NotFound: ChildProcess.spawn` — before the install has a chance to run. bun
- * is the exception that shows the shape of it: `bun.exe` is a real binary, and
- * bun-as-manager was the one Windows job passing before this. Legacy reached
- * the same place by shelling every command on win32.
- *
- * All four managers shell on win32, bun included, and that is deliberate rather
- * than collateral: `cmd.exe` resolves a bare `bun` through `PATHEXT`, where
- * `.EXE` precedes `.CMD`, so it finds the same `bun.exe` in the same prepended
- * directory a direct spawn found. The argv is static either way, so the shell
- * buys uniformity — one launch path to reason about — at no cost to the one
- * manager that did not need it.
- *
- * `cmd.exe` resolves the bare name off the **child's** `PATH` — the one
- * `childEnv` builds — so the prepends keep working exactly as they do without
- * a shell.
- *
- * POSIX gets no shell: the direct spawn there already works, and a shell would
- * only add a layer between this step and the manager's exit code.
- */
-const needsShell = (platform: string): boolean => platform === "win32";
 
 /**
  * Runs one install command, echoing its stderr and keeping the tail.
@@ -165,6 +128,16 @@ const needsShell = (platform: string): boolean => platform === "win32";
  * `stdout` is the design — because a failure message is far more useful with the
  * last few lines of it than without, and every line read is echoed so nothing is
  * swallowed.
+ *
+ * `ChildEnv.needsShell` decides the launch, and all four managers take its
+ * `true` on win32 — bun included, which is this call site's own ruling rather
+ * than the kit's. bun is the exception that shows the shape of the rule:
+ * `bun.exe` is a real binary, not a `.cmd` shim, and bun-as-manager was the one
+ * Windows job passing before the shell was introduced. Shelling it anyway costs
+ * nothing — `cmd.exe` resolves a bare `bun` through `PATHEXT`, where `.EXE`
+ * precedes `.CMD`, so it finds the same binary in the same prepended directory a
+ * direct spawn found — and buys one launch path to reason about instead of two.
+ * Legacy reached the same place by shelling every command on win32.
  *
  * Under `shell`, Node concatenates the command and its arguments into a single
  * `cmd.exe` command line rather than passing an argv, which is a quoting hazard
@@ -183,8 +156,8 @@ const spawnInstall = (
 		const command = ChildProcess.make(name, [...args], {
 			stdout: "inherit",
 			stderr: "pipe",
-			...childEnv(pathPrepends),
-			...(needsShell(platform) ? { shell: true } : {}),
+			...childEnv(pathPrepends, platform),
+			...(ChildEnv.needsShell(platform) ? { shell: true } : {}),
 		});
 
 		const handle = yield* spawner.spawn(command);
@@ -248,8 +221,9 @@ const exitDetail = (
  * `pm.binDir` is *not* read for this: the caller has already folded it in at the
  * head of the list.
  *
- * `platform` decides only whether the manager is launched through a shell (see
- * `needsShell`). It is an argument with a `process.platform` default rather
+ * `platform` decides whether the manager is launched through a shell
+ * (`ChildEnv.needsShell`) and which delimiter joins the `PATH` prepends. It is
+ * an argument with a `process.platform` default rather
  * than a read, mirroring `installRuntimes`' `host`: it is the seam that makes
  * the Windows branch exercisable without monkey-patching the process, and no
  * caller passes it.
