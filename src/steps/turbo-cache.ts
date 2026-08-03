@@ -74,6 +74,18 @@ export interface StartTurboCacheArgs {
 	readonly detached?: DetachedProcessOps;
 	/** The server bundle to run, defaulting to the sibling of this bundle. See {@link defaultServerEntry}. */
 	readonly serverEntry?: string;
+	/**
+	 * The port to spawn the server on, defaulting to
+	 * {@link DEFAULT_TURBO_SERVER_PORT}.
+	 *
+	 * @remarks
+	 * A test seam like the two above, and one this repository's own CI makes
+	 * necessary: the job that runs the unit suite is set up by *this very
+	 * action*, so a real cache server already holds the default port. A test
+	 * that needs to stand a listener on the step's port must be able to point
+	 * the step somewhere it owns.
+	 */
+	readonly port?: number;
 }
 
 /** What the `main` phase learned about the turbo remote cache. */
@@ -251,7 +263,7 @@ const startEmbeddedServer = (
 	Effect.gen(function* () {
 		const outputs = yield* ActionOutputs;
 		const detached = args.detached ?? DetachedProcess;
-		const port = DEFAULT_TURBO_SERVER_PORT;
+		const port = args.port ?? DEFAULT_TURBO_SERVER_PORT;
 		const logFile = serverLogPath(port);
 		const credential = randomUUID();
 		const environment = yield* spawnEnvironment(resolution, {

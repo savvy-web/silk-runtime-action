@@ -144,6 +144,7 @@ const run = (
 		readonly turbo?: boolean;
 		readonly detached?: DetachedProcessOps;
 		readonly save?: Effect.Effect<void, ActionStateError>;
+		readonly port?: number;
 	} = {},
 ): Effect.Effect<{ readonly started: StartedTurboCache; readonly recorded: Recorded }, TurboCacheError> =>
 	Effect.suspend(() => {
@@ -153,6 +154,7 @@ const run = (
 			turbo: { enabled: args.turbo ?? true },
 			detached: args.detached ?? detachedTest(recorded),
 			serverEntry: SERVER_ENTRY,
+			...(args.port === undefined ? {} : { port: args.port }),
 		}).pipe(
 			Effect.map((started) => ({ started, recorded })),
 			Effect.provide(layer(recorded, args.save === undefined ? {} : { save: args.save })),
@@ -485,48 +487,55 @@ describe("startTurboCache: embedded", () => {
 
 	it.effect("waits on a probe aimed at the port it spawned the server on", () =>
 		Effect.gen(function* () {
-			const { started, recorded } = yield* run({});
-			const port = Option.getOrThrow(started.port);
-			const probe = recorded.probes[0] as Effect.Effect<boolean>;
-			expect(recorded.probes).toHaveLength(1);
-
-			// Running the *captured* probe against a server the test controls is what
+			// Running a *captured* probe against a server the test controls is what
 			// separates "a probe was passed" from "the right probe was passed". A
 			// probe aimed at the wrong port, the wrong host or the wrong route answers
 			// `false` against this server exactly as it would against no server, and
 			// the exported `TURBO_API` would then name an address readiness never
 			// actually checked.
+			//
+			// The server binds port 0 *first* and the step is pointed at whatever
+			// the OS handed out (the `port` seam). Binding the default 41230 is
+			// not an option in this repository's own CI: the job that runs this
+			// suite is set up by this very action, so a real cache server already
+			// holds that port for the length of the job.
 			const answered = yield* Effect.acquireUseRelease(
-				Effect.callback<{ readonly hits: Array<string>; readonly close: () => Promise<void> }>((resume) => {
+				Effect.callback<{
+					readonly hits: Array<string>;
+					readonly port: number;
+					readonly close: () => Promise<void>;
+				}>((resume) => {
 					const hits: Array<string> = [];
 					const server = createServer((request, response) => {
 						hits.push(request.url ?? "");
 						response.writeHead(request.url?.startsWith("/v8/artifacts/status") === true ? 200 : 404);
 						response.end();
 					});
-					// This is the one server in the suite that binds a *fixed* port —
-					// it has to, because the assertion is that the probe targets the
-					// port the step chose. So it is also the one that can lose the
-					// bind, and 41230 sits inside Linux's ephemeral range: a transient
-					// *outbound* socket on a busy CI runner can hold it for the length
-					// of one request (observed in CI as EADDRINUSE). Those clear in
-					// milliseconds, so EADDRINUSE retries briefly before concluding a
-					// real server leaked. Anything else — and exhaustion — dies with
-					// the cause rather than as an opaque timeout naming nothing.
-					let attempts = 0;
-					server.on("error", (cause: NodeJS.ErrnoException) => {
-						if (cause.code === "EADDRINUSE" && attempts < 10) {
-							attempts++;
-							setTimeout(() => server.listen(port, "127.0.0.1"), 200);
+					server.on("error", (cause) => resume(Effect.die(cause)));
+					server.listen(0, "127.0.0.1", () => {
+						const address = server.address();
+						if (address === null || typeof address === "string") {
+							resume(Effect.die(new Error("server bound no port")));
 							return;
 						}
-						resume(Effect.die(cause));
+						resume(
+							Effect.succeed({
+								hits,
+								port: address.port,
+								close: () => new Promise<void>((done) => server.close(() => done())),
+							}),
+						);
 					});
-					server.listen(port, "127.0.0.1", () =>
-						resume(Effect.succeed({ hits, close: () => new Promise<void>((done) => server.close(() => done())) })),
-					);
 				}),
-				(serving) => Effect.map(probe, (up) => ({ up, hits: serving.hits })),
+				(serving) =>
+					Effect.gen(function* () {
+						const { started, recorded } = yield* run({ port: serving.port });
+						expect(Option.getOrThrow(started.port)).toBe(serving.port);
+						const probe = recorded.probes[0] as Effect.Effect<boolean>;
+						expect(recorded.probes).toHaveLength(1);
+						const up = yield* probe;
+						return { up, hits: serving.hits, port: serving.port, probe, recorded };
+					}),
 				(serving) => Effect.promise(() => serving.close()),
 			);
 
@@ -534,8 +543,8 @@ describe("startTurboCache: embedded", () => {
 			expect(answered.hits).toEqual(["/v8/artifacts/status"]);
 			// And it is genuinely bound to that address rather than answering true
 			// unconditionally: with the server gone, the same probe is false.
-			expect(yield* probe).toBe(false);
-			expect(exported(recorded, "TURBO_API")).toBe(`http://127.0.0.1:${port}`);
+			expect(yield* answered.probe).toBe(false);
+			expect(exported(answered.recorded, "TURBO_API")).toBe(`http://127.0.0.1:${answered.port}`);
 		}),
 	);
 });
