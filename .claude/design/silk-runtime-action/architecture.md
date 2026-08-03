@@ -3,15 +3,16 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-07-17
-last-synced: 2026-07-17
-completeness: 92
+updated: 2026-08-02
+last-synced: 2026-08-02
+completeness: 95
 related:
   - ./effect-service-model.md
   - ./caching-strategy.md
   - ./runtime-installation.md
   - ./build-and-distribution.md
   - ./turbo-remote-cache.md
+  - ./testing-strategy.md
 dependencies: []
 ---
 
@@ -35,20 +36,21 @@ Top-level architecture of the Effect-based GitHub Action that sets up JavaScript
 
 The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
 
-Built on the Effect framework (v4, `effect@4.0.0-beta.98` via `catalog:effect`) using `@savvy-web/github-action-effects` (v4 line; range in `package.json`) for all GitHub Actions runtime interactions. The library implements the GitHub Actions runtime protocol natively (V2 Twirp caching, Azure Blob Storage, native process execution) so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` package is dissolved into core `effect` (`FileSystem`, `Path`, HTTP client all import from `effect`); only Node-specific platform layers ship separately in `@effect/platform-node`.
+Built on Effect v4 (`effect@4.0.0-beta.101` via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `@effected/npm`, `@effected/semver` and `@effected/jsonc`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
 
 **Design principles:**
 
 - `package.json` `devEngines` is the only source of truth for runtime and PM versions. Absolute versions only.
-- Side effects flow through Effect services for typed error handling, dependency injection and testability.
-- Optional steps (cache restore, Biome install, post-action save) degrade to warnings rather than failing the workflow.
-- `main.ts` is a 3-line entry. The program lives in `program.ts`; layer composition lives in `layers/app.ts`. Splitting these lets tests import `program` without triggering the `Action.run` side effect.
+- Every side effect flows through a kit service, for typed errors, injection and testability.
+- One module per pipeline step, each with a frozen four-part contract (result type, tagged error, explicit `R`, no inferred requirements). See [effect service model](./effect-service-model.md).
+- Optional work — cache restore, Biome install, turbo cache, the job summary, the whole post phase — degrades to a warning rather than failing the workflow.
+- `main.ts` is a one-call entry. The pipeline lives in `program.ts` and layer composition in `layers/app.ts`, so tests can import `program` without triggering `Action.run`.
 
 **When to load this doc:**
 
 - Understanding entry topology and layer composition.
 - Following data flow from `package.json` to cache key to outputs.
-- Adding a new runtime or modifying the pipeline shape.
+- Adding a runtime, a step, or an input/output pair.
 
 ---
 
@@ -58,31 +60,32 @@ Built on the Effect framework (v4, `effect@4.0.0-beta.98` via `catalog:effect`) 
 
 | Entry | Source | Output | Purpose |
 | --- | --- | --- | --- |
-| `main` | `src/main.ts` | `dist/main.js` | Thin wrapper: `Action.run(program, { layer: MainLive })` |
-| `post` | `src/post.ts` | `dist/post.js` | Cache save + turbo server teardown after job; never fails workflow |
+| `main` | `src/main.ts` | `dist/main.js` | One call: `Action.run(program, { layer: MainLive })` |
+| `post` | `src/post.ts` | `dist/post.js` | Reap the turbo server, then save the dependency cache; never fails the workflow |
 | `turbo-server` | `src/turbo-server.ts` | `dist/turbo-server.js` | Detached embedded turbo remote-cache server (a `workers` bundle) |
 
-`main.ts` is 3 lines (excluding imports). `program.ts` owns the Effect pipeline. There is no `pre` hook. `turbo-server.js` is not a lifecycle hook — main spawns it as a detached process. See [turbo remote cache](./turbo-remote-cache.md).
+`turbo-server.js` is **not** a lifecycle hook — `action.yml` names only `main` and `post`. Main spawns it as a detached child. See [turbo remote cache](./turbo-remote-cache.md).
+
+`post.ts` guards its own `Action.run` behind `process.env.GITHUB_ACTIONS`, so importing the module in a test does not start the post phase. It exports `post` (the value the entry runs) and `makePost(reap)`, which is the same effect over an injectable teardown seam.
 
 ### Source module map
 
 | Module | Path | Responsibility |
 | --- | --- | --- |
 | Entry | `src/main.ts` | `Action.run(program, { layer: MainLive })` |
-| Program | `src/program.ts` | Sequential Effect pipeline + helpers (`installBiome`, `installDependencies`, `setupPackageManager`, `setOutputs`, `turboLocalCachePaths`) |
-| Post | `src/post.ts` | Reap turbo server, then save cache when no exact hit; catches all errors and defects |
-| Turbo server | `src/turbo-server.ts` | Detached embedded turbo remote-cache server entry |
-| Turbo cache | `src/services/turbo-cache/{activation,codec,handler,lifecycle,apply}.ts` | Embedded remote cache; see [turbo remote cache](./turbo-remote-cache.md) |
-| Summary | `src/services/summary.ts` | `buildRuntimeSummary` job-summary panel + step-line formatters |
-| Layers | `src/layers/app.ts` | `MainLive` layer composition |
-| State | `src/state.ts` | `CacheState`, `TurboServerState` (`Schema.Class`) and `STATE_KEYS` |
-| Config | `src/services/config-loader.ts` | `loadPackageJson`, `parseDevEngines`, `detectBiome`, `detectTurbo` |
-| Cache | `src/services/cache.ts` | Key generation, restore/save, lockfile detection via `Glob`, cache path resolution |
-| Runtime installer | `src/services/runtime-installer.ts` | `RuntimeInstaller` (`Context.Service` class + `RuntimeInstallerShape`), `makeRuntimeInstaller`, per-runtime layers |
-| Schemas | `src/schemas/domain.ts` | `AbsoluteVersion`, `DevEngines`, typed name literals |
-| Errors | `src/errors/errors.ts` | `Schema.TaggedErrorClass` hierarchy + `ActionError` union |
-| Descriptors | `src/descriptors/{node,bun,deno,biome}.ts` | Per-runtime download descriptors; Biome `binaryMap` |
-| Build config | `action.config.ts` | `@savvy-web/github-action-builder` entry points (incl. `workers`), minify and ignore list |
+| Program | `src/program.ts` | Step composition, the two PATH joins, the outputs fold |
+| Post | `src/post.ts` | `makePost` / `post`: reap the server, then save the cache; double catch |
+| Turbo server | `src/turbo-server.ts` | Detached server entry — HTTP plumbing only |
+| Layers | `src/layers/app.ts` | `MainLive` and `PostLive` |
+| State | `src/state.ts` | `STATE_KEYS`, `CacheState`, `TurboServerState`, `isExactHit` |
+| Schemas | `src/schema/{domain,inputs,outputs}.ts` | `devEngines` domain, the 16 inputs, the 16 outputs |
+| Steps | `src/steps/*.ts` | One contract module per pipeline step, plus `cache-config.ts` (pure) |
+| Turbo cache | `src/turbo-cache/{activation,meta,handler,server-config}.ts` | Everything the embedded cache decides |
+| Formatters | `src/summary/format.ts` | Pure, verbatim log lines and the job-summary panel |
+| Descriptors | `src/descriptors/{descriptor,node,bun,deno,biome}.ts` | Pure per-tool download plans |
+| Build config | `action.config.ts` | Three entries (incl. `workers`), minify, `ignore` list |
+
+There is no `services/` directory and no `errors/errors.ts`: services come from the kit, and each step owns its own error type.
 
 ### Architecture diagram
 
@@ -92,125 +95,174 @@ action.yml (node24 runtime)
     +-- main: dist/main.js
     |       |
     |       v
-    |   src/main.ts (3 lines)
+    |   src/main.ts -> Action.run(program, { layer: MainLive })
     |       |
-    |       v
-    |   Action.run(program, { layer: MainLive })
-    |       |
-    |       +-- src/program.ts       (Effect.gen pipeline)
+    |       +-- src/program.ts   (Effect.gen, one ActionLogger.group per step)
     |       |     |
-    |       |     +-- services/config-loader.ts -> schemas/domain.ts
-    |       |     +-- services/cache.ts ----------> Glob (lockfiles + hashFiles)
-    |       |     +-- services/turbo-cache/apply.ts -> spawn dist/turbo-server.js (detached)
-    |       |     +-- services/runtime-installer.ts -> descriptors/{node,bun,deno}.ts
-    |       |     +-- program.installBiome --------> descriptors/biome.ts
-    |       |     +-- program.{setupPackageManager,installDependencies,setOutputs}
-    |       |     +-- services/summary.ts ---------> outputs.summary (job panel)
+    |       |     +-- schema/inputs.ts ---------> ActionInput / Config
+    |       |     +-- steps/load-config.ts -----> schema/domain.ts
+    |       |     +-- steps/detect-biome.ts ----> Jsonc
+    |       |     +-- steps/detect-turbo.ts
+    |       |     +-- steps/restore-cache.ts ---> steps/cache-config.ts, CacheKey, ActionCache
+    |       |     +-- steps/install-runtimes.ts -> descriptors/{node,bun,deno}.ts, ToolInstaller
+    |       |     +-- steps/setup-package-manager.ts -> PackageManagerPin, PackageManagerInstaller
+    |       |     +-- steps/install-dependencies.ts -> ChildProcessSpawner (PATH prepends)
+    |       |     +-- steps/install-biome.ts ---> descriptors/biome.ts, ToolInstaller.provisionFile
+    |       |     +-- steps/turbo-cache.ts -----> turbo-cache/*, DetachedProcess (spawn)
+    |       |     +-- schema/outputs.ts --------> ActionOutputs.set x16
+    |       |     +-- steps/summary.ts ---------> summary/format.ts, ActionOutputs.summary
     |       |
-    |       +-- src/layers/app.ts    (MainLive composition)
+    |       +-- src/layers/app.ts   (MainLive)
     |
-    +-- turbo-server: dist/turbo-server.js (detached process, spawned by main)
+    +-- turbo-server: dist/turbo-server.js (detached child, spawned by main)
     |       |
     |       v
-    |   services/turbo-cache/handler.ts over BlobStore (github | s3)
+    |   turbo-cache/server-config.ts -> BlobStore (github | s3)
+    |   turbo-cache/handler.ts        -> /v8/artifacts over BlobEnvelope
     |
     +-- post: dist/post.js
             |
             v
         src/post.ts
-            |
-            +-- services/turbo-cache (killProcess on saved pid)
-            +-- services/cache.ts (saveCache)
-            +-- catch + catchDefect (post never fails workflow)
+            +-- DetachedProcess.reap(pid from TurboServerState)   [first, unconditional]
+            +-- ActionCache.save(paths, primaryKey) unless exact hit
+            +-- Effect.catch + Effect.catchDefect (post never fails the workflow)
 ```
 
 ### Layer composition
 
-`Action.run` provides core services automatically: `ActionOutputsLive`, `ActionLoggerLive`, `ConfigProvider` (backed by `INPUT_*` env vars).
-
-**MainLive** in `src/layers/app.ts`:
+`Action.run` composes `ActionRuntime.layer`, which already provides `ActionEnvironment`, `ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient` and `NodeServices` (`ChildProcessSpawner`, `Crypto`, `FileSystem`, `Path`, `Stdio`, `Terminal`). Nothing in `layers/app.ts` rebuilds any of those; it adds only what the kit deliberately keeps out of the default runtime, because those modules pull in a blob-storage client.
 
 ```ts
-Layer.mergeAll(
-  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layerUndici)),
-  ToolInstallerLive,
-  CommandRunnerLive,
-  ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
-  ActionEnvironmentLive,
-  GlobLive,
-  NodeFileSystem.layer,
+// src/layers/app.ts
+export const MainLive = Layer.mergeAll(ActionCache.layer, PackageManagerInstaller.layer).pipe(
+  Layer.provideMerge(ToolInstaller.layer),
 );
+
+export const PostLive = ActionCache.layer;
 ```
 
-`ActionCacheLive` requires `NodeHttpClient` for the V2 Twirp protocol; in v4 the Node HTTP layer is `NodeHttpClient.layerUndici`. `ActionStateLive` requires `NodeFileSystem` for state file persistence. `GlobLive` is provided by the library and backs both `findLockFiles` (`Glob.glob`) and the lockfile hash (`Glob.hashFiles`).
+`ToolInstaller` is `provideMerge`d rather than merged: one instance satisfies `PackageManagerInstaller`'s requirement *and* stays visible to `installRuntimes` and `installBiome`, which use it directly. `ActionRunOptions.layer` is `Layer<R, never, ActionServices>`, which is what lets both layers *require* the runtime's services instead of constructing their own.
 
-**PostLive** in `src/post.ts`:
+### Pipeline steps (`src/program.ts`)
 
-```ts
-Layer.mergeAll(
-  ActionCacheLive.pipe(Layer.provide(NodeHttpClient.layerUndici)),
-  ActionStateLive.pipe(Layer.provide(NodeFileSystem.layer)),
-);
-```
+Sequential, inside one `Effect.gen`, each wrapped in `ActionLogger.group`:
+
+| # | Group title | Step | Fatal? |
+| --- | --- | --- | --- |
+| 0 | — | Read `ActionEnvironment.github` (fail fast), then `loadInputs` | Yes |
+| 1 | `Load configuration` | `loadConfig` | Yes |
+| 2 | `Detect Biome` | `detectBiome(inputs.biomeVersion)` | No (always resolves) |
+| 3 | `Detect Turbo` | `detectTurbo` | No (always resolves) |
+| 4 | `Detected configuration` | `formatDetectLine(…)` — the one-line headline | No |
+| 5 | `Restore dependency cache` | `restoreCache({ inputs, config, biomeVersion, turbo })` | No (absorbs) |
+| 6 | `Install runtimes` | `installRuntimes(config)` | Yes |
+| 7 | `Install <pm>` | `setupPackageManager(config.packageManager)` | Yes |
+| 8 | `Install dependencies` | `installDependencies(activated, installDeps, prepends)` | Yes |
+| 9 | `Install Biome` | `installBiome(biomeVersion)`, caught at the call site | No |
+| 10 | `Start turbo remote cache` | `startTurboCache({ inputs, turbo })` | No (self-catching) |
+| 11 | — | `emitOutputs(outputs)` | Yes |
+| 12 | `Runtime Setup Complete` | `writeSummary(facts)` — panel first, closing group after | No (self-catching) |
+
+Two orderings are load-bearing and were ruled during the rebuild:
+
+- **Detection precedes the restore**, because the resolved Biome version and turbo's presence both feed the cache key and the archived path set. This is the legacy ordering (`legacy-v1/program.ts:382-411`).
+- **The turbo cache starts last** — a deliberate deviation from v1, which started it before the restore. Nothing in the pipeline consumes the turbo environment, and a later start shortens the window in which a detached child holds the runner's short-lived `ACTIONS_RUNTIME_TOKEN`. Ruled neutral-to-better; do not "fix" it back.
+
+Before step 1 the program sets four variables **on this process only** — `NPM_CONFIG_UPDATE_NOTIFIER`, `NPM_CONFIG_FUND`, `HUSKY`, `COREPACK_ENABLE_DOWNLOAD_PROMPT` — to quiet tool chatter its own installs provoke. They are never `exportVariable`d, so none of it leaks into the consumer's later steps.
+
+### The two PATH joins
+
+`program.ts` holds two small pure functions that exist because they are the only place two step results are in scope at once. Both are consequences of the single most important runner fact in this codebase: **`ActionOutputs.addPath` appends to `GITHUB_PATH` and takes effect only in *later workflow steps*. It never mutates this process's `PATH`.**
+
+- `onInstallPath(pm, runtimes)` — when the package manager *is* one of the installed runtimes (bun, deno), the PM step reports no `binDir` because the runtime install owns that binary. This fills it in from the matching `InstalledRuntime.path`. A manager that already knows where it is keeps its answer.
+- `installPathPrepends(pm, runtimes)` — the ordered, de-duplicated directory list the dependency install's child process searches: the manager's bin directory first, then every installed runtime. The runtimes are not optional garnish; a `postinstall` script running `deno install` inherits the install child's `PATH`, and omitting them produced `deno: not found` on every runner in a multi-runtime workspace.
+
+See [runtime installation](./runtime-installation.md) for the full PATH story, including the ruled npm-ambient shadowing case.
+
+### Error model
+
+There is **no central `ActionError` union and no `errors/` module**. Each step exports its own `Data.TaggedError` subclass with a `reason` literal union, a **stored** `message` field and an optional `cause`:
+
+| Error | Step | Reasons |
+| --- | --- | --- |
+| `ConfigError` | `schema/domain.ts`, raised by `load-config` | `missing-package-json`, `malformed-json`, `invalid-dev-engines` |
+| `BiomeDetectError` | `detect-biome` | `read`, `parse` (declared, never raised) |
+| `TurboDetectError` | `detect-turbo` | `read` (declared, never raised) |
+| `CacheError` | `restore-cache` (also used by `post`) | `key`, `restore`, `state`, `save` |
+| `RuntimeInstallError` | `install-runtimes` | `download`, `extract`, `cache`, `unsupported-platform`, `verify` |
+| `PackageManagerError` | `setup-package-manager` | `install`, `activate`, `verify` |
+| `InstallError` | `install-dependencies` | `spawn`, `exit-code` |
+| `BiomeInstallError` | `install-biome` | `detect`, `download`, `cache` |
+| `TurboCacheError` | `turbo-cache` | `spawn`, `readiness` |
+| `SummaryError` | `summary` | `render`, `write` |
+
+Several of these are declared on a signature and never raised. That is deliberate: the error type is the shape a failure is *logged as*, and keeping it on the contract leaves room for a genuinely unexpected case without making today's tolerance a lie.
+
+`main` deliberately has **no** `catchDefect` — a defect is a bug in this action, and failing the job is the correct response. `post` and `startTurboCache` both keep one as defence in depth.
 
 ---
 
 ## Rationale
 
-### Effect framework for action logic
+### Effect v4 over the `@effected/*` suite
 
-Typed error channels (`Schema.TaggedErrorClass`), service composition (`Layer.mergeAll`), and built-in config/logging map naturally to GitHub Actions concerns. `@savvy-web/github-action-effects` provides the service wrappers; the action consumes them.
+Typed error channels, service composition and the kit's runner-protocol implementation map directly onto GitHub Actions concerns. The suite is first-party, so a missing API is fixed upstream and dogfooded rather than worked around here (see [build and distribution](./build-and-distribution.md)).
 
 ### Zero `@actions/*` dependencies
 
-`github-action-effects` (v4 line) implements the runtime protocol natively (V2 Twirp cache, Azure Blob Storage, native process execution via core `effect` platform APIs — `@effect/platform` was folded into `effect` in v4). Eliminates version conflicts, shrinks the bundle and removes the need for pnpm overrides or patches.
+`@effected/github-actions` implements the cache protocol, blob storage, tool installation and process handling natively over core `effect` platform APIs. That eliminates version conflicts, shrinks the bundle and removes any need for pnpm overrides or patches.
 
 ### devEngines-only configuration
 
-A single declarative source of truth in `package.json` (per Corepack and pnpm). Removing the previous explicit version inputs eliminates drift between `package.json` and workflow files.
+One declarative source of truth in `package.json` (per Corepack and pnpm). There are no runtime or package-manager version inputs, so `package.json` and workflow files cannot drift apart. A top-level corepack `packageManager` pin is ignored — `Schema.Struct` discards it along with every other unrelated manifest key.
 
-### Inputs via Effect Config API
+### Inputs decoded once, outputs folded once
 
-`Config.string`, `Config.boolean` and library `ActionInput.*` combinators read inputs lazily at point of use against the `ConfigProvider` set up by `Action.run`. No upfront `ActionInputs` parsing step that could fail before the pipeline starts; each input's usage is self-documenting at its call site.
+`loadInputs` (`schema/inputs.ts`) decodes all 16 inputs into a typed `Inputs` record at the top of the pipeline through `ActionInput.*` combinators, so `INPUT_` mangling and empty-string-is-absent semantics stay the kit's business. Outputs run the same way in reverse: the fold starts from `initialOutputs` (all-disabled defaults) and each step's result maps over it, so a feature that did not run reports its default rather than a value nobody computed. `INPUT_NAMES` and `OUTPUT_NAMES` are const tuples checked against `action.yml` by tests — both halves of the parity contract are guarded.
 
-### Split entry/program/layer
+### Split entry / program / layer
 
-`main.ts` is 3 lines. The pipeline (`program`) and the layer composition (`MainLive`) live in their own modules. This lets `program.test.ts` import the program without triggering the module-level `Action.run` side effect in `main.ts`, matching the canonical silk-update-action pattern.
+`main.ts` is one call. Keeping the pipeline and the layer composition in their own modules lets `__test__/unit/program.test.ts` import `program` without triggering a module-level `Action.run`.
 
 ### Descriptor pattern for runtimes
 
-Per-runtime data (URLs, archive types, verify commands) lives in `src/descriptors/{node,bun,deno}.ts`. Shared install logic lives in `makeRuntimeInstaller`. New runtimes are pure data additions. See `runtime-installation.md`.
+Per-tool data (URLs, archive kind, subpaths, binary name) lives in `src/descriptors/`. Descriptors are **pure and total**: the host is an argument, never a `process.platform` read, so every platform is exercisable in a unit test. Shared install logic lives in `install-runtimes.ts`. See [runtime installation](./runtime-installation.md).
+
+### Seams as defaulted parameters, not services
+
+Two operations cannot run for real in a unit test: `DetachedProcess.spawn`/`awaitReady` in `startTurboCache`, and `DetachedProcess.reap` in `post`. Both are **statics on a class**, not services, so there is no layer to swap. Rather than wrap them in a repository-local service — which would put it into every consumer's layer composition and into `PostLive` — each is injected as a defaulted field (`StartTurboCacheArgs.detached`, `makePost(reap)`). `R` is unchanged, production uses the kit's own statics, and no caller passes one. The same pattern covers `installRuntimes`' `host`, `installBiome`'s `host` and `installDependencies`' `platform`.
+
+The one recorded cost: `program.test.ts` cannot reach the embedded turbo path (that would be a real spawn), so its turbo case is pinned to `turbo-cache: off` and the outputs fold is pinned separately through the exported pure `turboCacheOutputs`.
 
 ### Non-fatal demotion
 
-Cache restore (`Effect.catchTag("CacheError", ...)`), Biome install (`Effect.catch`) and the entire post action (`Effect.catch` + `Effect.catchDefect`) demote failures to warnings. In v4 `catchAll`/`catchAllDefect` are renamed to `catch`/`catchDefect`. Optional operations never fail the job.
+Cache restore absorbs every failure internally; Biome install is caught at its call site in `program.ts`; `startTurboCache` and `writeSummary` catch their own; the whole post phase catches typed failures *and* defects. An optional operation never fails the job.
 
-### Cross-phase state via ActionState
+### Cross-phase state via `ActionState`
 
-GitHub Actions runs main and post in separate processes. `ActionState.save(STATE_KEYS.cacheState, value, CacheState)` in main; `ActionState.getOptional(STATE_KEYS.cacheState, CacheState)` in post. `CacheState` is a `Schema.Class` so it round-trips cleanly through the runner state file. The same mechanism carries `TurboServerState` (the embedded server's pid) so post can reap the detached process. See `src/state.ts` and [turbo remote cache](./turbo-remote-cache.md).
+Main and post are separate processes. `main` writes `CacheState` and `TurboServerState`; `post` reads them back. The encoded form of every field **must be plain JSON** — see [caching strategy](./caching-strategy.md#cross-phase-state-protocol), which owns that rule and the bug that produced it.
 
 ---
 
 ## System architecture
 
-### Pipeline steps (`src/program.ts`)
+### The step-contract rule
 
-The main pipeline runs sequential steps inside a single `Effect.gen`. Most are wrapped in `Step.groupStep(title, effect)` (quiet-on-success, verbose-on-failure). See `src/program.ts` for the exact order; the shape is:
+Four things per `steps/` module, each a contract change if touched:
 
-- **Detect configuration** -- load `package.json`, decode `devEngines`, detect Biome and Turbo.
-- **Compute cache config** -- determine active package managers, merge cache paths (incl. `**/.turbo/cache` when Turbo is detected), find lockfiles via `Glob.glob`.
-- **Turbo remote cache** -- resolve and apply the embedded cache strategy; spawn the detached server when applicable; non-fatal. See [turbo remote cache](./turbo-remote-cache.md).
-- **Restore cache** -- generate cache key, restore via V2 Twirp protocol; non-fatal.
-- **Install runtimes** -- `Effect.forEach` over runtimes with `Effect.provide(installerLayerFor(rt.name))`.
-- **Setup package manager** -- corepack (pnpm/yarn), `npm install -g` (npm), no-op (bun/deno).
-- **Install dependencies** -- lockfile-aware install command; skipped for Deno; opt-out via `install-deps=false`.
-- **Install Biome** -- direct binary download; non-fatal.
-- **Set outputs and job summary** -- versions, cache status, lockfiles, cache paths, turbo backend/port; render the job-summary panel (non-fatal).
-- **Summary** -- final status group.
+1. A declared **result type** (an exported interface, not an inferred object).
+2. A **`Data.TaggedError`** with a `reason` literal union and a stored `message`.
+3. An **explicitly annotated `R`** — never inferred.
+4. Params passed as a **named object** once a step takes more than a couple of values, so Phase B additions stay additive.
 
-### Error hierarchy
+`program.ts`'s `R` is the union of every step's, and `MainLive` supplies only what `ActionServices` lacks. A frozen contract is occasionally wider than today's implementation needs — `loadConfig` declares `Path` it does not use, `installBiome` declares `FileSystem` and `ActionLogger` the provisioner made unnecessary — and those stay, because narrowing `R` is a contract change.
 
-See `src/errors/errors.ts`. All errors are `Schema.TaggedErrorClass` subclasses with computed `.message` getters. The `ActionError` union covers the fatal errors propagating through the pipeline. `CacheError` is non-fatal during restore (caught and demoted) and fatal-but-swallowed in post (caught by the post-action `catch`).
+### Log structure
+
+`ActionLogger.group(title, effect)` wraps each step. Inside the two noisiest steps the transcript is additionally held by `logger.withBuffer(name, effect, { onSuccess: "discard" })`, so a green run is one line per runtime and one line per manager, while a failure spills the whole transcript. Warnings are never buffered, so an integrity notice reaches the log even on a green run.
+
+`Effect.logDebug` output appears only under `ACTIONS_STEP_DEBUG=true`; the cache key, the restore ladder, the resolved path set and the lockfile list are all logged at debug level.
 
 ---
 
@@ -221,46 +273,48 @@ See `src/errors/errors.ts`. All errors are `Schema.TaggedErrorClass` subclasses 
 ```text
 package.json
     |
-    v
-loadPackageJson (FileSystem.readFileString -> JSON.parse -> Schema.decodeUnknownEffect)
+    v  FileSystem.readFileString -> JSON.parse -> Schema.decodeUnknownEffect
+{ devEngines: { packageManager, runtime: RuntimeSpec | NonEmptyArray<RuntimeSpec> } }
     |
-    v
-DevEngines { packageManager, runtime: RuntimeEntry | RuntimeEntry[] }
+    v  normalize: a single runtime becomes an array of one, nothing else changes
+RuntimeConfig { packageManager: PackageManagerSpec, runtimes: NonEmptyArray<RuntimeSpec> }
     |
-    v
-parseDevEngines (normalize runtime to always-array)
-    |
-    v
-detectBiome (input override -> biome.jsonc -> biome.json -> $schema regex)
-    |
-    v
-detectTurbo (FileSystem.access("turbo.json"))
-    |
-    v
-{ runtimes, packageManager, biome: Option<string>, turbo: boolean }
+    +--> detectBiome  (input override -> biome.jsonc -> biome.json -> $schema regex) : Option<string>
+    +--> detectTurbo  (fs.access("turbo.json"))                                      : { enabled }
 ```
+
+Duplicates survive normalization, declaration order is preserved, names are case-sensitive and no field is defaulted. `runtime: []` is a decode failure, which keeps `runtimes` non-empty by construction.
 
 ### Cache key flow
 
-See `caching-strategy.md` for the full formula. Summary: `{platform}-{versionHash}-{branchHash}-{lockfileHash}`, all 8-char hex truncations. Lockfile hash now comes from `Glob.hashFiles` (library-provided hash-of-hashes), not concat-and-SHA256.
+`{platform}-{arch}-{versionHash}-{branchHash}-{lockfileHash}`, assembled by `keySegments` and handed to the kit's typed `CacheKey`. See [caching strategy](./caching-strategy.md) for the formula, the two-rung restore ladder and the `"empty"` sentinel.
 
 ### Cross-phase state
 
 ```text
-Main                                  Post
-  restoreCache()                        post (in post.ts)
-    |                                     |
-    +-- ActionState.save(                 +-- ActionState.getOptional(
-    |     STATE_KEYS.cacheState,          |     STATE_KEYS.cacheState,
-    |     new CacheState({                |     CacheState
-    |       key, paths,                   |   ) -> Option<CacheState>
-    |       restored: hit === "exact",    |
-    |     }),                             +-- if None -> return
-    |     CacheState,                     +-- if restored=true -> return
-    |   )                                 +-- else: Step.groupStep("Cache save", saveCache())
+main                                            post
+  restoreCache()                                  makePost(reap)
+    |                                               |
+    +-- ActionState.save(                           +-- getOptional(turboServer, TurboServerState)
+    |     STATE_KEYS.cache,                         |     Some -> reap(pid)   [FIRST, unconditional]
+    |     CacheState { paths, primaryKey,           |     None -> debug line
+    |                  restoredKey, lockfiles })    |
+    |                                               +-- getOptional(cache, CacheState)
+  startTurboCache()                                 |     None            -> return
+    |                                               |     exact hit       -> skip save
+    +-- ActionState.save(                           |     no paths        -> skip save
+          STATE_KEYS.turboServer,                   |     otherwise       -> ActionCache.save(paths, primaryKey)
+          TurboServerState { pid, port,             |
+                             backend, logFile })    +-- catch + catchDefect
 ```
 
-`CacheState` (in `src/state.ts`) carries `{ key, paths, restored }`. `restored=true` means main got an exact hit and post should skip the save.
+The reap runs first and unconditionally, ahead of every branch that can return early: a leaked cache server outlives the job, and whether this run's dependencies are worth archiving has nothing to do with it. Each half also catches its own failures, so a refused signal cannot cost the run its archive.
+
+`post` saves under the **primary** key, not whichever key matched: a partial restore left the archive short of what this run installed, so the key this run asked for is the one that has to end up populated.
+
+### Outputs and the summary
+
+`emitOutputs` publishes all 16 outputs in a fixed order, rendering booleans with `String(v)`. `writeSummary` then takes a `SummaryFacts` params object rather than the outputs alone, because three of the panel's facts are not outputs at all: the installed runtime list in declaration order, the cache key and resolved lockfile list, the typed turbo port, and `dependenciesInstalled` — the *truthful* `ran` flag, where v1 echoed the raw input and reported deno's skipped install as done.
 
 ---
 
@@ -268,32 +322,39 @@ Main                                  Post
 
 ### GitHub Actions runtime
 
-- **Inputs** -- `Config.string`/`Config.boolean`/`ActionInput.multiline`/`ActionInput.boolean` against the `ConfigProvider` set up by `Action.run`.
-- **Outputs** -- `ActionOutputs.set(name, value)`.
-- **Environment** -- `ActionEnvironment.getOptional` for `GITHUB_REF`, `GITHUB_HEAD_REF`, `RUNNER_TOOL_CACHE`.
-- **Cache** -- `ActionCache.restore`/`.save` (V2 Twirp + Azure Blob).
-- **State** -- `ActionState.save`/`getOptional` (file-backed between phases).
-- **Logging** -- `Step.groupStep` for collapsible sections; `Step.success` for canonical success lines; `Effect.log*` for the rest.
+- **Inputs** — `ActionInput.string` / `.redacted` / `.boolean` / `.lines`, composed with `Config.all` and `Config.withDefault` in `schema/inputs.ts`.
+- **Outputs** — `ActionOutputs.set`, plus `addPath`, `exportVariable`, `setSecret`, `summary`.
+- **Environment** — `ActionEnvironment.github` (fail-fast, workspace) and `.getOptional` for `GITHUB_HEAD_REF`, `GITHUB_REF`, `RUNNER_TOOL_CACHE`.
+- **Cache** — `ActionCache.restore`/`.save` over a typed `CacheKey`.
+- **State** — `ActionState.save`/`.getOptional`, file-backed between phases.
+- **Logging** — `ActionLogger.group` and `.withBuffer`; `Effect.log*` for lines.
 
-### `@savvy-web/github-action-effects` services
+### `@effected/*` services and values in use
 
-| Service | Purpose | Used by |
+| Import | Purpose | Used by |
 | --- | --- | --- |
-| `ActionOutputs` | Set outputs, add to PATH, export vars | program.ts, runtime-installer.ts |
-| `ActionCache` | V2 Twirp restore/save | services/cache.ts |
-| `ActionState` | Cross-phase persistence | services/cache.ts, post.ts |
-| `ActionEnvironment` | GitHub context vars | services/cache.ts |
-| `ToolInstaller` | Download, extract, cache tools | services/runtime-installer.ts, program.installBiome |
-| `CommandRunner` | Process execution | services/cache.ts, program.ts, services/runtime-installer.ts |
-| `Glob` | Glob expansion + hash-of-hashes | services/cache.ts (`findLockFiles`, `hashFiles`) |
-| `BlobStore` | Blob put/get/has (GitHub cache or S3/SigV4) | turbo-server.ts, services/turbo-cache/handler.ts |
-| `GithubMarkdown` | Job-summary markdown helpers | services/summary.ts |
+| `Action` | `Action.run` entry harness | `main.ts`, `post.ts` |
+| `ActionInput` | Input reads (dual-accept naming) | `schema/inputs.ts` |
+| `ActionOutputs` | Outputs, `addPath`, `exportVariable`, `setSecret`, `summary` | outputs, installs, turbo, summary |
+| `ActionLogger` | Log groups and buffered transcripts | `program.ts` and three steps |
+| `ActionEnvironment` | Runner context and raw variables | `program.ts`, `restore-cache.ts`, worker |
+| `ActionCache` + `CacheKey` | Typed key, restore, save | `restore-cache.ts`, `post.ts` |
+| `ActionState` + `ProcessId` | Cross-phase persistence | `restore-cache.ts`, `turbo-cache.ts`, `post.ts`, `state.ts` |
+| `ToolInstaller` | `find`/`download`/`extract*`/`cacheDir`/`provisionFile` | `install-runtimes.ts`, `install-biome.ts` |
+| `PackageManagerInstaller` | Manager provisioning and shims | `setup-package-manager.ts` |
+| `DetachedProcess` | `spawn`, `awaitReady`, `reap` | `turbo-cache.ts`, `post.ts` |
+| `BlobStore` / `GitHubCacheBlobStore` | Backend for the embedded cache | `turbo-cache/handler.ts`, `server-config.ts` |
+| `Secret` | `forSigning`, `forChildEnv`, `forRunnerFile` | `turbo-cache.ts` |
+| `GitHubMarkdown` | Job-summary markdown | `summary/format.ts` |
+| `PackageManagerPin` (`@effected/npm`) | `<name>@<version>[+<integrity>]` grammar | `setup-package-manager.ts` |
+| `SemVer.ExactVersionString` (`@effected/semver`) | Backs `AbsoluteVersion` | `schema/domain.ts` |
+| `Jsonc` (`@effected/jsonc`) | `biome.jsonc` parsing | `detect-biome.ts` |
+
+Several `@effected/*` packages are declared in `package.json` but not imported by `src/` today (`commands`, `git`, `github`, `glob`, `lockfiles`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`). Notably, lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`, so `@effected/glob` is no longer a code dependency of the cache path.
 
 ### Core `effect` platform services
 
-In v4 the platform abstractions live in core `effect` (the standalone `@effect/platform` package is gone):
-
-- `FileSystem.FileSystem` -- file read/access in `config-loader.ts` and `program.installDependencies`, imported from `effect`. Node implementations (`NodeFileSystem.layer`, `NodeHttpClient.layerUndici`) still come from `@effect/platform-node`.
+`FileSystem`, `Path`, `Stream`, `Result`, `Option` and `ChildProcessSpawner` (`effect/unstable/process`) all import from core `effect`. Node implementations (`NodeFileSystem.layer`, `NodeHttpClient.layerUndici`) come from `@effect/platform-node` and are composed by `ActionRuntime` — except in the detached worker, which builds its own.
 
 ---
 
@@ -301,12 +362,12 @@ In v4 the platform abstractions live in core `effect` (the standalone `@effect/p
 
 **Internal:**
 
-- [Effect service model](./effect-service-model.md) -- service tags, error types, Step.\* namespace, test layers.
-- [Caching strategy](./caching-strategy.md) -- cache key formula, lockfile detection, Glob integration.
-- [Turbo remote cache](./turbo-remote-cache.md) -- embedded server, activation tree, codec, cross-phase teardown.
-- [Runtime installation](./runtime-installation.md) -- `RuntimeInstaller` tag class, descriptors, PM setup.
-- [Build and distribution](./build-and-distribution.md) -- builder version, ignore list, dist management.
-- [Testing strategy](./testing-strategy.md) -- library Test layers, hand-rolled mock cases, fixture tests.
+- [Effect service model](./effect-service-model.md) — step contracts, error taxonomy, layer and seam patterns.
+- [Caching strategy](./caching-strategy.md) — cache key formula, restore ladder, cross-phase state protocol.
+- [Runtime installation](./runtime-installation.md) — descriptors, tool cache layout, PATH publication, PM and Biome.
+- [Turbo remote cache](./turbo-remote-cache.md) — activation table, detached worker, envelope, teardown.
+- [Build and distribution](./build-and-distribution.md) — three-entry bundle, dist management, dependency topology.
+- [Testing strategy](./testing-strategy.md) — kit test layers, parity guards, fixture and e2e matrices.
 
 **Context files:**
 

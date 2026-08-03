@@ -4,44 +4,44 @@
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/architecture.md",
-			"hash": "2d62b33e995d416917e3076ddc6d545436b8f0a2c52eecd183c9457bf6fd30af",
-			"recordedAt": "2026-06-23"
+			"hash": "a833ab8bc0b7858a99e3771b982f26ff23a8ca268039b3ca9fe36292c501f3bd",
+			"recordedAt": "2026-08-02"
 		},
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/build-and-distribution.md",
-			"hash": "5dedaa1916900fbb7aa906ee2772b572466acc02503cb3714fbe75514c9a1e29",
-			"recordedAt": "2026-07-05"
+			"hash": "4ee2742fee0181cc446bf2d21d37552f0213e03a2d3b10cb0994f467e897073f",
+			"recordedAt": "2026-08-02"
 		},
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/caching-strategy.md",
-			"hash": "5460fae42e52fa9746f40eeb174f4d6f22733987522f01a5a4ac3c4eb5604d6b",
-			"recordedAt": "2026-06-23"
+			"hash": "11b4701f2bbb7e410453d92d8d6acdefd05a0ae3bfa1e358f506f281e8429906",
+			"recordedAt": "2026-08-02"
 		},
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/effect-service-model.md",
-			"hash": "7d731f31d70e5d7622202fd9eb2ddc6d2b87ca59b2eadddad30ef552795e603c",
-			"recordedAt": "2026-06-23"
+			"hash": "236cc0d4006fa42e4847cbb6b0dbefc2e9b396b7bd678dcd743ca5a414e146df",
+			"recordedAt": "2026-08-02"
 		},
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/runtime-installation.md",
-			"hash": "50baa7c7eb4e8dbdaec7cf6fadbb7214b26f95ef21c300d1f4684bc401fb7d82",
-			"recordedAt": "2026-06-23"
+			"hash": "2d40d5c6f3ff0d6392cc9d29e59d65d08ad45d06fba93451a3ff3b07a324c488",
+			"recordedAt": "2026-08-02"
 		},
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/testing-strategy.md",
-			"hash": "207a6d625507b467ced4f33114c0792de047f9db75e2eb379b4ffa3104d3f731",
-			"recordedAt": "2026-06-23"
+			"hash": "103d1ea850b6a77fa23bf1591f5d41cb19c7b1cbf191cf8c87bb969e1f8b5b2d",
+			"recordedAt": "2026-08-02"
 		},
 		{
 			"source": "CLAUDE.md",
 			"target": ".claude/design/silk-runtime-action/turbo-remote-cache.md",
-			"hash": "1ed7c93f6da639c1d8b571b546a14ef6f76c78ec18329863b1c98a53f52abcf1",
-			"recordedAt": "2026-07-05"
+			"hash": "1076687751f61ecc71987c705fa9a2cad885e2631d67f348e9c790c2319e2ce4",
+			"recordedAt": "2026-08-02"
 		}
 	]
 }

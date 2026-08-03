@@ -1,342 +1,189 @@
 /**
- * Main action program (the `main` phase).
+ * The `main` phase pipeline: inputs → steps → outputs.
  *
- * Imported by main.ts which calls Action.run(program, { layer: MainLive }).
- * Separated so tests can import `program` without triggering the module-level
- * Action.run side effect in main.ts.
+ * @remarks
+ * Every step is a typed contract module under `./steps/`, composed here in
+ * runner order and wrapped in an `ActionLogger.group` so the workflow log is
+ * navigable. This module holds the composition and the joins that need two
+ * steps' results at once — nothing else: no I/O, no detection, no formatting.
+ *
+ * The output fold starts from {@link initialOutputs} and maps each step's
+ * result over it, so a feature that did not run reports its all-disabled
+ * default rather than a value nobody computed.
  *
  * @module program
  */
 
-import { homedir, arch as osArch, platform as osPlatform, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { ActionOutputsShape } from "@savvy-web/github-action-effects";
-import {
-	ActionInput,
-	ActionOutputs,
-	ActionState,
-	CommandRunner,
-	Step,
-	ToolInstaller,
-} from "@savvy-web/github-action-effects";
-import { Config, Effect, FileSystem, Option, Redacted } from "effect";
-import { binaryMap as biomeBinaryMap } from "./descriptors/biome.js";
-import { DependencyInstallError, PackageManagerSetupError } from "./errors/errors.js";
-import type { PackageManagerEntry, RuntimeEntry } from "./schemas/domain.js";
-import type { PackageManager } from "./services/cache.js";
-import { findLockFiles, getCombinedCacheConfig, restoreCache } from "./services/cache.js";
-import { detectBiome, detectTurbo, loadPackageJson, parseDevEngines } from "./services/config-loader.js";
-import type { InstalledRuntime } from "./services/runtime-installer.js";
-import {
-	RuntimeInstaller,
-	extractErrorReason,
-	formatCauseDetail,
-	installerLayerFor,
-} from "./services/runtime-installer.js";
-import { buildRuntimeSummary, formatCacheLine, formatDetectLine, formatTurboLine } from "./services/summary.js";
-import { resolveTurboCache } from "./services/turbo-cache/activation.js";
-import type { TurboApplyResult } from "./services/turbo-cache/apply.js";
-import { applyTurboCache } from "./services/turbo-cache/apply.js";
-import { spawnTurboServer, waitForServer } from "./services/turbo-cache/lifecycle.js";
-import { CacheState, STATE_KEYS } from "./state.js";
+import { ActionEnvironment, ActionLogger } from "@effected/github-actions";
+import { Effect, Option } from "effect";
+
+import type { RuntimeName } from "./schema/domain.js";
+import { loadInputs } from "./schema/inputs.js";
+import type { OutputsModel } from "./schema/outputs.js";
+import { emitOutputs, initialOutputs } from "./schema/outputs.js";
+import type { CacheState } from "./state.js";
+import { isExactHit } from "./state.js";
+import { detectBiome } from "./steps/detect-biome.js";
+import { detectTurbo } from "./steps/detect-turbo.js";
+import { installBiome } from "./steps/install-biome.js";
+import { installDependencies } from "./steps/install-dependencies.js";
+import type { InstalledRuntime } from "./steps/install-runtimes.js";
+import { installRuntimes } from "./steps/install-runtimes.js";
+import { loadConfig } from "./steps/load-config.js";
+import { restoreCache } from "./steps/restore-cache.js";
+import type { ActivatedPackageManager } from "./steps/setup-package-manager.js";
+import { setupPackageManager } from "./steps/setup-package-manager.js";
+import { writeSummary } from "./steps/summary.js";
+import type { StartedTurboCache } from "./steps/turbo-cache.js";
+import { startTurboCache } from "./steps/turbo-cache.js";
+import { formatDetectLine } from "./summary/format.js";
 
 /**
- * Install Biome CLI as a raw binary using ToolInstaller primitives.
+ * The package manager, told where this run put it when it *is* one of the
+ * runtimes this run installed.
+ *
+ * @remarks
+ * `bun` and `deno` are their own package managers, so the package-manager step
+ * is a deliberate no-op for them and reports no `binDir` — the binary is the
+ * runtime install's business. But the runtime install only publishes to `PATH`
+ * with `ActionOutputs.addPath`, which appends `GITHUB_PATH` for *later* workflow
+ * steps and never touches this process. Left alone, the dependency install would
+ * spawn a bare `bun` against whatever the runner image happens to have, or
+ * nothing at all — the same class of failure that shim directories fixed for
+ * pnpm.
+ *
+ * The join lives here rather than in either step because it is the only place
+ * that holds both results: neither step contract changes, and neither learns
+ * about the other.
+ *
+ * {@link InstalledRuntime.path} is already the directory that was published to
+ * `PATH` — the same value `installRuntimes` handed `addPath` — so it is the bin
+ * directory, not a path to descend from.
+ *
+ * A manager that already knows where it is keeps that answer: an npm-registry
+ * manager's shim directory wins over a same-named runtime, and there is no such
+ * collision anyway (`npm`, `pnpm` and `yarn` are never runtimes).
  */
-export const installBiome = (
-	version: string,
-): Effect.Effect<void, Error, ToolInstaller | ActionOutputs | FileSystem.FileSystem> =>
-	Effect.gen(function* () {
-		const toolInstaller = yield* ToolInstaller;
-		const outputs = yield* ActionOutputs;
-		const plat = osPlatform();
-		const architecture = osArch();
-
-		const binaryName = biomeBinaryMap[plat]?.[architecture];
-		if (!binaryName) {
-			yield* Effect.fail(new Error(`Unsupported platform for Biome: ${plat}-${architecture}`));
-			return;
-		}
-
-		const url = `https://github.com/biomejs/biome/releases/download/%40biomejs%2Fbiome%40${version}/${binaryName}`;
-		const finalName = plat === "win32" ? "biome.exe" : "biome";
-
-		// Download the binary
-		const downloadedPath = yield* toolInstaller.download(url);
-
-		// Cache the file
-		const cachedDir = yield* toolInstaller.cacheFile(downloadedPath, finalName, "biome", version);
-
-		// Make executable on non-Windows platforms
-		if (plat !== "win32") {
-			const fs = yield* FileSystem.FileSystem;
-			yield* fs.chmod(join(cachedDir, finalName), 0o755);
-		}
-
-		// Add to PATH
-		yield* outputs.addPath(cachedDir);
-
-		yield* Step.success(`Biome ${version}`);
-	}).pipe(Effect.catch((error) => Effect.fail(new Error(`Biome install failed: ${error}`))));
-
-/**
- * Determines active package managers from the set of installed runtimes
- * and the primary package manager.
- */
-export const getActivePackageManagers = (
-	runtimes: ReadonlyArray<RuntimeEntry>,
-	primaryPackageManager: PackageManager,
-): PackageManager[] => {
-	const pms = new Set<PackageManager>();
-
-	for (const rt of runtimes) {
-		if (rt.name === "node") pms.add(primaryPackageManager);
-		else if (rt.name === "bun") pms.add("bun");
-		else if (rt.name === "deno") pms.add("deno");
-	}
-
-	return Array.from(pms);
+const onInstallPath = (
+	pm: ActivatedPackageManager,
+	runtimes: ReadonlyArray<InstalledRuntime>,
+): ActivatedPackageManager => {
+	if (Option.isSome(pm.binDir)) return pm;
+	const runtime = runtimes.find((installed) => installed.name === pm.name);
+	return runtime === undefined ? pm : { ...pm, binDir: Option.some(runtime.path) };
 };
 
 /**
- * Install dependencies using the detected package manager.
- * Uses lockfile-aware flags for reproducible installs.
+ * Every directory this run put a binary in, in the order the install child
+ * should search them.
+ *
+ * @remarks
+ * The manager alone is not enough. A package manager's install spawns lifecycle
+ * scripts, and those inherit the install child's `PATH` — so a `postinstall`
+ * running `deno install` or `bun install` looks for a runtime this action
+ * installed on a `PATH` that, with only the manager prepended, does not have it.
+ * That is a real cross-OS failure and not a hypothetical: a multi-runtime
+ * workspace failed on every runner with `deno: not found`.
+ *
+ * Assembling the list here rather than in either step is the same reasoning as
+ * {@link onInstallPath}: this is the only place holding both results.
+ *
+ * The manager leads so its shims win a name collision with a same-named runtime
+ * — which is exactly the bun/deno-as-package-manager case, where
+ * {@link onInstallPath} has already filled `binDir` from the runtime install and
+ * the two entries are the same directory. `Set` drops that duplicate while
+ * keeping first-seen order, so the head stays the manager's answer.
+ *
+ * One collision the manager does **not** win, ruled and deliberate: an *ambient*
+ * npm. `PackageManagerInstaller` short-circuits an already-satisfied npm without
+ * caching anything, so it reports no `binDir` and contributes nothing here —
+ * while node's own bin directory does, carrying the npm bundled with the pinned
+ * node. The install child therefore runs that npm rather than the ambient one it
+ * was told was good enough, and `addPath` gives later workflow steps the same
+ * answer. That is the intended reading: the npm belonging to the node you
+ * pinned. It also matches v1's effective semantics — legacy's `npm install -g`
+ * upgraded the ambient prefix, which was then invisible behind the tool-cache
+ * node already on `GITHUB_PATH` — and no fixture asserts which npm executes.
+ * Whether the ambient short-circuit should consider a consumer-installed node at
+ * all is an upstream question, raised in the dogfood loop rather than patched
+ * around here.
  */
-export const installDependencies = (
-	packageManager: PackageManager,
-): Effect.Effect<void, DependencyInstallError, CommandRunner | FileSystem.FileSystem> =>
-	Effect.gen(function* () {
-		const runner = yield* CommandRunner;
-		const fs = yield* FileSystem.FileSystem;
-
-		const fileExists = (path: string) =>
-			fs.access(path).pipe(
-				Effect.map(() => true),
-				Effect.catch(() => Effect.succeed(false)),
-			);
-
-		if (packageManager === "deno") {
-			yield* Effect.log("Deno caches dependencies automatically, skipping install step");
-			return;
-		}
-
-		let command: string[];
-
-		switch (packageManager) {
-			case "npm": {
-				const hasLock = yield* fileExists("package-lock.json");
-				command = hasLock ? ["ci"] : ["install"];
-				break;
-			}
-			case "pnpm": {
-				const hasLock = yield* fileExists("pnpm-lock.yaml");
-				command = hasLock ? ["install", "--frozen-lockfile"] : ["install"];
-				break;
-			}
-			case "yarn": {
-				const hasLock = yield* fileExists("yarn.lock");
-				command = hasLock ? ["install", "--immutable"] : ["install", "--no-immutable"];
-				break;
-			}
-			case "bun": {
-				const hasBunLock = yield* fileExists("bun.lock");
-				const hasBunLockb = yield* fileExists("bun.lockb");
-				command = hasBunLock || hasBunLockb ? ["install", "--frozen-lockfile"] : ["install"];
-				break;
-			}
-		}
-
-		yield* runner.exec(packageManager, command, { streaming: true }).pipe(
-			/* v8 ignore next 8 -- error path tested via CI fixtures */
-			Effect.mapError((cause) => {
-				const msg = cause instanceof Error ? cause.message : String(cause);
-				const stderr =
-					cause && typeof cause === "object" && "stderr" in cause ? (cause as { stderr?: string }).stderr : undefined;
-				const detail = stderr ? `\n${stderr}` : "";
-				return new DependencyInstallError({
-					packageManager,
-					reason: `Failed to install dependencies: ${msg}${detail}`,
-					cause,
-				});
-			}),
-		);
-
-		yield* Step.success("Dependencies installed successfully");
-	});
+const installPathPrepends = (
+	pm: ActivatedPackageManager,
+	runtimes: ReadonlyArray<InstalledRuntime>,
+): ReadonlyArray<string> => [
+	...new Set([
+		...Option.match(pm.binDir, { onNone: () => [], onSome: (binDir) => [binDir] }),
+		...runtimes.map((installed) => installed.path),
+	]),
+];
 
 /**
- * Setup the package manager version after Node is installed and on PATH.
- * npm: sudo npm install -g on linux/darwin (global prefix is /usr/local)
- * pnpm/yarn: corepack prepare --activate (from tmpdir to avoid workspace interference)
- * bun/deno: no setup needed (they ARE their own package manager)
+ * The `{rt}Version` / `{rt}Enabled` pair for one runtime.
+ *
+ * @remarks
+ * Oracle 46: the version output is the *installed* result's version and the
+ * enabled flag is presence in the results — "we installed it", not "the
+ * manifest asked for it". The two happen to coincide because the installed
+ * version echoes the requested one (there is no resolution step: `devEngines`
+ * versions are absolute), but the distinction matters for a runtime the
+ * manifest never named — it must publish `""` / `false`, not the requested
+ * version of something that was never fetched.
  */
-export const setupPackageManager = (
-	packageManager: PackageManager,
-	version: string,
-): Effect.Effect<void, PackageManagerSetupError, CommandRunner> =>
-	Effect.gen(function* () {
-		if (packageManager === "bun" || packageManager === "deno") {
-			yield* Effect.log(`${packageManager} is its own package manager, no additional setup needed`);
-			return;
-		}
-
-		const runner = yield* CommandRunner;
-
-		if (packageManager === "npm") {
-			// npm: install exact version globally via sudo (prefix is /usr/local)
-			const currentOut = yield* runner.execCapture("npm", ["--version"]);
-			const currentVersion = currentOut.stdout.trim();
-			if (currentVersion !== version) {
-				yield* Effect.log(`Upgrading npm from ${currentVersion} to ${version}...`);
-				const plat = osPlatform();
-				if (plat === "linux" || plat === "darwin") {
-					yield* runner.exec("sudo", ["npm", "install", "-g", `npm@${version}`], { streaming: true });
-					// Fix npm cache ownership after sudo (sudo creates root-owned files in ~/.npm)
-					const npmCacheDir = join(homedir(), ".npm");
-					yield* runner
-						.exec("sudo", ["chown", "-R", `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`, npmCacheDir])
-						.pipe(Effect.catch(() => Effect.void));
-				} else {
-					yield* runner.exec("npm", ["install", "-g", `npm@${version}`], { streaming: true });
-				}
-			} else {
-				yield* Effect.log(`npm ${currentVersion} already matches required version`);
-			}
-		} else {
-			// Run all corepack and PM commands from a temp directory to prevent pnpm
-			// from reading pnpm-workspace.yaml configDependencies, which hangs on
-			// first run before dependencies are installed.
-			// See: https://github.com/renovatebot/renovate/issues/39902
-			const cwd = tmpdir();
-
-			// Check if corepack needs to be installed (Node >= 25)
-			const nodeVersionOut = yield* runner.execCapture("node", ["--version"], { cwd });
-			const versionMatch = nodeVersionOut.stdout.trim().match(/^v(\d+)\.\d+\.\d+$/);
-			if (versionMatch) {
-				const major = Number.parseInt(versionMatch[1], 10);
-				if (major >= 25) {
-					yield* Effect.log("Node.js >= 25 detected, installing corepack globally...");
-					const plat = osPlatform();
-					if (plat === "linux" || plat === "darwin") {
-						yield* runner.exec("sudo", ["npm", "install", "-g", "--force", "corepack@latest"], {
-							cwd,
-							streaming: true,
-						});
-					} else {
-						yield* runner.exec("npm", ["install", "-g", "--force", "corepack@latest"], { cwd, streaming: true });
-					}
-				}
-			}
-
-			yield* Effect.log("Enabling corepack...");
-			yield* runner.exec("corepack", ["enable"], { cwd }).pipe(
-				Effect.catch(() =>
-					// Retry after removing stale shims (EEXIST from cached Node installs)
-					Effect.gen(function* () {
-						const whichNode = yield* runner.execCapture("which", ["node"], { cwd });
-						const binDir = join(whichNode.stdout.trim(), "..");
-						yield* Effect.logDebug("Removing stale corepack shims and retrying...");
-						const shims = ["pnpm", "pnpx", "yarn", "yarnpkg", "npm", "npx"];
-						const exts = ["", ".js", ".cmd", ".ps1"];
-						const allShims = shims.flatMap((s) => exts.map((e) => join(binDir, `${s}${e}`)));
-						yield* runner.exec("rm", ["-f", ...allShims]).pipe(Effect.catch(() => Effect.void));
-						yield* runner.exec("corepack", ["enable"], { cwd, streaming: true });
-					}),
-				),
-			);
-
-			yield* Effect.log(`Preparing ${packageManager}@${version}...`);
-			yield* runner.exec("corepack", ["prepare", `${packageManager}@${version}`, "--activate"], {
-				cwd,
-				streaming: true,
-			});
-		}
-
-		// Verify — pnpm must run from tmpdir to avoid configDependencies hang
-		const verifyOpts = packageManager === "pnpm" ? { cwd: tmpdir() } : {};
-		yield* runner.exec(packageManager, ["--version"], { ...verifyOpts, streaming: true });
-		yield* Step.success(`${packageManager}@${version} activated`);
-	}).pipe(
-		/* v8 ignore next 5 -- error path tested via CI fixtures */
-		Effect.mapError((cause) => {
-			const reason = extractErrorReason(cause);
-			const stderr =
-				cause && typeof cause === "object" && "stderr" in cause ? (cause as { stderr?: string }).stderr : undefined;
-			const detail = stderr ? `\n${stderr}` : "";
-			return new PackageManagerSetupError({
-				packageManager,
-				version,
-				reason: `Package manager setup failed: ${reason}${detail}`,
-				cause,
-			});
-		}),
-	);
+const runtimeOutputs = (
+	runtimes: ReadonlyArray<InstalledRuntime>,
+	name: RuntimeName,
+): { readonly version: string; readonly enabled: boolean } => {
+	const installed = runtimes.find((runtime) => runtime.name === name);
+	return installed === undefined ? { version: "", enabled: false } : { version: installed.version, enabled: true };
+};
 
 /**
- * Sets all action outputs from the pipeline results.
+ * The `turbo-cache-backend` / `turbo-cache-port` pair, from what the step
+ * started.
+ *
+ * @remarks
+ * The port is `""` rather than `"0"` or `"none"` when no embedded server is
+ * listening (oracle 44) — `turbo-cache-port` is documented as empty when the
+ * server was not started, and a workflow reading it tests emptiness.
+ *
+ * Split out as a pure function rather than folded inline because it is the one
+ * part of the turbo wiring a test can pin without a detached child: the step
+ * itself spawns, and the program run that exercises it therefore cannot.
  */
-export const setOutputs = (
-	outputs: ActionOutputsShape,
-	installed: ReadonlyArray<InstalledRuntime>,
-	config: {
-		readonly packageManager: PackageManagerEntry;
-		readonly biome: Option.Option<string>;
-		readonly turbo: boolean;
-	},
-	cacheHit: "exact" | "partial" | "none",
-	lockfiles: string[],
-	cachePaths: string[],
-) =>
-	Effect.gen(function* () {
-		// Runtime outputs
-		const nodeRt = installed.find((r) => r.name === "node");
-		const bunRt = installed.find((r) => r.name === "bun");
-		const denoRt = installed.find((r) => r.name === "deno");
-
-		yield* outputs.set("node-version", nodeRt?.version ?? "");
-		yield* outputs.set("node-enabled", nodeRt ? "true" : "false");
-		yield* outputs.set("bun-version", bunRt?.version ?? "");
-		yield* outputs.set("bun-enabled", bunRt ? "true" : "false");
-		yield* outputs.set("deno-version", denoRt?.version ?? "");
-		yield* outputs.set("deno-enabled", denoRt ? "true" : "false");
-
-		// Package manager outputs
-		yield* outputs.set("package-manager", config.packageManager.name);
-		yield* outputs.set("package-manager-version", config.packageManager.version);
-
-		// Biome outputs
-		yield* outputs.set("biome-version", Option.isSome(config.biome) ? config.biome.value : "");
-		yield* outputs.set("biome-enabled", Option.isSome(config.biome) ? "true" : "false");
-
-		// Turbo output
-		yield* outputs.set("turbo-enabled", config.turbo ? "true" : "false");
-
-		// Cache outputs
-		const cacheHitOutput = cacheHit === "exact" ? "true" : cacheHit === "partial" ? "partial" : "false";
-		yield* outputs.set("cache-hit", cacheHitOutput);
-		yield* outputs.set("lockfiles", lockfiles.join(","));
-		yield* outputs.set("cache-paths", cachePaths.join(","));
-	});
+export const turboCacheOutputs = (
+	started: StartedTurboCache,
+): Pick<OutputsModel, "turboCacheBackend" | "turboCachePort"> => ({
+	turboCacheBackend: started.backend,
+	turboCachePort: Option.match(started.port, { onNone: () => "", onSome: (port) => String(port) }),
+});
 
 /**
- * File-cache paths for Turbo's local artifact cache. Only `.turbo/cache` (the
- * task-output cache) is included; `.turbo/runs` (run summaries),
- * `.turbo/cookies`, and `.turbo/daemon` are excluded.
+ * How the dependency cache restore went, in the three words `cache-hit` is
+ * documented to take.
+ *
+ * @remarks
+ * `"partial"` is the interesting one: something restored, but not what this run
+ * asked for, so a workflow reading the output learns that its dependencies came
+ * from a neighbouring key rather than its own. v1 published the same three
+ * values from a hit enum; here they come off `restoredKey` directly.
  */
-export const turboLocalCachePaths = (turboDetected: boolean): string[] => (turboDetected ? ["**/.turbo/cache"] : []);
+const cacheHit = (state: CacheState): OutputsModel["cacheHit"] =>
+	Option.isNone(state.restoredKey) ? "false" : isExactHit(state) ? "true" : "partial";
 
-// ---------------------------------------------------------------------------
-// Main pipeline
-// ---------------------------------------------------------------------------
-
-/* v8 ignore start -- pipeline orchestration; individual functions tested separately */
 export const program = Effect.gen(function* () {
-	const outputs = yield* ActionOutputs;
+	const logger = yield* ActionLogger;
+	// Fail fast: `github` is the first thing that needs a real runner, so a
+	// non-runner environment fails here with `ActionEnvironmentError` rather
+	// than after every step has already run.
+	yield* (yield* ActionEnvironment).github;
+	const inputs = yield* loadInputs;
 
-	// Quiet noisy tool chatter from our OWN install steps. Set on this process
-	// only (NOT exported) so it never affects the consumer's later job steps.
-	// HUSKY=0 also correctly skips git-hook install in CI.
+	// Quiet the tool chatter our *own* install steps provoke. Set on this
+	// process only — never `exportVariable` — so none of it leaks into the
+	// consumer's later job steps (oracle 43). `COREPACK_ENABLE_DOWNLOAD_PROMPT`
+	// outlives corepack's removal from this action: it costs nothing and still
+	// covers a corepack the consumer's own steps invoke.
 	yield* Effect.sync(() => {
 		process.env.NPM_CONFIG_UPDATE_NOTIFIER = "false";
 		process.env.NPM_CONFIG_FUND = "false";
@@ -344,255 +191,109 @@ export const program = Effect.gen(function* () {
 		process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT = "0";
 	});
 
-	// 1. Parse configuration
-	const config = yield* Step.groupStep(
-		"Detect configuration",
-		Effect.gen(function* () {
-			const devEngines = yield* loadPackageJson;
-			const parsed = parseDevEngines(devEngines);
-			const runtimes = parsed.runtime;
-			const packageManager = parsed.packageManager;
-			const biome = yield* detectBiome;
-			const turbo = yield* detectTurbo;
-
-			yield* Effect.log(`Detected runtime(s): ${runtimes.map((r) => `${r.name}@${r.version}`).join(", ")}`);
-			yield* Effect.log(`Detected package manager: ${packageManager.name}@${packageManager.version}`);
-			if (Option.isSome(biome)) {
-				yield* Effect.log(`Detected Biome: ${biome.value}`);
-			}
-			if (turbo) {
-				yield* Effect.log("Detected Turbo configuration");
-			}
-
-			yield* Step.success(
-				formatDetectLine({
-					runtimes,
-					packageManager,
-					biome: Option.isSome(biome) ? biome.value : null,
-					turbo,
-				}),
-			);
-
-			return { runtimes, packageManager, biome, turbo };
-		}),
-	);
-
-	// 2. Determine active package managers and cache config
-	const pmName: PackageManager = config.packageManager.name;
-	const activePackageManagers = getActivePackageManagers(config.runtimes, pmName);
-
-	// Build runtime version list for tool cache inclusion
-	const runtimeEntries: Array<{ name: string; version: string }> = config.runtimes.map((r) => ({
-		name: r.name,
-		version: r.version,
-	}));
-	if (Option.isSome(config.biome)) {
-		runtimeEntries.push({ name: "biome", version: config.biome.value });
-	}
-
-	const cacheConfig = yield* getCombinedCacheConfig(activePackageManagers, runtimeEntries);
-
-	// Read additional lockfile patterns and cache paths from inputs (optional, may be empty)
-	const additionalLockfiles = yield* ActionInput.multiline("additional-lockfiles").pipe(Config.withDefault([]));
-	const additionalCachePaths = yield* ActionInput.multiline("additional-cache-paths").pipe(Config.withDefault([]));
-
-	const allLockfilePatterns = [...cacheConfig.lockfilePatterns, ...additionalLockfiles];
-	const lockfiles = yield* findLockFiles(allLockfilePatterns);
-
-	const cacheBust = yield* Config.string("cache-bust").pipe(Config.withDefault(""));
-	const cacheBustValue = cacheBust && cacheBust !== "false" ? cacheBust : undefined;
-
-	// Turbo's local artifact cache (.turbo/cache) is file-cached as a fast
-	// local-restore layer alongside the embedded remote cache. .turbo/runs
-	// (run summaries) is deliberately excluded — a restored stale summary would
-	// break "latest run = current run" detection by tools that parse
-	// `turbo --summarize` output; cookies/daemon are ephemeral.
-	const finalCachePaths = [...cacheConfig.cachePaths, ...additionalCachePaths, ...turboLocalCachePaths(config.turbo)];
-
-	yield* Effect.logDebug(`Active PMs: ${activePackageManagers.join(", ")}`);
-	yield* Effect.logDebug(`Lockfiles found: ${lockfiles.length > 0 ? lockfiles.join(", ") : "(none)"}`);
-	yield* Effect.logDebug(`Cache paths (${finalCachePaths.length}): ${finalCachePaths.join(", ")}`);
-
-	// Resolve and apply turbo remote cache strategy.
-	const turboResult = yield* Step.groupStep(
-		"Turbo remote cache",
-		Effect.gen(function* () {
-			const cacheMode =
-				(yield* Config.string("turbo-cache").pipe(Config.withDefault("auto"))) === "off" ? "off" : "auto";
-			const turboToken = yield* Config.string("turbo-token").pipe(Config.withDefault(""));
-			const turboTeam = yield* Config.string("turbo-team").pipe(Config.withDefault(""));
-			const prefix = yield* Config.string("turbo-cache-prefix").pipe(Config.withDefault(""));
-
-			// Secrets: read redacted, register with the runner's log mask, then
-			// unwrap for transport. setSecret takes plaintext (it tells the runner
-			// what to redact); Redacted guards against accidental logging in main.
-			const s3Secret = yield* Config.redacted("turbo-s3-secret-access-key").pipe(Config.withDefault(Redacted.make("")));
-			const s3Session = yield* Config.redacted("turbo-s3-session-token").pipe(Config.withDefault(Redacted.make("")));
-			for (const secret of [turboToken, Redacted.value(s3Secret), Redacted.value(s3Session)]) {
-				if (secret !== "") yield* outputs.setSecret(secret);
-			}
-
-			const s3 = {
-				bucket: yield* Config.string("turbo-s3-bucket").pipe(Config.withDefault("")),
-				region: yield* Config.string("turbo-s3-region").pipe(Config.withDefault("")),
-				endpoint: yield* Config.string("turbo-s3-endpoint").pipe(Config.withDefault("")),
-				accessKeyId: yield* Config.string("turbo-s3-access-key-id").pipe(Config.withDefault("")),
-				secretAccessKey: Redacted.value(s3Secret),
-				sessionToken: Redacted.value(s3Session),
-				prefix: yield* Config.string("turbo-s3-prefix").pipe(Config.withDefault("")),
-			};
-			const resolution = resolveTurboCache({
-				turboDetected: config.turbo,
-				cacheMode,
-				turboToken,
-				turboTeam,
-				s3,
-			});
-			const turboApplied = yield* applyTurboCache(resolution, {
-				serverEntry: join(dirname(fileURLToPath(import.meta.url)), "turbo-server.js"),
-				prefix,
-				spawn: spawnTurboServer,
-				waitForReady: waitForServer,
-			});
-			yield* Step.success(formatTurboLine(turboApplied.backend, turboApplied.port));
-			return turboApplied;
-		}).pipe(
-			Effect.catch((error) =>
-				Effect.logWarning(`Turbo cache setup error: ${error instanceof Error ? error.message : String(error)}`).pipe(
-					Effect.as<TurboApplyResult>({ backend: "none", port: null }),
-				),
-			),
-			// Also swallow synchronous defects (e.g. a throw inside spawn) so turbo
-			// cache setup can never fail the action — matches post.ts's posture.
-			Effect.catchDefect((defect) =>
-				Effect.logWarning(
-					`Turbo cache setup defect: ${defect instanceof Error ? defect.message : String(defect)}`,
-				).pipe(Effect.as<TurboApplyResult>({ backend: "none", port: null })),
-			),
-		),
-	);
-
-	// 3. Restore cache (non-fatal)
-	const cacheResult = yield* Step.groupStep(
-		"Restore cache",
-		Effect.gen(function* () {
-			const cacheEnvDiag = [
-				`ACTIONS_CACHE_URL: ${process.env.ACTIONS_CACHE_URL ? "set" : "NOT SET"}`,
-				`ACTIONS_RESULTS_URL: ${process.env.ACTIONS_RESULTS_URL ? "set" : "NOT SET"}`,
-				`ACTIONS_RUNTIME_TOKEN: ${process.env.ACTIONS_RUNTIME_TOKEN ? "set" : "NOT SET"}`,
-				`ACTIONS_CACHE_SERVICE_V2: ${process.env.ACTIONS_CACHE_SERVICE_V2 ?? "NOT SET"}`,
-			].join(", ");
-			yield* Effect.logDebug(`Cache env diagnostic: ${cacheEnvDiag}`);
-
-			const hit = yield* restoreCache({
-				cachePaths: finalCachePaths,
-				runtimes: runtimeEntries,
-				packageManager: { name: config.packageManager.name, version: config.packageManager.version },
-				lockfiles,
-				...(cacheBustValue ? { cacheBust: cacheBustValue } : {}),
-			}).pipe(
-				Effect.catchTag("CacheError", (e) =>
-					Effect.gen(function* () {
-						yield* Effect.logWarning(`Cache restore failed: ${e.reason}`);
-						const detail = formatCauseDetail(e);
-						if (detail) {
-							yield* Effect.logWarning(`Cache restore cause detail: ${detail}`);
-						}
-						return "none" as const;
-					}),
-				),
-				// restoreCache also calls state.save (ActionStateError) — never let a
-				// non-CacheError failure escape and fail the action; degrade to a miss.
-				Effect.catch((e) =>
-					Effect.gen(function* () {
-						yield* Effect.logWarning(`Cache restore failed: ${e instanceof Error ? e.message : String(e)}`);
-						return "none" as const;
-					}),
-				),
-			);
-			yield* Step.success(formatCacheLine(hit, lockfiles.length));
-			return hit;
-		}),
-	);
-
-	// 4. Install runtimes
-	const installed = yield* Step.groupStep(
-		"Install runtimes",
-		Effect.forEach(config.runtimes, (rt) =>
-			RuntimeInstaller.pipe(
-				Effect.flatMap((installer) => installer.install(rt.version)),
-				Effect.provide(installerLayerFor(rt.name)),
-				Effect.tap((result) => Step.success(`${rt.name} ${result.version}`)),
-			),
-		),
-	);
-
-	// 5. Setup package manager (after runtimes are installed and on PATH)
-	yield* Step.groupStep(
-		`Install ${pmName} via ${pmName === "npm" ? "npm" : "corepack"}`,
-		setupPackageManager(pmName, config.packageManager.version),
-	);
-
-	// 6. Install dependencies
-	const installDeps = yield* ActionInput.boolean("install-deps").pipe(Config.withDefault(true));
-	if (installDeps) {
-		yield* Step.groupStep(`Install dependencies with ${pmName}`, installDependencies(pmName));
-	}
-
-	// 7. Install Biome (non-fatal) -- uses direct download since biome is a raw binary, not an archive
-	if (Option.isSome(config.biome)) {
-		const biomeVersion = config.biome.value;
-		yield* Step.groupStep(
-			"Install Biome",
-			installBiome(biomeVersion).pipe(
-				Effect.catch((e) =>
-					Effect.logWarning(`Biome installation failed: ${e instanceof Error ? e.message : String(e)}`),
-				),
-			),
-		);
-	}
-
-	// 8. Set outputs
-	yield* setOutputs(outputs, installed, config, cacheResult, lockfiles, finalCachePaths);
-	yield* outputs.set("turbo-cache-backend", turboResult.backend);
-	yield* outputs.set("turbo-cache-port", turboResult.port === null ? "" : String(turboResult.port));
-
-	// Job summary panel (non-fatal — never fail the action over a summary write).
-	const state = yield* ActionState;
-	const cacheStateOpt = yield* state.getOptional(STATE_KEYS.cacheState, CacheState);
-	const cacheKey = Option.isSome(cacheStateOpt) ? cacheStateOpt.value.key : "";
-	yield* outputs
-		.summary(
-			buildRuntimeSummary({
-				runtimes: config.runtimes.map((r) => ({ name: r.name, version: r.version })),
-				packageManager: { name: config.packageManager.name, version: config.packageManager.version },
-				biome: Option.isSome(config.biome) ? config.biome.value : null,
-				turbo: { backend: turboResult.backend, port: turboResult.port },
-				cacheHit: cacheResult,
-				dependenciesInstalled: installDeps,
-				cacheKey,
-				lockfiles,
+	const config = yield* logger.group("Load configuration", loadConfig);
+	// Detection runs before the cache restore because both the resolved Biome
+	// version and turbo's presence feed the cache key and path set — the legacy
+	// ordering (`legacy-v1/program.ts:382-411`).
+	const biomeVersion = yield* logger.group("Detect Biome", detectBiome(inputs.biomeVersion));
+	const turbo = yield* logger.group("Detect Turbo", detectTurbo);
+	// The headline a reader skims instead of expanding the three groups above
+	// (oracle 29). v1 emitted it as the canonical success line of a single
+	// "Detect configuration" group; detection is three groups here, so the line
+	// is assembled once all three have answered and gets a group of its own —
+	// a structural deviation, and the only placement that can carry every fact.
+	yield* logger.group(
+		"Detected configuration",
+		Effect.logInfo(
+			formatDetectLine({
+				runtimes: config.runtimes,
+				packageManager: config.packageManager,
+				biome: biomeVersion,
+				turbo: turbo.enabled,
 			}),
-		)
-		.pipe(
-			Effect.catch((e) =>
-				Effect.logWarning(`Failed to write job summary: ${e instanceof Error ? e.message : String(e)}`),
-			),
-		);
-
-	// 9. Summary
-	yield* Step.groupStep(
-		"Runtime Setup Complete",
-		Effect.gen(function* () {
-			yield* Effect.log(`Runtime(s): ${config.runtimes.map((r) => `${r.name}@${r.version}`).join(", ")}`);
-			for (const rt of installed) {
-				yield* Effect.log(`${rt.name}: ${rt.version}`);
-			}
-			yield* Effect.log(`${pmName}: ${config.packageManager.version}`);
-			yield* Effect.log(`Turbo: ${config.turbo ? "enabled" : "disabled"}`);
-			yield* Effect.log(`Biome: ${Option.isSome(config.biome) ? `v${config.biome.value}` : "not installed"}`);
-			yield* Effect.log(`Dependencies: ${installDeps ? "installed" : "skipped"}`);
-		}),
+		),
 	);
+	const cache = yield* logger.group("Restore dependency cache", restoreCache({ inputs, config, biomeVersion, turbo }));
+
+	const runtimes = yield* logger.group("Install runtimes", installRuntimes(config));
+	// The group title names the manager rather than describing the step, and
+	// says `Install` rather than legacy's "via corepack" — which was a lie for
+	// bun and deno even before corepack left the action (ruling 17).
+	const packageManager = yield* logger.group(
+		`Install ${config.packageManager.name}`,
+		setupPackageManager(config.packageManager),
+	);
+	const activated = onInstallPath(packageManager, runtimes);
+	// PHASE B: the dependency install is the only step that spawns anything today,
+	// so the prepend list is computed inline. When `installBiome` or the turbo
+	// server start spawning they need the same `PATH`, and the list should be
+	// bound once here and shared rather than recomputed per caller.
+	//
+	// The result is bound rather than discarded because the summary reports it:
+	// `ran` is *truthful* — false for deno, for a disabled install, and for
+	// nothing else — where v1 echoed the raw input back and so reported deno's
+	// skipped install as done (oracle 44, quirk 52).
+	const dependencies = yield* logger.group(
+		"Install dependencies",
+		installDependencies(activated, inputs.installDeps, installPathPrepends(activated, runtimes)),
+	);
+	// Biome is optional, so a failed install degrades to a warning and the run
+	// carries on (oracle 29) — a lint tool a later step may or may not invoke is
+	// not worth failing a job over. The outputs then fold from *this* result
+	// rather than from detection, so a run that could not install Biome reports
+	// it as disabled; v1 folded from detection and reported an enabled Biome
+	// that was never fetched (oracle 30).
+	const biome = yield* logger.group(
+		"Install Biome",
+		installBiome(biomeVersion).pipe(
+			Effect.catch((error) =>
+				Effect.logWarning(`Biome installation failed: ${error.message}`).pipe(
+					Effect.as(Option.none<{ readonly version: string; readonly path: string }>()),
+				),
+			),
+		),
+	);
+	// Last in the pipeline deliberately: nothing above consumes the turbo
+	// environment, and a later start shortens the window in which a detached
+	// child holds the runner's short-lived `ACTIONS_RUNTIME_TOKEN`.
+	const turboCache = yield* logger.group("Start turbo remote cache", startTurboCache({ inputs, turbo }));
+
+	const node = runtimeOutputs(runtimes, "node");
+	const bun = runtimeOutputs(runtimes, "bun");
+	const deno = runtimeOutputs(runtimes, "deno");
+	const outputs: OutputsModel = {
+		...initialOutputs,
+		nodeVersion: node.version,
+		nodeEnabled: node.enabled,
+		bunVersion: bun.version,
+		bunEnabled: bun.enabled,
+		denoVersion: deno.version,
+		denoEnabled: deno.enabled,
+		packageManager: packageManager.name,
+		packageManagerVersion: packageManager.version,
+		biomeVersion: Option.match(biome, { onNone: () => "", onSome: (installed) => installed.version }),
+		biomeEnabled: Option.isSome(biome),
+		turboEnabled: turbo.enabled,
+		...turboCacheOutputs(turboCache),
+		cacheHit: cacheHit(cache),
+		lockfiles: cache.lockfiles.join(","),
+		cachePaths: cache.paths.join(","),
+	};
+
+	yield* emitOutputs(outputs);
+	// Last, and after the outputs: the panel reports a run that has already
+	// published everything a later workflow step reads, so a summary that cannot
+	// be written costs a report rather than a result.
+	yield* writeSummary({
+		outputs,
+		runtimes,
+		biome,
+		// Detection travels beside the install result so the closing group can
+		// tell "nobody asked for Biome" apart from "we could not fetch the one
+		// you pinned" — two situations the install result alone renders as one.
+		biomeDetected: biomeVersion,
+		cache,
+		turboCache,
+		dependenciesInstalled: dependencies.ran,
+	});
 });
-/* v8 ignore stop */

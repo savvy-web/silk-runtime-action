@@ -8,14 +8,13 @@ export default defineConfig({
 	},
 	build: {
 		minify: true,
-		// `@cyclonedx/cyclonedx-library` (pulled in transitively by
-		// `@savvy-web/github-action-effects`) ships optional plugins — XML
-		// serializers/validators and draft-2019 JSON validators — that this
-		// action never invokes. They aren't installed and would never be
-		// present in the deployed action, so `ignore` (alias to a throwing
-		// stub) is correct here, not `externals` (which means "available at
-		// runtime"). cyclonedx's `_optPlug` wrapper try/catches the stub throw
-		// and falls through gracefully.
+		// Vestigial insurance from the legacy cyclonedx sbom stack: these
+		// optional plugins (XML serializers/validators, draft-2019 JSON
+		// validators) no longer appear anywhere in the dependency tree, so
+		// the aliases are inert. Kept as a harmless guard in case a future
+		// dependency reintroduces cyclonedx's `_optPlug` optional-require
+		// pattern; `ignore` (alias to a throwing stub) is the right shape
+		// for that, not `externals` (which means "available at runtime").
 		ignore: ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"],
 	},
 	persistLocal: {

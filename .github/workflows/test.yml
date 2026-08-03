@@ -44,6 +44,7 @@ jobs:
           - pnpm
           - yarn
           - multi
+          - bun
         include:
           - pm: npm
             fixture: node-npm
@@ -103,6 +104,20 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: node --version && bun --version && deno --version && pnpm --version
             title: 📦 Multi-Runtime (Create Cache)
+          - pm: bun
+            fixture: bun-bun
+            install-deps: "true"
+            expected-cache-hit: "false"
+            expected-node-enabled: "false"
+            expected-bun-enabled: "true"
+            expected-bun-version: 1.3.3
+            expected-deno-enabled: "false"
+            expected-package-manager: bun
+            expected-package-manager-version: 1.3.3
+            expected-biome-enabled: "false"
+            expected-turbo-enabled: "false"
+            test-command: bun --version
+            title: 📦 Bun (Create Cache)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -306,7 +321,7 @@ jobs:
             expected-biome-enabled: "true"
             expected-biome-version: 2.4.9
             expected-turbo-enabled: "false"
-            test-command: node --version && npm --version
+            test-command: node --version && npm --version && biome --version
             title: 🔧 Biome Auto-Detect
           - fixture: turbo-enabled
             biome-version: 2.3.14
@@ -320,7 +335,7 @@ jobs:
             expected-biome-enabled: "true"
             expected-biome-version: 2.3.14
             expected-turbo-enabled: "true"
-            test-command: node --version && pnpm --version
+            test-command: node --version && pnpm --version && biome --version
             title: 🔧 Turbo + Biome Install
     steps:
       - name: Checkout

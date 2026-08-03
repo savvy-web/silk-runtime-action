@@ -3,9 +3,9 @@ status: current
 module: silk-runtime-action
 category: testing
 created: 2026-03-21
-updated: 2026-07-17
-last-synced: 2026-07-17
-completeness: 90
+updated: 2026-08-02
+last-synced: 2026-08-02
+completeness: 95
 related:
   - ./architecture.md
   - ./effect-service-model.md
@@ -16,36 +16,38 @@ dependencies: []
 
 # Testing strategy
 
-Two tiers: library-provided Effect test layers for unit tests and fixture-based workflow tests for integration.
+Two tiers: `@effect/vitest` unit tests over the kit's test layers, and fixture-based workflow tests running the built action on real runners.
 
 ## Table of contents
 
 1. [Overview](#overview)
 2. [Current state](#current-state)
-3. [Rationale](#rationale)
-4. [Implementation details](#implementation-details)
-5. [Related documentation](#related-documentation)
+3. [What a test double cannot tell you](#what-a-test-double-cannot-tell-you)
+4. [The parity guards](#the-parity-guards)
+5. [Rationale](#rationale)
+6. [Implementation details](#implementation-details)
+7. [Related documentation](#related-documentation)
 
 ---
 
 ## Overview
 
-Unit tests run in Vitest with library-provided Effect Test layers from `@savvy-web/github-action-effects/testing`. Fixture tests run inside real GitHub Actions workflow jobs against the built action.
+Unit tests run in Vitest through `@effect/vitest`, over service doubles provided by `@effected/github-actions` itself. Integration tests run inside real GitHub Actions workflow jobs against the **built** action.
 
 **Key features:**
 
-- Tests are co-located with their source modules (no `__test__/` directory).
-- Library Test layers expose a state object (`*Test.empty()`) and a layer factory (`*Test.layer(state)`). Tests assert against the state.
-- Hand-rolled `Layer.succeed(Tag, Tag.of({...}))` mocks are reserved for failure-injection cases.
-- Config inputs are injected via `ConfigProvider.fromUnknown` (v4; replaces v3's `ConfigProvider.fromMap`).
-- Logger output is silenced with `Logger.layer([])` and captured with `Logger.layer([Logger.make(...)])`.
-- Fixture tests run on Ubuntu, macOS and Windows.
+- **448 unit tests** in `__test__/unit/`, mirroring `src/` — never co-located.
+- Kit-provided `X.layerTest({ … })` doubles with partial overrides; unstubbed members die on use, deliberately.
+- Cross-phase state schemas are tested against the **real** `ActionState` layer, not a double.
+- `action.yml` ↔ code parity is a test, for both inputs and outputs.
+- Formatter prose is pinned **codepoint-verbatim**.
+- Two e2e matrices: 35 fixture jobs across ubuntu/macos/windows, and 5 turbo-cache jobs including real S3.
 
 **When to load this doc:**
 
-- Writing new tests.
-- Adding a fixture configuration.
-- Debugging test failures specific to the layer composition.
+- Writing a test, or deciding whether a double is trustworthy for what you are testing.
+- Adding a fixture or an e2e assertion.
+- Debugging a test that passes locally and fails on a runner.
 
 ---
 
@@ -53,193 +55,220 @@ Unit tests run in Vitest with library-provided Effect Test layers from `@savvy-w
 
 ### Test organization
 
-Tests live next to the source they cover:
-
 ```text
-src/
-  state.test.ts
-  program.test.ts
-  post.test.ts
-  errors/errors.test.ts
-  schemas/domain.test.ts
-  services/cache.test.ts
-  services/config-loader.test.ts
-  services/runtime-installer.test.ts
-  descriptors/descriptors.test.ts
+__test__/unit/
+  layers.test.ts            post.test.ts            program.test.ts       state.test.ts
+  schema/{domain,inputs,outputs}.test.ts
+  steps/{cache-config,detect-biome,detect-turbo,install-biome,install-dependencies,
+         install-runtimes,load-config,restore-cache,setup-package-manager,steps,
+         summary,turbo-cache}.test.ts
+  summary/format.test.ts
+  turbo-cache/{activation,handler,meta,server-config}.test.ts
+  descriptors.test.ts
 ```
 
-The previous `__test__/` directory has been removed.
+Tests are **never co-located** with source. The tree mirrors `src/` so the mapping is mechanical.
 
-### Library Test layers
+`steps/steps.test.ts` is the cross-cutting one: it asserts the shape every step contract shares rather than any single step's behaviour.
 
-`@savvy-web/github-action-effects/testing` exports paired `empty()` + `layer(state)` helpers for every service used by this action:
+### Kit test layers
 
-| Test export | Backs |
+`@effected/github-actions` exports a `layerTest` factory per service, taking **partial overrides**:
+
+```ts
+ActionCache.layerTest({ restore: () => Effect.succeed(Option.none()) })
+ActionState.layerTest({ save: () => Effect.void })
+ActionOutputs.layerTest({ addPath: () => Effect.void, summary: () => Effect.void })
+ActionEnvironment.layerTest({ GITHUB_REPOSITORY: "" })
+ActionEnvironment.layerFrom({ GITHUB_STATE: file })
+ActionInput.layer({ "biome-version": "2.3.14" })
+ActionLogger.layerTest()
+ToolInstaller.layerTest({ /* … */ })
+PackageManagerInstaller.layerTest({ /* … */ })
+BlobStore.layerTest({ /* … */ })
+```
+
+**An unstubbed member dies on use, and that is the design.** A test that stubs only what the code under test should touch turns any unexpected call into a loud failure. `program.test.ts` leans on this explicitly: its `ChildProcessSpawner` double implements `spawn` and `exitCode` and lets the derived members die, because no step should be collecting a command's output wholesale.
+
+Inputs are keyed by **input name** (`"biome-version"`), never by a runner variable spelling. The provider is dual-accept, so no test needs to know that the runner writes `INPUT_BIOME-VERSION` with the hyphen intact. `ActionInput.variable(name)` exists for the rare test that must speak the variable form.
+
+### Failure injection
+
+A hand-written override on the same `layerTest` call is how a specific failure is injected — a `restore` that fails with a typed `CacheError`, a `ToolInstaller.download` that 404s, a `provisionFile` that reports `cacheFailed`. There is no separate mock idiom: the partial-override shape already covers it, and the resulting layer is still type-checked against the real service shape.
+
+### Seams a unit test must not exercise for real
+
+Three defaulted parameters exist so a test never performs an untestable operation:
+
+| Seam | Why |
 | --- | --- |
-| `ActionOutputsTest` | `ActionOutputs` |
-| `ActionStateTest` | `ActionState` |
-| `ActionCacheTest` | `ActionCache` |
-| `ActionEnvironmentTest` | `ActionEnvironment` |
-| `ActionLoggerTest` | `ActionLogger` |
-| `CommandRunnerTest` | `CommandRunner` |
-| `ToolInstallerTest` | `ToolInstaller` |
-| `GlobTest` | `Glob` |
+| `StartTurboCacheArgs.detached` | `spawn` starts a process that outlives the test run; `awaitReady` polls for six seconds |
+| `makePost(reap)` | the default would send a real `SIGTERM` to whatever process owns the pid a fixture made up |
+| `host` / `platform` on the install steps | a Linux test exercises the Windows layout and the `shell: true` branch |
 
-Each `empty()` returns a mutable state object that captures method calls. Each `layer(state)` returns the corresponding `Layer.Layer<Tag>` to provide to the effect under test.
+`StartTurboCacheArgs.serverEntry` is always supplied too, because `defaultServerEntry()` resolves a sibling of the *bundle* and is meaningless when running from source.
 
-### Coverage requirements
+The recorded cost: `program.test.ts` **cannot reach the embedded turbo path** (that would be a real spawn), so its turbo case is pinned to `turbo-cache: off`, and the outputs fold for a started server is pinned separately through the exported pure `turboCacheOutputs`.
 
-- Branches: 85%.
-- Functions / lines / statements: 90%.
+### Coverage
 
-### Fixture organization
+`vitest.config.ts` uses `@vitest-agent/plugin`'s **strict** level for both thresholds and per-file coverage targets, with:
 
-`__fixtures__/` holds one directory per supported configuration (Node minimal, Node + pnpm, Node + yarn, Node + bun, Node + Deno, Bun only, Deno only). Each fixture contains a `package.json` with valid `devEngines.packageManager` and `devEngines.runtime`.
+```ts
+coverage: { enabled: true, provider: "v8", include: ["src/**/*.ts"], exclude: [] }
+```
+
+`include` is what makes a never-imported source file score **0%** instead of being silently omitted from the report.
+
+`/* v8 ignore */` is reserved for code that only a real runner can execute: `main.ts`'s `Action.run` call, `post.ts`'s entry-point guard, and the whole body of `turbo-server.ts`. Each of those is covered by the e2e matrices instead.
+
+**Tooling note:** the agent coverage tool needs the project named explicitly (`@savvy-web/silk-runtime-action`); the no-argument default reports nothing and looks like a dead gate.
+
+### Fixtures and e2e
+
+`__fixtures__/` holds one directory per supported configuration: `node-npm`, `node-pnpm`, `node-yarn`, `node-multi`, `bun-bun`, `biome-enabled`, `turbo-enabled`, `additional-inputs`, `turbo-monorepo`. Each carries a `package.json` with valid `devEngines`.
+
+| Workflow | Jobs | Covers |
+| --- | --- | --- |
+| `test.yml` | 35 across ubuntu/macos/windows | create-cache (5 fixtures × 3 OS), restore-cache (4 × 3), feature detection (2 × 3), additional inputs |
+| `test-turbo-cache.yml` | 5 | within-job double build, cross-job hit via `needs:`, MinIO-backed S3, a real-S3 gate and a real-S3 double build |
+
+Both matrices use `fail-fast: false` so a single run surfaces every failure. Both run `.github/actions/local` — the **built** action — not the source.
+
+Cache fixtures run as a dependent pair: a create job installs everything and saves, then a restore job asserts `cache-hit`. Turbo fixtures use a double-build pattern: run `turbo run` twice and assert the second build is a remote cache hit.
+
+---
+
+## What a test double cannot tell you
+
+Two lessons from production bugs that green unit suites did not catch. Both reduce to the same thing: **an in-memory double is strictly more permissive than the runner.**
+
+### Cross-phase state must round-trip through text
+
+`ActionState` uses a JSON text protocol — `save` appends heredoc blocks to `GITHUB_STATE`, and the runner republishes each as a `STATE_<key>` variable that `get` parses. A `Map`-backed double hands the encoded object straight back and therefore round-trips schemas that JSON cannot.
+
+`CacheState.restoredKey` as `Schema.Option` passed every double and failed on every real run (`"Expected Option"`), because `Schema.Option`'s *encoded* form is an `Option` instance. See [caching strategy](./caching-strategy.md#cross-phase-state-protocol).
+
+`__test__/unit/state.test.ts` is therefore built on the **real** `ActionState.layer`:
+
+```ts
+const realState = (env: Record<string, string>): Layer.Layer<ActionState> =>
+  ActionState.layer.pipe(
+    Layer.provide(ActionEnvironment.layerFrom(env)),
+    Layer.provide(ActionOutputs.layerTest()),
+    Layer.provide(NodeFileSystem.layer),
+  );
+```
+
+A full trip saves through a service pointed at a scoped temp state file, **republishes that file the way the runner does** (a five-line heredoc parser), and reads it back through a second, independently built service. That is the harness pattern for any future state schema.
+
+### `ProcessId.make`, never `makeUnsafe`
+
+`makeUnsafe` typechecks through a test double and then dies at runtime in exactly the place `catchDefect` goes blind. Every construction uses `ProcessId.make`. `TurboServerState.pid` is `ProcessId` rather than a number for the same class of reason: a truncated state file, an absent key or `Number("")` all decode to `0`, and the brand refuses that value before it reaches `DetachedProcess.reap`.
+
+### The e2e harness must fail on an empty answer
+
+The fixture harness's `check_value` and `check_contains` both used to *return early* on an empty actual, so a fixture that asserted `lockfiles` and got back an empty output recorded a pass. Both now fail when the actual is empty and the expected is not — an empty string cannot equal a non-empty expected, and an empty item list makes every expected item missing by definition. An empty **expected** is still a deliberate skip, because most `expected-*` inputs default to empty.
+
+The matrices were re-run at HEAD after that fix specifically to prove no latent failures had been hiding behind it.
+
+---
+
+## The parity guards
+
+`action.yml` is the contract with consumers, and both halves of it are guarded by tests rather than by convention.
+
+### Inputs
+
+`__test__/unit/schema/inputs.test.ts` parses `action.yml` directly (a deliberate five-line parse rather than a YAML dependency — reading the file for real is what makes the guard bite) and compares three sets: the names declared in `action.yml`, the `INPUT_NAMES` tuple, and the names `loadInputs` actually asks the provider for.
+
+The third set comes from a `Proxy` over the environment that records every lookup. Since the provider became dual-accept, one input costs two probes, and a key already spelled as a runner variable is probed as `INPUT_INPUT_…` before being found as itself. **Repeated prefixes are stripped in the proxy** rather than added to the expected set — widening the expected set would have made the exhaustiveness assertion vacuous.
+
+### Outputs
+
+`__test__/unit/schema/outputs.test.ts` runs the same `action.yml` cross-check against `OUTPUT_NAMES`, and additionally pins the **mapping**: a fixture with 16 distinct values proves that swapping any two model fields fails, so `emitOutputs` cannot quietly publish `bun-version` under `deno-version`.
+
+### Prose
+
+`__test__/unit/summary/format.test.ts` pins every formatter **codepoint-verbatim** against the legacy surface — including the middle dot `·` (U+00B7), the panel's emoji cells, and the two deliberately unharmonized separator conventions (a space in the detect line and the panel, an `@` in the log groups). The prose is what a consumer sees, so it is parity surface and is tested as such.
 
 ---
 
 ## Rationale
 
-### Library Test layers as default
+### Kit test layers over hand-rolled mocks
 
-Earlier iterations defined mock layers inline with `Layer.succeed(Tag, { ... } as unknown as ...)`. Those casts were brittle and required tests to enumerate every method on every service. The library Test layers:
+The doubles ship with the services, so they cannot drift from a shape they are defined against. Partial overrides mean a test declares exactly the surface it depends on, and anything else failing loudly is a feature: a step that starts calling a service it should not is a design change, and the test should say so.
 
-- Capture all method calls into a state object so assertions read like real expectations (`expect(state.outputs).toContainEqual({ name: "node-version", value: "24.11.0" })`).
-- Stay in sync with library service shapes automatically.
-- Make test code dramatically shorter.
+### Tests in `__test__/`, not co-located
 
-The hand-rolled mock pattern is still acceptable but should be reserved for failure-injection cases (see below).
+The rebuild moved every test out of `src/`. Two reasons: coverage `include: ["src/**/*.ts"]` stays a clean statement about production code, and the bundler never has to reason about test files sitting beside entry points. The mirrored path makes the mapping mechanical in the other direction.
 
-### When hand-rolled mocks are acceptable
+### Purity as a testing strategy
 
-A hand-rolled `Layer.succeed(Tag, { ... })` mock is the right tool when the test needs to **inject a specific failure** that the library Test layer cannot reproduce. Concrete examples:
+Roughly half the behaviour worth testing lives in pure modules — `steps/cache-config.ts`, `summary/format.ts`, `turbo-cache/activation.ts`, `turbo-cache/meta.ts` and every descriptor. Those need no layer at all, which is how a Linux test pins the Windows store paths, the bun-on-Windows x64 pin, the arch segment and an S3 activation. Legacy read `process.platform` inside its installer and `os.platform()` inside its Biome descriptor, and consequently no legacy test ever covered a second platform.
 
-- Simulating `ActionCache.save` failing mid-write.
-- Simulating `CommandRunner.exec` throwing a non-Error value.
-- Simulating `Glob.hashFiles` returning `None`.
+### Two tiers, and what each is for
 
-For success-path testing, use the library Test layer.
+Unit tests catch logic fast and are the only place a failure path is cheap to exercise. But three things are provable **only** on a real runner, and each of them was a live bug:
 
-### Co-located tests
+- The Windows tool-cache layout and the `.cmd` shell launch.
+- The lifecycle-script `PATH` (`deno: not found` from a `postinstall`).
+- The cache round trip, including the restore ladder against the real service.
 
-Co-locating tests with source removes the cognitive overhead of mapping `__test__/foo.test.ts` back to `src/foo.ts`. It also makes it harder for a refactor to leave the test file behind.
-
-### Dual testing
-
-Unit tests catch logic errors fast during development. Fixture tests catch integration issues (actual runtime downloads, platform-specific behavior, cache protocol interactions) that unit tests cannot. Both tiers are required for confidence.
+The matrices are the pin for all three.
 
 ---
 
 ## Implementation details
 
-### Library Test layer pattern
+### Full-pipeline composition
+
+`program.test.ts` composes every layer the program needs and swaps individual ones per case:
 
 ```ts
-import { ActionOutputsTest } from "@savvy-web/github-action-effects/testing";
-
-const state = ActionOutputsTest.empty();
-await program.pipe(
-  Effect.provide(ActionOutputsTest.layer(state)),
-  Effect.runPromise,
-);
-expect(state.outputs.find((o) => o.name === "node-version")?.value).toBe("24.11.0");
+Layer.mergeAll(
+  ActionInput.layer(inputs),
+  ActionLogger.layerTest(),
+  options.cache ?? ActionCache.layerTest({ restore: () => Effect.succeed(Option.none()) }),
+  ActionOutputs.layerTest({ addPath: () => Effect.void, summary: () => Effect.void, ...outputs }),
+  ActionState.layerTest({ save: () => Effect.void }),
+  options.environment ?? ActionEnvironment.layerTest(),
+  toolInstallerTest,
+  packageManagerInstallerTest,
+  spawnerLayer(spawns),
+  fileSystemLayer(files),
+  // …
+)
 ```
 
-The state object exposes mutated arrays/sets per service. Assertion ergonomics match Vitest's `toContainEqual`/`toEqual` style.
+Cases assert on captured outputs, recorded spawns (including the child's `PATH`), and exported variables. The fail-fast case asserts the **`ActionEnvironmentError` tag** specifically, not merely that the run failed with no outputs.
 
-### Full pipeline test composition
+### Runner facts that shape the workflows
 
-`src/program.test.ts` composes all library Test layers plus an inline `FileSystem` mock (driven by an in-memory file map). Tests assert against the captured output state and exported variables. The pattern is:
+**A `uses:` step runs at `GITHUB_WORKSPACE` regardless of `defaults.run.working-directory`.** A `run:` step honours the default; a `uses:` step does not. The turbo e2e workflow learned this the hard way — the action installed *this repository's* dependencies instead of the fixture's. The fix is `install-deps: "false"` on every fixture-scoped `uses:` step, with the fixture's own install done by a `run:` step that does honour the working directory. Every job in `test-turbo-cache.yml` carries that pattern with a comment.
 
-```ts
-const outputs = ActionOutputsTest.empty();
-const layer = Layer.mergeAll(
-  ActionOutputsTest.layer(outputs),
-  ActionLoggerTest.layer(ActionLoggerTest.empty()),
-  ActionCacheTest.layer(/* ... */),
-  ActionStateTest.layer(ActionStateTest.empty()),
-  ActionEnvironmentTest.layer(/* ... */),
-  CommandRunnerTest.layer(/* ... */),
-  ToolInstallerTest.layer(ToolInstallerTest.empty()),
-  GlobTest.layer(/* ... */),
-  makeFileSystemLayer(files),
-);
-await program.pipe(Effect.provide(layer), Effect.runPromise);
-```
+**`ACTIONS_STEP_DEBUG=true`** is what surfaces the cache key, the ladder, the resolved path set and the lockfile list — the four things worth reading when a fixture's cache assertion fails.
 
-### Hand-rolled failure mocks
+### Fixture harness
 
-Reserved for tests that need to inject a specific error. In v4 the service class exposes a `.of` constructor that type-checks the shape, so the old `as unknown as` cast is no longer needed:
+`.github/actions/test-fixture/` is a composite action that:
 
-```ts
-const failingCacheLayer: Layer.Layer<ActionCache> = Layer.succeed(
-  ActionCache,
-  ActionCache.of({
-    save: () => Effect.fail(new CacheError({ operation: "save", reason: "test failure" })) as never,
-    restore: () => Effect.succeed(Option.none()),
-  }),
-);
-```
-
-`Tag.of({...})` validates the shape at compile time. An `as never` on an individual method is only needed to satisfy the method's requirements channel.
-
-### Config input injection
-
-Inputs are read via `Config`/`ActionInput.*` against the `ConfigProvider`. In v4, tests build a provider with `ConfigProvider.fromUnknown` (v3's `ConfigProvider.fromMap` is gone) and provide it as a service with `Effect.provideService`:
-
-```ts
-const configProvider = ConfigProvider.fromUnknown({
-  "install-deps": "false",
-  "biome-version": "2.3.14",
-});
-
-await program.pipe(
-  Effect.provideService(ConfigProvider.ConfigProvider, configProvider),
-  Effect.runPromise,
-);
-```
-
-### Logging in tests
-
-Effect v4 removed `Logger.replace`/`Logger.none`. Tests silence log output with `Logger.layer([])`, and capture it with a custom logger plus a minimum log level:
-
-```ts
-Logger.layer([Logger.make(({ logLevel, message }) => captured.push({ level: logLevel, message: String(message) }))]);
-// paired with: Layer.succeed(References.MinimumLogLevel, "All")
-```
-
-`LogLevel` is now a string union (`"Warn"`, `"Info"`, `"All"`, …). Asserting on a failure `Cause` uses `Cause.findErrorOption(cause)` (v4) rather than v3's `Cause.failureOption` / `_tag === "Fail"` pattern.
-
-### Fixture test infrastructure
-
-`.github/actions/test-fixture/` (composite action) does setup, execute and verify:
-
-1. Clean workspace and copy fixture files to the repo root.
-2. Run `.github/actions/local` (the built action).
-3. Python script compares actual outputs vs. expected values.
-4. Generate step summary with results.
-
-Fixture tests use a matrix with `fail-fast: false` to surface every failure in a single run.
-
-### Cache testing pattern
-
-Cache fixtures run as a pair of dependent jobs:
-
-1. **Create cache** -- first run installs everything and saves the cache.
-2. **Restore cache** -- second run should restore from cache and emit `cache-hit=true`.
-
-### Turbo remote cache e2e
-
-`__fixtures__/turbo-monorepo/` plus `.github/workflows/test-turbo-cache.yml` prove the embedded turbo remote cache (see [turbo remote cache](./turbo-remote-cache.md)) end to end via a double-build pattern: run `turbo run` twice and assert the second build is a remote cache hit. Three scenarios cover the lifecycle: within a single job, across jobs via `needs:` (the artifact survives because it lands in the backing `BlobStore`, not in process memory), and against the S3 backend backed by a MinIO service container. These run the built action (`dist/turbo-server.js`), exercising the spawn → probe → teardown path that unit tests deliberately exclude from coverage (`/* v8 ignore */` on `spawnTurboServer` and the server entry).
+1. Cleans the workspace and copies the fixture to the repository root.
+2. Runs `.github/actions/local` (the built action), sometimes twice for a cache pair.
+3. Compares actual outputs against `expected-*` inputs in a Python step (`check_value` for exact fields, `check_contains` for the comma-joined `lockfiles` and `cache-paths`).
+4. Writes a step summary.
 
 ### Common issues
 
 | Issue | Cause | Fix |
 | --- | --- | --- |
-| "Effect service not found" | Missing layer in `Layer.mergeAll` | Add the corresponding `*Test.layer(state)` |
-| Config values not picked up | No `ConfigProvider` provided | Add `Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(...))` |
-| Test passes locally, fails in CI | Platform-specific behavior | Check `process.platform` branching |
-| Hash-of-hashes mismatch with old fixtures | Hash algorithm changed (see caching-strategy.md) | Regenerate expected hashes |
+| "Service not found" | A layer missing from the composition | Add the matching `X.layerTest({ … })` |
+| A double dies mid-test | An unstubbed member was called | Stub it — or ask whether the code should be calling it |
+| Input reads as absent | A hand-written `INPUT_*` spelling | Key by input name through `ActionInput.layer` |
+| Green unit test, red runner | A state or envelope schema whose encoded form is not JSON | Round-trip it through the real `ActionState` harness |
+| Passes locally, fails in CI | Platform branching | Pass an explicit `host` / `platform` and pin both |
+| An e2e assertion passes suspiciously | Empty actual against a non-empty expected | Already fixed in the harness; if it recurs, fix the harness first |
 
 ---
 
@@ -247,13 +276,14 @@ Cache fixtures run as a pair of dependent jobs:
 
 **Internal:**
 
-- [Architecture](./architecture.md) -- pipeline shape under test.
-- [Effect service model](./effect-service-model.md) -- service tag definitions and layer composition.
-- [Build and distribution](./build-and-distribution.md) -- how the local copy used by fixture tests is produced.
-- [Turbo remote cache](./turbo-remote-cache.md) -- subsystem exercised by the e2e double-build fixture.
+- [Architecture](./architecture.md) — the pipeline under test and the seams that make it testable.
+- [Effect service model](./effect-service-model.md) — the step contract, error taxonomy and defaulted-parameter seams.
+- [Caching strategy](./caching-strategy.md) — the state protocol the real-`ActionState` harness exists for.
+- [Turbo remote cache](./turbo-remote-cache.md) — the subsystem the five e2e jobs exercise.
+- [Build and distribution](./build-and-distribution.md) — how the local copy the fixtures run is produced.
 
 **Context files:**
 
-- [src/CLAUDE.md](../../../src/CLAUDE.md) -- per-module testing guidance.
-- [**fixtures**/CLAUDE.md](../../../__fixtures__/CLAUDE.md) -- fixture inventory.
-- [.github/workflows/CLAUDE.md](../../../.github/workflows/CLAUDE.md) -- workflow test wiring.
+- [src/CLAUDE.md](../../../src/CLAUDE.md) — per-module conventions.
+- [**fixtures**/CLAUDE.md](../../../__fixtures__/CLAUDE.md) — fixture inventory.
+- [.github/workflows/CLAUDE.md](../../../.github/workflows/CLAUDE.md) — workflow test wiring.

@@ -1,14 +1,16 @@
 /**
  * Main action entry point.
  *
- * Thin wrapper around Action.run that loads the program and its layer.
+ * Thin wrapper around `Action.run` so tests can import `program` without
+ * triggering module-level execution. `MainLive` adds the two services the
+ * default runtime deliberately omits.
  *
  * @module main
  */
 
-import { Action } from "@savvy-web/github-action-effects";
+import { Action } from "@effected/github-actions";
 import { MainLive } from "./layers/app.js";
 import { program } from "./program.js";
 
-/* v8 ignore next -- entry point, only runs when bundled as dist/main.js */
+/* v8 ignore next */
 Action.run(program, { layer: MainLive });

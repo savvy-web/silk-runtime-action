@@ -1,256 +1,78 @@
 # **fixtures**/CLAUDE.md
 
-Test fixtures for integration testing with GitHub Actions workflows.
+Self-contained project configurations used as integration tests for the action.
 
 **See also:** [Root CLAUDE.md](../CLAUDE.md) |
-[src/CLAUDE.md](../src/CLAUDE.md) for source and co-located unit tests |
-[.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md) for workflow
-testing patterns.
-
-## Overview
-
-This directory contains isolated test project setups for integration testing.
-Each fixture is a complete, self-contained project configuration used to test
-the runtime action with different package managers, runtimes, and features.
-
-**For testing approach and workflow patterns, see [.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md).**
-
-## Available Fixtures
-
-### Node.js Fixtures
-
-* **node-minimal** - Minimal Node.js project with npm (devEngines configuration)
-* **node-pnpm** - Node.js project with pnpm (devEngines: `packageManager.name: "pnpm"`)
-* **node-yarn** - Node.js project with Yarn (devEngines: `packageManager.name: "yarn"`)
-
-### Bun Fixtures
-
-* **bun-minimal** - Basic Bun project with simple TypeScript and test files
-* **bun-workspace** - Bun monorepo with workspace packages
-* **bun-deps** - Bun project with external dependency (lodash)
-* **bun-lockfile** - Bun project with committed `bun.lock` lockfile
-
-### Deno Fixtures
-
-* **deno-minimal** - Basic Deno project with `deno.json` configuration
-* **deno-deps** - Deno project with npm: imports (uses npm dependencies)
-* **deno-lockfile** - Deno project with committed `deno.lock` lockfile
-
-### Feature Fixtures
-
-* **biome-auto** - Project with `biome.jsonc` for auto-detection testing
-* **turbo-monorepo** - Turborepo configuration for monorepo detection
-* **cache-test** - Project with dependencies (lodash) for cache effectiveness testing
-* **multi-runtime** - Multi-runtime project with both Node.js (pnpm) and Deno
-
-## Fixture Structure
-
-Each fixture contains the minimal files needed to test a specific configuration:
-
-### Example: node-pnpm
-
-```text
-node-pnpm/
-└── package.json
-```
-
-```json
-{
-  "name": "test-node-pnpm",
-  "packageManager": "pnpm@10.20.0"
-}
-```
-
-### Example: bun-minimal
-
-```text
-bun-minimal/
-├── package.json
-├── index.ts
-└── test.js
-```
-
-### Example: deno-minimal
-
-```text
-deno-minimal/
-├── deno.json
-└── main.ts
-```
-
-## How Fixtures Are Used
-
-Fixtures are used by the
-[test-fixture](../.github/actions/test-fixture/action.yml) composite action,
-which is a unified helper that handles setup, execution, and verification in a
-single action:
-
-1. **Setup fixture** (Python script):
-   * Cleans workspace by removing all files except `.github`, `.git`, and
-     `__fixtures__`
-   * Copies all files from the fixture directory to the repository root
-   * Removes `__fixtures__` directory to prevent glob pattern interference
-2. **Run runtime action** - Executes the action with fixture configuration
-   (supports cache testing with dual runs)
-3. **Verify outputs** (Python script) - Compares actual vs expected outputs
-   and reports results
-
-**See [.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md) for detailed testing patterns.**
-
-## Creating New Fixtures
-
-### 1. Create Fixture Directory
-
-```bash
-mkdir -p __fixtures__/my-new-fixture
-```
-
-### 2. Add Configuration Files
-
-Add the minimal files needed for your test:
-
-```bash
-# For Node.js with pnpm
-cat > __fixtures__/my-new-fixture/package.json <<'EOF'
-{
-  "name": "test-my-fixture",
-  "packageManager": "pnpm@10.20.0",
-  "dependencies": {
-    "lodash": "^4.17.21"
-  }
-}
-EOF
-```
-
-### 3. Add to Test Workflow
-
-Reference the fixture in [../.github/workflows/test.yml](../.github/workflows/test.yml):
-
-```yaml
-matrix:
-  include:
-    - name: My Test
-      fixture: my-new-fixture
-      expected-runtime: node
-      expected-package-manager: pnpm
-      test-command: "pnpm --version"
-      title: "🧪 My Test Results"
-```
-
-### 4. Commit Fixture
-
-```bash
-git add __fixtures__/my-new-fixture/
-git commit -m "feat: add my-new-fixture test scenario"
-```
-
-## Fixture Best Practices
-
-1. **Keep it minimal** - Only include files necessary for the test
-2. **Use realistic configurations** - Match real-world project setups
-3. **Document purpose** - Add fixture description to this file
-4. **Test locally** - Manually test fixture configuration before committing
-5. **Version control** - Always commit fixture files
-6. **No secrets** - Never include sensitive data
-7. **Platform-agnostic** - Ensure fixtures work on Linux, macOS, and Windows
-
-## Common Fixture Patterns
-
-### Package Manager Auto-Detection
-
-Use `packageManager` field in package.json:
-
-```json
-{
-  "name": "test-project",
-  "packageManager": "pnpm@10.20.0"
-}
-```
-
-### Lockfile Testing
-
-Commit a lockfile to test lockfile handling:
-
-```bash
-# Create test project
-cd /tmp/test-project
-pnpm init
-pnpm add lodash
-
-# Copy lockfile to fixture
-cp pnpm-lock.yaml __fixtures__/my-fixture/
-```
-
-### Multi-Runtime Testing
-
-Include both Node.js and Deno configurations:
-
-```bash
-# package.json
-{
-  "name": "test-multi-runtime",
-  "packageManager": "pnpm@10.20.0"
-}
-
-# deno.json
-{
-  "version": "1.3.3"
-}
-```
-
-### Feature Detection Testing
-
-Include feature configuration files:
-
-```bash
-# biome.jsonc
-{
-  "$schema": "https://biomejs.dev/schemas/2.3.14/schema.json"
-}
-
-# turbo.json
-{
-  "$schema": "https://turbo.build/schema.json"
-}
-```
-
-## Fixture Naming Conventions
-
-* **runtime-packageManager** - `node-pnpm`, `bun-minimal`, `deno-minimal`
-* **runtime-feature** - `bun-lockfile`, `deno-lockfile`
-* **feature-purpose** - `biome-auto`, `turbo-monorepo`, `cache-test`
-* **multi-runtime** - For fixtures with multiple runtimes
-
-## Testing Fixtures Locally
-
-You can test a fixture locally by copying it to a temporary directory:
-
-```bash
-# Copy fixture to temp directory
-mkdir -p /tmp/test-fixture
-cp -r __fixtures__/node-pnpm/* /tmp/test-fixture/
-cd /tmp/test-fixture
-
-# Test manually
-node --version
-pnpm --version
-pnpm install
-```
-
-## Fixture Validation
-
-Before committing a fixture, verify:
-
-* [ ] Files are minimal (only what's needed for the test)
-* [ ] Configuration is valid (package.json parses correctly)
-* [ ] No sensitive data included
-* [ ] Works on all platforms (if using shell scripts)
-* [ ] Documented in this file
-* [ ] Referenced in test workflow
-
-## Related Documentation
-
-* [Root CLAUDE.md](../CLAUDE.md) - Repository overview
-* [.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md) - Testing
-  workflow patterns
-* [src/CLAUDE.md](../src/CLAUDE.md) - Source code architecture and co-located unit tests
+[.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md)
+
+## What a fixture is
+
+A directory whose contents are copied to the repository root, replacing everything else,
+before the action runs against it. Each holds the minimum needed for one scenario: a
+`package.json` with `devEngines.packageManager` and `devEngines.runtime` (**required** —
+the action reads nothing else for versions), plus whatever lockfile or config file the
+scenario is about. Installed `node_modules` are never committed.
+
+## The fixtures
+
+| Fixture | What it pins |
+| --- | --- |
+| `node-npm` | node + npm, `package-lock.json` |
+| `node-pnpm` | node + pnpm, `pnpm-lock.yaml` |
+| `node-yarn` | node + yarn 4, `yarn.lock` + `.pnp.cjs` + `.yarn/` |
+| `node-multi` | three runtimes (node, bun, deno) with pnpm as manager; workspace with `pkgs/pkg-{node,bun,deno}` |
+| `bun-bun` | bun as **both** runtime and package manager, `bun.lock` |
+| `biome-enabled` | `biome.jsonc` — version auto-detected from the `$schema` |
+| `turbo-enabled` | `turbo.json` + a seeded `.turbo/cache/` — detection plus an explicit `biome-version` input |
+| `additional-inputs` | `custom.lock` / `vendor.lock` and `build/` / `dist/` for the `additional-lockfiles` and `additional-cache-paths` inputs |
+| `turbo-monorepo` | a real pnpm + turbo workspace with a buildable package — used only by the turbo remote-cache e2e |
+
+## How they run
+
+**[test.yml](../.github/workflows/test.yml)** (`Fixtures`) — on `workflow_dispatch`,
+pushes to `main` and PRs touching `src/`, `dist/`, `action.yml`, `__fixtures__/` or the
+test actions. Four matrix jobs plus an aggregating `summary`:
+
+* `test-node-create-cache` — npm/pnpm/yarn/multi/bun × ubuntu/macos/windows, cache miss
+* `test-node-restore-cache` — the same minus bun, `needs:` the create job, expects a hit
+* `test-feature-detection` — `biome-enabled` and `turbo-enabled` × 3 OS, `install-deps: false`
+* `test-additional-inputs` — ubuntu only; **newline-separated** multiline inputs are the
+  only supported format (bullets, commas and JSON arrays were dropped in the v2 migration)
+
+Each matrix row passes a per-row `cache-bust` (`${pm}-${os}-${run_id}`) so runs cannot
+contaminate each other, and every step is `continue-on-error` so `save-test-results`,
+`upload-artifact` and `fail-if-test-failed` always run.
+
+**[test-turbo-cache.yml](../.github/workflows/test-turbo-cache.yml)** — `turbo-monorepo`
+only, on PRs and dispatch. Within-job double build (GitHub backend), cross-job cache hit on
+a cold runner, an S3 double build against MinIO, and the same against real S3 behind a
+secrets-presence gate job so forks skip rather than fail. Each asserts the reported
+`turbo-cache-backend` and `turbo-cache-port` before proving the cache hit.
+
+## The harness
+
+[`.github/actions/test-fixture`](../.github/actions/test-fixture/action.yml) is one
+composite action doing setup, execution and verification:
+
+1. **Setup** (Python) — delete everything except `.github`, `.git` and `__fixtures__`; copy
+   the fixture to the root; delete `__fixtures__` so its globs cannot interfere.
+2. **Run** `./.github/actions/local` (the committed build — run `pnpm build` first, or the
+   test exercises stale code). `test-cache: "true"` instead runs it twice around a
+   `node_modules` wipe.
+3. **Verify** (Python) — `check_value` for scalars, `check_contains` for the comma-listed
+   `lockfiles` / `cache-paths`, emitting `test-passed` and a `test-results` JSON blob.
+
+**Assertion semantics, deliberately hardened:** an empty `expected-*` is the opt-out and
+still skips (a non-empty actual is recorded as `info`). An **empty actual against a
+non-empty expected now fails.** Both checks used to return early on an empty actual, so a
+fixture asserting an output the action had stopped publishing recorded nothing at all —
+the exact regression these assertions exist to catch passed as quietly as a match.
+
+## Adding a fixture
+
+1. `mkdir __fixtures__/<name>/` and add a `package.json` with both `devEngines` fields,
+   plus only the files the scenario needs.
+2. Add a matrix row in `test.yml`: `fixture`, `title` (with emoji), any feature inputs, and
+   an `expected-*` for **every** output the scenario should pin. Leave an expectation out
+   only when you mean "don't care" — empty means skipped.
+3. Commit the fixture; keep it minimal, realistic, secret-free and platform-agnostic.

@@ -1,559 +1,294 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
 ## Repository Overview
 
-This repository provides a **comprehensive JavaScript runtime setup GitHub Action** that supports Node.js, Bun, and Deno with a single, intelligent action that handles everything automatically.
+A **JavaScript runtime setup GitHub Action**, entirely driven by `package.json`:
 
-**Primary purpose:** Simplify JavaScript/TypeScript CI/CD workflows with a standardized, package.json-driven runtime configuration that ensures reproducible builds.
-
-**Key Features:**
-
-* **Multi-Runtime Support** - Node.js, Bun, and Deno runtimes configured via `devEngines.runtime`
-* **Complete Runtime Setup** - Downloads and installs runtimes directly from official sources
-* **Package.json-Driven Configuration** - All runtime and package manager config from package.json
-* **Absolute Version Enforcement** - Requires exact versions (no semver ranges) for reproducible builds
-* **Package Manager Versioning** - Installs exact package manager versions via corepack
-* **Intelligent Caching** - Dependency caching with lock file detection for all package managers
-* **Optional Biome** - Auto-detects and installs Biome from config files
-* **Turbo Detection** - Detects Turborepo configuration
-* **Lockfile Intelligence** - Gracefully handles projects with or without lock files
+* **Multi-runtime** — `node`, `bun`, `deno`, downloaded from official sources into the tool cache
+* **Absolute versions only** — semver ranges are rejected, so builds are reproducible
+* **Package manager** — provisioned by `PackageManagerInstaller` (corepack was removed;
+  `bun`/`deno` are no-ops, being their own package managers)
+* **Dependency caching** — key derived from detected lockfiles, Biome version, turbo presence
+* **Optional Biome** — auto-detected from `biome.jsonc` / `biome.json` `$schema`
+* **Turbo** — detection plus an embedded remote cache server (Actions cache or S3), or
+  passthrough to Vercel
 
 ## Requirements
 
-Repositories using this action **MUST** have a `package.json` in their root directory with a `devEngines` field containing:
+Consuming repositories **MUST** have a root `package.json` with:
 
-1. **`devEngines.packageManager` field** - Specifies the package manager and exact version
-   * Must be an object with `name` and `version` properties (and optionally `onFail`)
-   * Supported package managers: `npm`, `pnpm`, `yarn`, `bun`
-   * Version MUST be absolute (e.g., "10.20.0"), NOT semver ranges
-   * `onFail` is optional (parsed and stored but not currently acted upon by this action)
-   * This follows the [Corepack devEngines format](https://github.com/nodejs/corepack)
+1. **`devEngines.packageManager`** — `name` (`npm`|`pnpm`|`yarn`|`bun`|`deno`) + absolute
+   `version` ([Corepack devEngines format](https://github.com/nodejs/corepack)).
+2. **`devEngines.runtime`** — one object or a non-empty array, each with `name`
+   (`node`|`bun`|`deno`) + absolute `version`
+   ([pnpm format](https://pnpm.io/package_json#devenginesruntime)).
 
-2. **`devEngines.runtime` field** - Specifies runtime(s) and exact versions
-   * Can be a single runtime object or an array of runtimes
-   * Each runtime MUST have `name` (node|bun|deno) and `version` (absolute version) properties (and optionally `onFail`)
-   * Versions MUST be absolute (e.g., "24.11.0"), NOT semver ranges (e.g., "^24.0.0")
-   * `onFail` is optional (parsed and stored but not currently acted upon by this action)
-   * See [pnpm devEngines.runtime](https://pnpm.io/package_json#devenginesruntime) for format details
-
-**Example package.json:**
+`onFail` is optional on both (parsed, not acted upon). Versions must be exact
+(`"24.11.0"`), never ranges. A top-level corepack `packageManager` pin is ignored —
+`devEngines` is the only source of truth.
 
 ```json
 {
   "name": "my-project",
   "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "10.20.0",
-      "onFail": "error"
-    },
-    "runtime": {
-      "name": "node",
-      "version": "24.11.0",
-      "onFail": "error"
-    }
-  }
-}
-```
-
-**Multi-runtime example:**
-
-```json
-{
-  "name": "my-project",
-  "devEngines": {
-    "packageManager": {
-      "name": "bun",
-      "version": "1.3.3",
-      "onFail": "error"
-    },
+    "packageManager": { "name": "pnpm", "version": "10.20.0", "onFail": "error" },
     "runtime": [
-      {
-        "name": "node",
-        "version": "24.11.0",
-        "onFail": "error"
-      },
-      {
-        "name": "bun",
-        "version": "1.3.3",
-        "onFail": "error"
-      }
+      { "name": "node", "version": "24.11.0", "onFail": "error" },
+      { "name": "bun", "version": "1.3.3", "onFail": "error" }
     ]
   }
 }
 ```
 
-**Technical stack:**
+## Technical Stack
 
-* **Runtime framework:** [Effect](https://effect.website) **v4** (`effect@4.0.0-beta.98` via `catalog:effect`) for typed errors, dependency injection, and service composition. In v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` live in `effect`); only Node platform layers ship separately in `@effect/platform-node`. Services are class-based `Context.Service` (not `Context.Tag`) with exported `*Shape` companion types.
-* **GitHub Action services:** `@savvy-web/github-action-effects` (range declared in `package.json`) — zero `@actions/*` dependencies, ships `Step.*` for step-buffered logging, `GithubMarkdown.*` for summary helpers, `ActionInput.{boolean,multiline}` for typed input parsing, `BlobStore` (GitHub Actions cache / S3 SigV4 backends) backing the embedded turbo remote cache, and `<Service>Test` test layers (via `@savvy-web/github-action-effects/testing`).
-* **Build tool:** `@savvy-web/github-action-builder` (rsbuild-based, range declared in `package.json`) configured via `action.config.ts`; `entries.workers` bundles the detached `src/turbo-server.ts` as a third entry.
-* **Cross-phase state:** `src/state.ts` defines `CacheState` and `TurboServerState` (Schema.Class) plus `STATE_KEYS`; `main` writes, `post` reads.
-* **Platform I/O:** `FileSystem` from core `effect`; Node platform layers from `@effect/platform-node` (`NodeFileSystem.layer`, `NodeHttpClient.layerUndici`)
-* **JSONC parsing:** `@effected/jsonc` (`Jsonc`)
-* **Action type:** Compiled Node.js action (uses `node24` runtime, see `action.yml`)
-* **Package manager:** pnpm — exact version pinned in `package.json` (`packageManager` and `devEngines.packageManager`)
-* **Node.js version:** exact version pinned in `package.json` `devEngines.runtime`
-* **Linting:** Biome with strict rules (version pinned via `biome.jsonc` `$schema` and the `@savvy-web/silk` preset)
-* **Testing:** Vitest with Effect test layers + fixture-based workflow tests
-* **Type checking:** TypeScript with native preview build (`@typescript/native-preview`)
-* **Direct dependencies:** Zero `@actions/*` packages -- all GitHub Actions integration is provided by `github-action-effects`
-* **No pnpm overrides or patches** -- clean dependency resolution
+* **Framework:** [Effect](https://effect.website) **v4** (`effect@4.0.0-beta.101` via
+  `catalog:effect`, supplied by the `@effected/pnpm-plugin-effect` config dependency). In v4
+  `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient`
+  live there); only Node platform layers ship separately, in `@effect/platform-node`.
+  Services are class-based `Context.Service` with exported `*Shape` companion types.
+* **Action services:** `@effected/github-actions` (`^0.3.0`) — zero `@actions/*` deps.
+  Imported: `Action`, `ActionCache`, `ActionEnvironment`, `ActionInput`, `ActionLogger`,
+  `ActionOutputs` (incl. `layerDetached`), `ActionState`, `BlobStore` /
+  `GitHubCacheBlobStore`, `CacheKey`, `DetachedProcess`, `GitHubMarkdown`,
+  `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
+* **Other first-party imports:** `@effected/npm` (`PackageManagerPin`), `@effected/semver`
+  (`SemVer.ExactVersionString`, backs `AbsoluteVersion`), `@effected/jsonc` (`Jsonc.parse`).
+  Remaining `@effected/*` entries (`commands`, `git`, `github`, `glob`, `lockfiles`,
+  `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`) are declared but not
+  imported by `src/` — `devEngines` is decoded locally in `steps/load-config.ts`. Every
+  range is a published caret; no overrides, links or patches.
+* **Build:** `@savvy-web/github-action-builder` (rsbuild) via `action.config.ts`.
+* **Cross-phase state:** `src/state.ts` — `CacheState`, `TurboServerState` (`Schema.Class`),
+  `STATE_KEYS`; `main` writes, `post` reads.
+* **Action type:** compiled Node action (`node24`, see `action.yml`); pnpm and Node pinned
+  exactly in `package.json`.
+* **Tooling:** Biome extending `@savvy-web/silk`; Vitest + `@effect/vitest` +
+  `@vitest-agent/plugin` (unit tests in `__test__/`, plus fixture workflow tests);
+  `@typescript/native-preview` for typechecking.
 
-## Quick Start
+The `claude` script in `package.json` points at a machine-local sibling checkout
+(`../../spencerbeggs/effected/plugin`) — a local dev convenience only; nothing in build,
+test or CI depends on it.
 
-### Using the Action
-
-Ensure your project has a valid `package.json` with `devEngines.packageManager` and `devEngines.runtime` fields:
-
-```json
-{
-  "name": "my-project",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "10.20.0",
-      "onFail": "error"
-    },
-    "runtime": {
-      "name": "node",
-      "version": "24.11.0",
-      "onFail": "error"
-    }
-  }
-}
-```
-
-Then use the action in your workflow:
-
-```yaml
-steps:
-  - uses: actions/checkout@v7
-  - uses: savvy-web/silk-runtime-action@v1
-    # That's it! Reads everything from package.json
-  - run: pnpm test
-```
-
-### Development Workflow
+## Common Commands
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Run type checking
-pnpm typecheck
-
-# Run tests
-pnpm test
-
-# Run linting
-pnpm lint:fix
-
-# Build the action (REQUIRED before commit!)
-pnpm build
-
-# Commit both source and dist (including .github/actions/local/)
-git add src/ dist/ .github/actions/local/
-git commit -m "feat: add new feature"
+pnpm typecheck          # tsc --noEmit, via turbo
+pnpm test               # Vitest (test:watch, test:coverage)
+pnpm lint / lint:fix    # Biome (lint:md for markdown)
+pnpm build              # REQUIRED before commit
+pnpm changeset
 ```
+
+Always commit source **and** compiled output together
+(`git add src/ dist/ .github/actions/local/`). Commits must be GPG-signed with the
+GitHub-verified key for `C. Spencer Beggs <spencer@savvyweb.systems>` or the signature
+ruleset rejects them.
 
 ## Dogfooding First-Party Dependencies
 
-We author every dependency in the table below, so a bug or missing API in one can be fixed **in its own repo** and dogfooded through this action before publishing. The action is a **bundled** artifact — `pnpm build` inlines every dependency into `dist/{main,post,turbo-server}.js` — so once a local library build is linked and this repo is rebuilt, the change is baked into the committed `dist`. The integration runs the committed `dist`, **not** `node_modules`.
+Every dependency below is authored in-house, so a bug or missing API can be fixed **in its
+own repo** and dogfooded here before publishing. The action is **bundled** — `pnpm build`
+inlines everything into `dist/{main,post,turbo-server}.js`, and the integration runs the
+committed `dist`, **not** `node_modules`.
 
 | Package | Repo | Local checkout |
 | --- | --- | --- |
-| `@savvy-web/github-action-effects` | `savvy-web/systems` | `../systems/packages/github-action-effects` |
+| `@effected/*` | `spencerbeggs/effected` | `../../spencerbeggs/effected/packages/<name>` |
 | `@savvy-web/github-action-builder` | `savvy-web/systems` | `../systems/packages/github-action-builder` |
 
-Both packages live inside the `systems` monorepo. Both are direct-only dependencies with no transitive duplication path, so `pnpm link ../<path>` is the linking mechanism for either. The `pnpm-workspace.yaml` `overrides` mechanism is not needed here unless a future first-party transitive dependency is introduced.
+**Current state: nothing is linked.** `pnpm-workspace.yaml` carries no `overrides:` entry
+and every range is a published caret. The rebuild's dogfood loop closed **2026-08-03** with
+the effected release wave — `github-actions@0.3.0`, `npm@0.7.0`, `package-json@0.7.0`,
+`semver@0.3.0`.
 
-**Effect v4 API authority:** `.repos/effect-smol` is a vendored, read-only git submodule pinned to `effect@4.0.0-beta.98` — consult it as the source of truth for Effect v4 APIs (the surface diverges from v3 docs on the website). Managed via `savvy repos` / the `silk:repos` skill; do not edit it.
+Cross-repo iteration runs through the **dogfood mailbox protocol** (`.claude/dogfood/`, the
+`silk:dogfood` skill): a request goes upstream, the upstream session builds and hands back,
+this repo adopts. Links are added lazily, for one round, and removed before push.
 
-**Procedure:**
+**Procedure:** build the library in its own repo
+(`cd packages/<name> && node savvy.build.ts --target dev`); link it — `pnpm link
+../systems/packages/github-action-builder` for the builder, the `silk:dogfood` protocol for
+anything `@effected/*`; iterate (edit → rebuild there → `pnpm typecheck` + `pnpm test` +
+`pnpm build` here); keep the declared range correct for the eventual unlinked install.
+Library edits ship separately on their own branch. **Never push while linked** — unlink, pin
+the published range, `pnpm install`, then push.
 
-1. **Build the library:** in the `systems` repo, `cd packages/<name>` and run `node savvy.build.ts --target dev` (produces the `dist/dev` link target).
-2. **Link it:** `pnpm link ../systems/packages/github-action-effects` here, then `pnpm install`.
-3. **Keep the declared range correct** in this repo's `package.json` for the eventual unlinked install.
-4. **Iterate:** edit library source → `node savvy.build.ts --target dev` there → `pnpm typecheck` + `pnpm test` here → `pnpm build` here → commit (`src` + `dist` + changeset) → push `dev`.
-5. **Library edits ship separately:** they land on the library's own branch and release with its next published version.
-6. **Final step, only AFTER the dogfooded version publishes:** remove the link, pin the published range, `pnpm install`.
-
-Commits must be GPG-signed with the GitHub-verified key for `C. Spencer Beggs <spencer@savvyweb.systems>` or the signature ruleset rejects them.
+**Effect v4 API authority:** `.repos/effect` is a vendored, read-only submodule pinned to
+`effect@4.0.0-beta.101` — the source of truth for v4 APIs, whose surface diverges from the
+v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not edit.
 
 ### Turbo file caching: `**/.turbo/cache` only
 
-The embedded remote cache server (or Vercel passthrough) is the primary cache —
-Turborepo writes artifacts to the remote cache API. As a complementary fast
-local-restore layer, only `**/.turbo/cache` (Turbo's local artifact cache) is
-added to the GitHub Actions file cache. `**/.turbo/runs` (run summaries),
-`.turbo/cookies`, and `.turbo/daemon` are deliberately excluded — a restored
-stale run summary would break "latest run = current run" detection by tooling
-that parses `turbo --summarize` output. This selection lives in
-`turboLocalCachePaths` in `src/program.ts`.
+The remote cache server (or Vercel passthrough) is the primary cache. As a complementary
+local-restore layer, only `**/.turbo/cache` goes into the Actions file cache.
+`**/.turbo/runs`, `.turbo/cookies` and `.turbo/daemon` are deliberately excluded — a
+restored stale run summary breaks "latest run = current run" detection in tooling that
+parses `turbo --summarize`. See `TURBO_LOCAL_CACHE_PATHS` in `src/steps/cache-config.ts`.
 
 ### Known limitation: `ACTIONS_RUNTIME_TOKEN` lifetime
 
-The embedded GitHub Actions cache backend captures `ACTIONS_RUNTIME_TOKEN` at
-server spawn time. This token is a short-lived JWT issued by the GitHub Actions
-backend. On very long-running jobs, late cache-write requests from Turborepo may
-receive a `401 Unauthorized` response if the token has expired before the job
-finishes. The S3 backend is unaffected because it uses its own long-lived
-credentials rather than the GitHub runtime token.
+The embedded GitHub backend captures `ACTIONS_RUNTIME_TOKEN` at server spawn time. That
+token is a short-lived JWT, so on very long jobs late cache writes may get `401
+Unauthorized`. The S3 backend is unaffected — it uses its own credentials.
 
 ## Development & Release Cycle
 
-### The `dev` branch convention
+All in-progress work lands on the long-lived **`dev`** branch, never directly on `main`;
+`main` always reflects the last released state. `release.yml` pins the shared workflow
+(`savvy-web/.github`) at `@dev` so it exercises workflow changes early.
 
-All in-progress feature work lands on a long-lived **`dev`** branch, never directly on `main`. `main` always reflects the last released state.
+**Flow: `dev` → `main` → release**
 
-The shared release workflow at `savvy-web/.github/.github/workflows/release.yml` has a matching **`dev` branch**. This repo's own `release.yml` pins `@dev` so it exercises in-progress workflow changes before they reach `main`.
+1. Work accumulates on `dev`; merge into `main` when ready.
+2. The push to `main` triggers **Phase 1** — changeset detection creates/updates
+   `changeset-release/main` and the release PR.
+3. Pushes to that branch trigger **Phase 2** validation (build, publish dry-runs,
+   release-notes preview, sticky comment).
+4. Merging the release PR triggers **Phase 3** — publish, Git tags, GitHub release.
+5. The published release fires `release-sync.yml`.
 
-### Flow: `dev` → `main` → release
-
-1. Feature work accumulates on `dev`; merge it into `main` when ready.
-2. The push to `main` triggers **Phase 1** — changeset detection creates/updates `changeset-release/main` and the release PR.
-3. Pushes to the release branch trigger **Phase 2** validation (build, publish dry-runs, release-notes preview, sticky comment).
-4. Merging the release PR triggers **Phase 3** — publishing, Git tags, and a published GitHub release.
-5. The published release fires `release-sync.yml`, which closes the loop by resetting `dev` back to `main`.
-
-### `release-sync.yml` — post-release housekeeping
-
-Triggered by `release: [published]` (and `workflow_dispatch` with a `tag` input + `dry-run` for rehearsal). Runs as the GitHub App bot so its pushes can bypass protection and won't recurse (no workflow triggers on tag/`dev` pushes). On a **stable SemVer 2.0.0 release `>= 1.0.0`** (bare `MAJOR.MINOR.PATCH` — no leading `v`, no `-prerelease`, no `+build`) it:
-
-1. Moves (or creates) the **`v<major>`** alias tag (e.g. `v1`) at the released commit.
-2. **Hard-resets `dev` to `main` HEAD** — a genuine clobber, so any `dev` commit not yet in `main` is discarded. This is safe by design: `dev` work always lands in `main` before a release.
-
-Each push is guarded: if the remote `v<major>` tag or `dev` already points at its target commit, that push is skipped. Sub-`1.0.0`, prerelease, build-metadata, and non-SemVer tags are ignored (no-op).
+**`release-sync.yml`** — on `release: [published]` (plus `workflow_dispatch` with `tag` +
+`dry-run`), as the GitHub App bot so its pushes bypass protection without recursing. On a
+**stable SemVer release `>= 1.0.0`** (bare `MAJOR.MINOR.PATCH`) it moves the **`v<major>`**
+alias tag to the released commit and **hard-resets `dev` to `main` HEAD** — a genuine
+clobber, safe because `dev` work always lands in `main` first. Pushes are skipped when the
+remote already matches; prerelease, build-metadata and sub-`1.0.0` tags no-op.
 
 ## Documentation Structure
 
-This repository uses modular documentation organized by directory:
-
-* **[src/CLAUDE.md](src/CLAUDE.md)** - Source code architecture, build process, and development guidelines (unit tests are co-located with their source modules under `src/`)
-* **[**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md)** - Test fixtures for integration testing
-* **[.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md)** - Workflow testing patterns and reusable actions
+* **[src/CLAUDE.md](src/CLAUDE.md)** — source layout, step-contract conventions
+* **[**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md)** — integration test fixtures
+* **[.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md)** — workflow test patterns
 
 ### Design Documentation
 
-For deep architectural details, rationale, and design decisions:
-
 * **Architecture:** `@./.claude/design/silk-runtime-action/architecture.md`
-  Load when understanding overall system design, entry points, or layer composition.
+  Load for system design, entry points, or layer composition.
 * **Effect Service Model:** `@./.claude/design/silk-runtime-action/effect-service-model.md`
-  Load when working with services, error handling, or dependency injection.
+  Load for services, error handling, or dependency injection.
 * **Runtime Installation:** `@./.claude/design/silk-runtime-action/runtime-installation.md`
   Load when modifying runtime descriptors, PM setup, or Biome installation.
 * **Caching Strategy:** `@./.claude/design/silk-runtime-action/caching-strategy.md`
-  Load when working with cache keys, lockfiles, or cross-phase state.
+  Load for cache keys, lockfiles, or cross-phase state.
 * **Build and Distribution:** `@./.claude/design/silk-runtime-action/build-and-distribution.md`
-  Load when modifying build config, dist management, or release process.
+  Load when modifying build config, dist management, or the release process.
 * **Turbo Remote Cache:** `@./.claude/design/silk-runtime-action/turbo-remote-cache.md`
-  Load when working on the embedded turbo cache server, activation/backend selection, the artifact codec/handler, or server lifecycle and teardown.
+  Load for the embedded cache server, backend selection, the artifact codec/handler, or
+  server lifecycle and teardown.
 * **Testing Strategy:** `@./.claude/design/silk-runtime-action/testing-strategy.md`
-  Load when writing tests, understanding mock patterns, or fixture setup.
+  Load when writing tests, mock patterns, or fixture setup.
 
 ## Project Structure
 
 ```text
 .
 ├── src/
-│   ├── main.ts                # 4-line Action.run(program, { layer: MainLive })
-│   ├── post.ts                # post Effect + PostLive + Action.run
-│   ├── program.ts             # main Effect program
-│   ├── turbo-server.ts        # detached turbo remote-cache server (third bundle)
-│   ├── state.ts               # CacheState + TurboServerState Schema.Class + STATE_KEYS
-│   ├── layers/
-│   │   └── app.ts             # MainLive composition
-│   ├── services/
-│   │   ├── runtime-installer.ts + .test.ts
-│   │   ├── cache.ts            + .test.ts
-│   │   ├── config-loader.ts    + .test.ts
-│   │   ├── summary.ts          + .test.ts   # job-summary panel + step-line formatters
-│   │   └── turbo-cache/        # codec, activation, handler, lifecycle, apply (+ .test.ts)
-│   ├── descriptors/
-│   │   ├── node.ts / bun.ts / deno.ts / biome.ts
-│   │   └── descriptors.test.ts
-│   ├── schemas/
-│   │   └── domain.ts           + domain.test.ts
-│   └── errors/
-│       └── errors.ts           + errors.test.ts
-├── dist/
-│   ├── main.js / post.js / turbo-server.js / package.json
+│   ├── main.ts                # Action.run(program, { layer: MainLive })
+│   ├── post.ts                # post Effect + Action.run(…, { layer: PostLive })
+│   ├── program.ts             # main pipeline: inputs → steps → outputs
+│   ├── turbo-server.ts        # detached cache-server entry (third bundle)
+│   ├── state.ts               # STATE_KEYS + CacheState + TurboServerState
+│   ├── layers/app.ts          # MainLive / PostLive
+│   ├── schema/                # domain.ts, inputs.ts, outputs.ts
+│   ├── steps/                 # one contract module per pipeline step, in order
+│   ├── summary/format.ts      # pure log/panel formatters
+│   ├── turbo-cache/           # activation, handler, meta, server-config
+│   └── descriptors/           # descriptor.ts + node / bun / deno / biome
+├── __test__/unit/             # Vitest suites, mirroring src/ (never co-located)
 ├── __fixtures__/              # workflow integration test fixtures
-├── .github/
-│   ├── actions/local/         # mirrored bundled action for local testing
-│   └── workflows/             # CI workflows
+├── dist/                      # main.js / post.js / turbo-server.js / package.json
+├── .github/actions/local/     # mirrored bundled action for local testing
 ├── action.config.ts
 ├── action.yml
 └── package.json
 ```
 
+Step order: `load-config` → `detect-biome` → `detect-turbo` → `restore-cache` →
+`install-runtimes` → `setup-package-manager` → `install-dependencies` → `install-biome` →
+`turbo-cache` → `summary`; `cache-config` supplies the key/path derivation.
+
 ## Action Inputs
 
-All inputs are **optional**. If not provided, values are auto-detected from
-`package.json` or configuration files. Runtime and package manager versions
-are read exclusively from `devEngines` — there are no explicit version inputs.
+All inputs are **optional** and auto-detected when omitted. Runtime and package manager
+versions come only from `devEngines` — there are no version inputs.
 
-### Feature Inputs
-
-* **`biome-version`** - Biome version override (e.g., `2.3.14`). If not
-  provided, auto-detects from `biome.jsonc` or `biome.json` `$schema` field.
-  Leave empty to skip Biome installation.
-* **`install-deps`** - Whether to install dependencies (`true` | `false`).
-  Default: `true`. Set to `false` to skip dependency installation.
-
-### Turbo Remote Cache Inputs
-
-* **`turbo-cache`** - Turbo remote cache mode (`auto` | `off`). `auto` starts
-  an embedded cache server when `turbo.json` is present and no external Vercel
-  creds are set. Default: `"auto"`.
-* **`turbo-cache-prefix`** - Key prefix/namespace for embedded turbo cache
-  artifacts. Default: `""`.
-* **`turbo-token`** - Turbo remote cache token. When provided together with
-  `turbo-team`, selects passthrough (external Vercel) mode and disables the
-  embedded server.
-* **`turbo-team`** - Turbo team slug. When provided together with `turbo-token`,
-  selects passthrough (external Vercel) mode and disables the embedded server.
-* **`turbo-s3-bucket`** - S3 bucket for the embedded turbo cache backend.
-  Presence selects the S3 backend.
-* **`turbo-s3-region`** - S3 region for the embedded turbo cache backend.
-* **`turbo-s3-endpoint`** - Custom S3 endpoint (R2/MinIO/Spaces). Leave empty
-  for AWS S3.
-* **`turbo-s3-access-key-id`** - S3 access key ID for the embedded turbo cache
-  backend.
-* **`turbo-s3-secret-access-key`** - S3 secret access key for the embedded
-  turbo cache backend.
-* **`turbo-s3-session-token`** - Optional S3 session token for temporary
-  credentials.
-* **`turbo-s3-prefix`** - Optional key prefix within the S3 bucket.
-
-### Cache Inputs
-
-* **`additional-lockfiles`** - Additional lockfile patterns to include in cache
-  key generation. Supports glob patterns. Multiline string.
-* **`additional-cache-paths`** - Additional paths to cache/restore. Multiline
-  string with glob patterns.
-
-### Testing Inputs
-
-* **`cache-bust`** - Cache busting string appended to cache key. Use a unique
-  value (e.g., run ID) to force a cache miss. `"false"` disables. **Only use
-  for testing - do not use in production!**
+| Input | Default | Purpose |
+| --- | --- | --- |
+| `biome-version` | `""` | Override; empty auto-detects from the `$schema`, or skips |
+| `install-deps` | `"true"` | Install dependencies |
+| `turbo-cache` | `"auto"` | `auto` \| `off`. `auto` starts the embedded server when `turbo.json` exists and no Vercel creds are set |
+| `turbo-cache-prefix` | `""` | Key namespace for embedded cache artifacts |
+| `turbo-token` / `turbo-team` | `""` | Both together select Vercel passthrough and disable the embedded server |
+| `turbo-s3-bucket` | `""` | Presence selects the S3 backend |
+| `turbo-s3-region` | `""` | S3 region |
+| `turbo-s3-endpoint` | `""` | Custom endpoint (R2/MinIO/Spaces); empty means AWS |
+| `turbo-s3-access-key-id` / `-secret-access-key` | `""` | S3 credentials |
+| `turbo-s3-session-token` | `""` | For temporary credentials |
+| `turbo-s3-prefix` | `""` | Key prefix within the bucket |
+| `additional-lockfiles` | `""` | Extra lockfile globs for the cache key; newline-separated |
+| `additional-cache-paths` | `""` | Extra paths to cache/restore; newline-separated |
+| `cache-bust` | `"false"` | Appended to the cache key, to force a miss. **Testing only** |
 
 ## Action Outputs
 
-### Runtime Outputs
+| Output | Value |
+| --- | --- |
+| `node-version` / `bun-version` / `deno-version` | Installed version, or empty |
+| `node-enabled` / `bun-enabled` / `deno-enabled` | `"true"` \| `"false"` |
+| `package-manager` / `package-manager-version` | e.g. `pnpm` / `"10.20.0"` |
+| `biome-version` / `biome-enabled` | Installed version (empty if not) / `"true"` \| `"false"` |
+| `turbo-enabled` | Whether `turbo.json` was detected |
+| `turbo-cache-backend` | `"github"` (embedded Actions cache) \| `"s3"` (embedded S3) \| `"remote"` (Vercel passthrough) \| `"none"` |
+| `turbo-cache-port` | Port the embedded server bound to; empty when not started |
+| `cache-hit` | `"true"` \| `"partial"` \| `"false"` |
+| `lockfiles` / `cache-paths` | Comma-separated, as used for the key / restore |
 
-* **`node-version`** - Installed Node.js version (e.g., `"24.10.0"`) or empty
-  if not installed
-* **`node-enabled`** - Whether Node.js was installed (`"true"` | `"false"`)
-* **`bun-version`** - Installed Bun version (e.g., `"1.3.3"`) or empty if not
-  installed
-* **`bun-enabled`** - Whether Bun was installed (`"true"` | `"false"`)
-* **`deno-version`** - Installed Deno version (e.g., `"2.5.6"`) or empty if
-  not installed
-* **`deno-enabled`** - Whether Deno was installed (`"true"` | `"false"`)
-
-### Package Manager Outputs
-
-* **`package-manager`** - Package manager name (`npm` | `pnpm` | `yarn` |
-  `bun` | `deno`)
-* **`package-manager-version`** - Package manager version (e.g., `"10.20.0"`)
-
-### Feature Outputs
-
-* **`biome-version`** - Installed Biome version (e.g., `"2.3.14"`) or empty if
-  not installed
-* **`biome-enabled`** - Whether Biome was installed (`"true"` | `"false"`)
-* **`turbo-enabled`** - Whether Turbo configuration was detected (`"true"` |
-  `"false"`)
-* **`turbo-cache-backend`** - Active turbo cache backend (`"github"` | `"s3"` |
-  `"remote"` | `"none"`). `"github"` = embedded GitHub Actions cache backend;
-  `"s3"` = embedded S3 backend; `"remote"` = passthrough to external Vercel;
-  `"none"` = turbo cache disabled or turbo not detected.
-* **`turbo-cache-port`** - Local port the embedded turbo cache server bound to.
-  Empty when the embedded server was not started.
-
-### Cache Outputs
-
-* **`cache-hit`** - Whether dependencies were restored from cache (`"true"` |
-  `"partial"` | `"false"`)
-* **`lockfiles`** - Comma-separated list of detected lockfiles used for cache
-  key generation (e.g., `"pnpm-lock.yaml,deno.lock"`)
-* **`cache-paths`** - Comma-separated list of cache paths being
-  cached/restored (e.g., `"/home/runner/.cache/deno,**/node_modules"`)
+`biome-enabled` reflects a **successful install**, not detection — a Biome that could not be
+fetched degrades to a warning and reports disabled.
 
 ## Code Quality Standards
 
-### Biome Configuration
+`biome.jsonc` extends `@savvy-web/silk/biome`. **The preset is authoritative** — where this
+list and the preset disagree, the preset wins.
 
-* **Indentation:** Tabs, width 2
-* **Line width:** 120 characters
-* **Import organization:** Lexicographic order
-* **Import extensions:** Forced `.js` extensions (even for TypeScript files)
-* **Import types:** Separated type imports
-* **Node.js imports:** Must use `node:` protocol
-* **Type definitions:** Prefer `type` over `interface`
-* **No unused variables:** Error level
-
-### TypeScript Configuration
-
-* **Module system:** ESNext with bundler resolution
-* **Target:** ES2022
-* **Strict mode:** Enabled
-* **Import extensions:** Required (`.js` for all imports)
-
-## Common Commands
-
-```bash
-# Linting
-pnpm lint              # Check with Biome
-pnpm lint:fix          # Auto-fix Biome issues
-pnpm lint:md           # Lint markdown
-pnpm lint:md:fix       # Fix markdown
-
-# Type Checking
-pnpm typecheck         # Run TypeScript compiler
-
-# Testing
-pnpm test              # Run unit tests with coverage
-pnpm test --watch      # Run tests in watch mode
-
-# Building
-pnpm build             # Build action with github-action-builder (see Build Process below)
-
-# Release
-pnpm changeset         # Create changeset for release
-pnpm ci:version        # Prepare for release
-```
-
-## Release Process
-
-Uses Changesets for versioning:
-
-1. **Create changeset:** `pnpm changeset`
-2. **Changesets workflow automatically:**
-   * Creates release PR
-   * Updates `package.json` version
-   * Updates `CHANGELOG.md`
-   * Creates GitHub release with tags
-3. **Users reference by tag:**
-
-   ```yaml
-   - uses: savvy-web/silk-runtime-action@v1
-   - uses: savvy-web/silk-runtime-action@v1.2.3
-   ```
+* **Indentation:** tabs, width 2; **line width** 120
+* **Imports:** lexicographic order, separated type imports, forced `.js` extensions,
+  `node:` protocol for builtins
+* **Type definitions:** `useConsistentTypeDefinitions` is an **error** and the preset
+  enforces **`interface`** — prefer `interface` over `type` for object shapes
+* **No unused variables:** error
+* **TypeScript:** ESNext + bundler resolution, ES2022, strict, `.js` import extensions
 
 ## Build Process
 
-The build is configured by [`action.config.ts`](action.config.ts) and invoked via `@savvy-web/github-action-builder` (rsbuild-based; range declared in `package.json`).
+Configured by [`action.config.ts`](action.config.ts), run by
+`@savvy-web/github-action-builder`. It bundles three entries — `main.ts`, `post.ts`, and
+`turbo-server.ts` (via `entries.workers`) — into `dist/*.js`, minified, with unused optional
+cyclonedx plugins (`xmlbuilder2`, `libxmljs2`, `ajv-formats-draft2019`) aliased to throwing
+stubs; writes `dist/package.json` (`{ "type": "module" }`); and mirrors everything to
+`.github/actions/local/` (`persistLocal`), the copy `test-fixture` runs.
 
-### What Gets Built
+Both directories are committed and cleaned before each build. Rebuild after **any** source
+change or CI runs stale code.
 
-1. **Compile TypeScript to JavaScript** - Bundles three entry points:
-   * `src/main.ts` → `dist/main.js` (main action logic)
-   * `src/post.ts` → `dist/post.js` (post-action cache save)
-   * `src/turbo-server.ts` → `dist/turbo-server.js` (detached turbo remote-cache server, via `entries.workers`)
+## Common Issues
 
-2. **Bundle Configuration** (from `action.config.ts`):
-   * **Minification:** Enabled
-
-3. **Create Module Markers:**
-   * Creates `dist/package.json` with `{ "type": "module" }` to mark files as ES modules
-
-### Local Testing Copy
-
-The build automatically creates a **local copy** of the action at `.github/actions/local/` for testing workflows. This copy is identical to `dist/` but is used by the `test-fixture` composite action, keeping test artifacts separate from the production build.
-
-### Build Output Structure
-
-```text
-dist/                           # Production build (committed)
-├── main.js                     # Main action bundle
-├── post.js                     # Post-action bundle
-├── turbo-server.js             # Detached turbo cache server bundle
-└── package.json                # Module marker
-
-.github/actions/local/          # Local testing copy (committed)
-└── dist/
-    ├── main.js
-    ├── post.js
-    ├── turbo-server.js
-    └── package.json
-```
-
-### Key Points
-
-1. **Always commit both directories** - Both `dist/` and `.github/actions/local/` must be committed to git
-2. **Build before committing** - Run `pnpm build` after any source changes
-3. **Clean builds** - The build script cleans both directories before building
-
-## Common Issues and Solutions
-
-### dist/ not updated
-
-**Issue:** Changes don't take effect in CI
-
-**Solution:** Always run `pnpm build` and commit `dist/` files
-
-```bash
-pnpm build
-git add dist/ .github/actions/local/
-git commit -m "build: update compiled output"
-```
-
-### Import errors
-
-**Issue:** "Module not found" or import errors
-
-**Solution:** Always use `.js` extensions and `node:` protocol
-
-```typescript
-// Correct
-import { loadPackageJson } from "./services/config-loader.js";
-import { readFile } from "node:fs/promises";
-
-// Incorrect
-import { loadPackageJson } from "./services/config-loader";
-import { readFile } from "fs/promises";
-```
-
-### Missing or invalid package.json
-
-**Issue:** "package.json not found" or "package.json has invalid or missing devEngines field"
-
-**Solution:** Ensure your project has a `package.json` with both `devEngines.packageManager` and `devEngines.runtime` fields.
-
-### Semver range not allowed
-
-**Issue:** "Must be an absolute version (e.g., '24.11.0'), not a semver range"
-
-**Solution:** Use exact versions in `devEngines`, not semver ranges. Version strings containing `^`, `~`, `>`, `<`, `=`, `*`, `x`, or `X` are rejected by the Effect Schema validator.
-
-## Important Notes
-
-1. **Always commit dist/** - The compiled JavaScript must be committed for GitHub Actions to work
-2. **Build before pushing** - Run `pnpm build` after any source changes
-3. **Test with fixtures** - Push to test real-world scenarios (see [**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md))
-4. **Changesets for versioning** - Use changesets for version management
-5. **Biome is authoritative** - All formatting decisions defer to Biome
-6. **Absolute versions only** - `devEngines.packageManager` and `devEngines.runtime` must use exact versions, not semver ranges
-7. **package.json is required** - All projects using this action MUST have a valid package.json with `devEngines.packageManager` and `devEngines.runtime` fields
-8. **devEngines-only config** - Runtime and package manager versions come exclusively from `devEngines`; there are no explicit version inputs
+| Issue | Fix |
+| --- | --- |
+| Changes don't take effect in CI | `pnpm build`, commit `dist/` + `.github/actions/local/` |
+| "Module not found" on import | Use `.js` extensions and the `node:` protocol |
+| "package.json not found" / "invalid devEngines" | Add both `devEngines` fields |
+| "Must be an absolute version … not a semver range" | Drop `^ ~ > < = * x X` — the Schema rejects them |
 
 ## Contributing
 
-When contributing:
-
-1. Modify TypeScript source in `src/` (see [src/CLAUDE.md](src/CLAUDE.md))
-2. Add/update co-located unit tests next to the source modules (e.g., `src/services/cache.test.ts`)
-3. Add/update fixtures in `__fixtures__/` if needed (see [**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md))
-4. Update workflows in `.github/workflows/` if needed (see [.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md))
-5. Run `pnpm build` to compile
-6. Commit both source and dist
-7. Create changeset with `pnpm changeset`
-8. Push and verify all tests pass in GitHub Actions
-9. Update documentation if needed
+1. Edit source in `src/` (see [src/CLAUDE.md](src/CLAUDE.md))
+2. Add/update unit tests in `__test__/unit/`, mirroring the `src/` path — never co-located
+3. Add/update fixtures and workflows if needed
+4. `pnpm build`, then commit source + `dist/` + `.github/actions/local/`
+5. `pnpm changeset`, push, and verify all tests pass in GitHub Actions
