@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ActionCache, ActionEnvironment, ToolInstaller } from "@effected/github-actions";
+import { ActionCache, ActionEnvironment, PackageManagerInstaller, ToolInstaller } from "@effected/github-actions";
 import { Effect, FileSystem, Layer, Path } from "effect";
 import type { HttpClient } from "effect/unstable/http";
 import { FetchHttpClient } from "effect/unstable/http";
@@ -37,13 +37,13 @@ const actionServicesTest: Layer.Layer<
 );
 
 describe("MainLive", () => {
-	it.effect("builds the two services the default runtime omits", () =>
+	it.effect("builds the three services the default runtime omits", () =>
 		Effect.gen(function* () {
 			const services = yield* Effect.provide(
-				Effect.all([ActionCache, ToolInstaller]),
+				Effect.all([ActionCache, PackageManagerInstaller, ToolInstaller]),
 				Layer.provide(MainLive, actionServicesTest),
 			);
-			expect(services).toHaveLength(2);
+			expect(services).toHaveLength(3);
 		}),
 	);
 });

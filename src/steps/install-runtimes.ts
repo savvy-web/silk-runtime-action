@@ -79,7 +79,6 @@ const extractErrorReason = (error: unknown): string => {
 		if (typeof candidate.reason === "string" && candidate.reason !== "") return candidate.reason;
 		if (typeof candidate._tag === "string") return candidate._tag;
 	}
-	if (error instanceof Error && error.message !== "") return error.message;
 	const rendered = String(error);
 	return rendered === "" ? "Unknown error" : rendered;
 };

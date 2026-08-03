@@ -68,6 +68,13 @@ const server = createServer((req, res) => {
 	// a complete artifact per request and a cap invented here would fail a large
 	// monorepo's build rather than slow it down.
 	const chunks: Array<Buffer> = [];
+	// An aborted upload emits `error` on the request stream; with no listener
+	// Node turns that into an uncaught exception and the whole server dies for
+	// one client's ECONNRESET. The response socket is torn down with it, so
+	// there is nobody left to answer.
+	req.on("error", () => {
+		res.destroy();
+	});
 	req.on("data", (chunk: Buffer) => {
 		chunks.push(chunk);
 	});
@@ -126,6 +133,11 @@ process.on("SIGTERM", () => {
 			() => process.exit(0),
 		);
 	});
+	// Turbo talks keep-alive, and `close` waits out idle sockets it will never
+	// use again — long enough for the deadline above to win and skip the
+	// runtime dispose. Dropping the idle ones (in-flight requests are not
+	// touched) lets the graceful path finish first.
+	server.closeIdleConnections();
 });
 
 // Loopback only: the cache server is for this runner's turbo and nothing else.

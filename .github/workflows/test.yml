@@ -187,6 +187,7 @@ jobs:
           - pnpm
           - yarn
           - multi
+          - bun
         include:
           - pm: npm
             fixture: node-npm
@@ -244,6 +245,20 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: node --version && bun --version && deno --version && pnpm --version
             title: 📦 Multi-Runtime (Restore Cache)
+          - pm: bun
+            fixture: bun-bun
+            install-deps: "true"
+            expected-cache-hit: "true"
+            expected-node-enabled: "false"
+            expected-bun-enabled: "true"
+            expected-bun-version: 1.3.3
+            expected-deno-enabled: "false"
+            expected-package-manager: bun
+            expected-package-manager-version: 1.3.3
+            expected-biome-enabled: "false"
+            expected-turbo-enabled: "false"
+            test-command: bun --version
+            title: 📦 Bun (Restore Cache)
     steps:
       - name: Checkout
         uses: actions/checkout@v7

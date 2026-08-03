@@ -1,7 +1,7 @@
 # silk-runtime-action
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-4caf50.svg)](https://opensource.org/licenses/MIT)
-[![Node.js %3E%3D24.11.0](https://img.shields.io/badge/Node.js-%3E%3D24.11.0-5fa04e.svg)](https://nodejs.org/)
+[![Node.js >=24.11.0](https://img.shields.io/badge/Node.js-%3E%3D24.11.0-5fa04e.svg)](https://nodejs.org/)
 [![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue?logo=github)](https://github.com/savvy-web/silk-runtime-action)
 
 Set up JavaScript runtimes in GitHub Actions from the `devEngines` field of your `package.json`. One action installs Node.js, Bun and/or Deno, provisions the pinned package manager, restores a dependency cache, and optionally installs Biome and wires up a Turborepo remote cache.

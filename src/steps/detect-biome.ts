@@ -72,8 +72,21 @@ const schemaVersion = (config: unknown): Option.Option<string> => {
 	if (config === null || typeof config !== "object") return Option.none();
 	const schema = (config as { readonly $schema?: unknown }).$schema;
 	if (typeof schema !== "string") return Option.none();
-	return Option.fromUndefinedOr(SCHEMA_VERSION.exec(schema)?.[1]);
+	return Option.filter(Option.fromUndefinedOr(SCHEMA_VERSION.exec(schema)?.[1]), pathSafe);
 };
+
+/**
+ * Whether a resolved version is safe to become a url path segment.
+ *
+ * @remarks
+ * Not semver validation — quirk 4's ruling (npm-style tags such as `next` pass)
+ * stands. What this rejects is the shape that changes *which url* the installer
+ * fetches: separators, dot-segments and percent-escapes, any of which would let
+ * a `biome-version` input or a poisoned `$schema` redirect the binary download
+ * to a different GitHub path. A version failing this resolves the same way as
+ * one that was never named.
+ */
+const pathSafe = (version: string): boolean => /^[0-9A-Za-z][0-9A-Za-z._-]*$/.test(version);
 
 /**
  * Resolves which Biome version, if any, this run should install.
@@ -93,9 +106,11 @@ const schemaVersion = (config: unknown): Option.Option<string> => {
  * trimmed, which v1 did not do (quirk 3): the version becomes a path segment in
  * a release url, and padding makes that a 404 rather than an error anyone can
  * read. Blank-after-trim is therefore absent, matching the empty-string-is
- * -absent reading `ActionInput` already applies. What it is *not* is validated
- * (quirk 4, consciously kept): biome tags are npm-style and the url encodes
- * whatever is asked for.
+ * -absent reading `ActionInput` already applies. What it is *not* is semver
+ * -validated (quirk 4, consciously kept): biome tags are npm-style, so `next`
+ * passes. The one check applied is {@link pathSafe} — a version is a url path
+ * segment, and one that could name a *different* url is refused with a
+ * warning rather than fetched.
  *
  * `BiomeDetectError` stays on the signature and is never raised. Every
  * file-level failure — absent, unreadable, unparseable, no `$schema`, a
@@ -111,6 +126,10 @@ export const detectBiome = (
 	Effect.gen(function* () {
 		const override = Option.flatMap(requested, nonBlank);
 		if (Option.isSome(override)) {
+			if (!pathSafe(override.value)) {
+				yield* Effect.logWarning(`Ignoring biome-version "${override.value}": not a plain version or tag`);
+				return Option.none<string>();
+			}
 			yield* Effect.logInfo(`Detected Biome: ${override.value}`);
 			return override;
 		}

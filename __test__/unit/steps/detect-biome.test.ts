@@ -99,12 +99,33 @@ describe("detectBiome", () => {
 		}),
 	);
 
-	it.effect("does not validate the requested version", () =>
+	it.effect("does not semver-validate the requested version", () =>
 		Effect.gen(function* () {
 			// v1 parity, consciously kept (oracle quirk 4): biome's tags are npm
 			// -style and the url encodes whatever is asked for, so "latest" and
 			// "nightly" are legitimate values this step has no business refusing.
 			expect(yield* run(Option.some("latest"))).toStrictEqual(Option.some("latest"));
+		}),
+	);
+
+	it.effect("refuses a requested version that could redirect the download url", () =>
+		Effect.gen(function* () {
+			// The version becomes a path segment in the release url. A separator or
+			// dot-segment names a *different* url, so it is refused outright rather
+			// than fetched — quirk 4's tag tolerance is about shapes like "next",
+			// not about path traversal.
+			for (const hostile of ["../../../evil/repo/releases/download/v1", "2.4.9/extra", "..", "%2e%2e"]) {
+				expect(yield* run(Option.some(hostile))).toStrictEqual(Option.none());
+			}
+		}),
+	);
+
+	it.effect("drops a $schema capture that is not a plain version", () =>
+		Effect.gen(function* () {
+			const version = yield* run(Option.none(), {
+				[JSONC]: `{"$schema": "https://biomejs.dev/schemas/../schema.json"}`,
+			});
+			expect(version).toStrictEqual(Option.none());
 		}),
 	);
 

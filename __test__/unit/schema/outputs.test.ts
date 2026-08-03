@@ -54,21 +54,28 @@ describe("OUTPUT_NAMES", () => {
 const emitted = (model: OutputsModel) =>
 	Effect.gen(function* () {
 		const seen = new Map<string, string>();
+		// The map alone cannot see a duplicate write — a second `set` for the
+		// same name overwrites the first. The list keeps every call.
+		const calls: Array<string> = [];
 		yield* emitOutputs(model).pipe(
 			Effect.provide(
 				ActionOutputs.layerTest({
-					set: (name, value) => Effect.sync(() => void seen.set(name, value)),
+					set: (name, value) =>
+						Effect.sync(() => {
+							calls.push(name);
+							seen.set(name, value);
+						}),
 				}),
 			),
 		);
-		return Object.fromEntries(seen);
+		return { seen: Object.fromEntries(seen), calls };
 	});
 
 describe("emitOutputs", () => {
 	it.effect("writes every action.yml output exactly once", () =>
 		Effect.gen(function* () {
-			const seen = yield* emitted(initialOutputs);
-			expect(Object.keys(seen).sort()).toEqual([...OUTPUT_NAMES].sort());
+			const { seen, calls } = yield* emitted(initialOutputs);
+			expect(calls.sort()).toEqual([...OUTPUT_NAMES].sort());
 			expect(seen["cache-hit"]).toBe("false");
 			expect(seen["turbo-cache-backend"]).toBe("none");
 		}),
@@ -81,7 +88,7 @@ describe("emitOutputs", () => {
 			// to its neighbour's name. Swap `bunVersion` and `denoVersion` in
 			// `emitOutputs` and every name is still written exactly once. Distinct
 			// sentinels per field are what make that swap show up as a diff.
-			const seen = yield* emitted({
+			const { seen } = yield* emitted({
 				nodeVersion: "sentinel-1",
 				nodeEnabled: true,
 				bunVersion: "sentinel-2",
@@ -139,7 +146,7 @@ describe("emitOutputs", () => {
 			] as const satisfies ReadonlyArray<readonly [keyof OutputsModel, OutputName]>;
 
 			for (const [field, name] of oneHot) {
-				const seen = yield* emitted({ ...initialOutputs, [field]: true });
+				const { seen } = yield* emitted({ ...initialOutputs, [field]: true });
 				const trueNames = Object.entries(seen)
 					.filter(([, value]) => value === "true")
 					.map(([published]) => published);

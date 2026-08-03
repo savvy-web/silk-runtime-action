@@ -120,6 +120,18 @@ describe("makeTurboHandler routes", () => {
 		expect(nested?.status).toBe(404);
 	});
 
+	it("is a 404 for a relative-segment hash", async () => {
+		// A hash is a digest; `.` and `..` would otherwise reach the backend key
+		// as `<prefix>/..`.
+		const [dot, dotdot] = await overMemory([
+			request({ path: "/v8/artifacts/." }),
+			request({ path: "/v8/artifacts/.." }),
+		]);
+
+		expect(dot?.status).toBe(404);
+		expect(dotdot?.status).toBe(404);
+	});
+
 	it("is a 405 for a method it does not implement", async () => {
 		const [other] = await overMemory([request({ method: "DELETE" })]);
 

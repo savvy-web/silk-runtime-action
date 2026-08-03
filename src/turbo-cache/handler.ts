@@ -89,7 +89,10 @@ const pathnameOf = (path: string): string => {
 const artifactHash = (pathname: string): string | null => {
 	if (!pathname.startsWith(ARTIFACT_PATH)) return null;
 	const hash = pathname.slice(ARTIFACT_PATH.length);
-	return hash === "" || hash.includes("/") ? null : hash;
+	// `.` and `..` are unroutable alongside the separator: a hash is a digest,
+	// and a relative segment would otherwise reach the backend key as
+	// `<prefix>/..`.
+	return hash === "" || hash === "." || hash === ".." || hash.includes("/") ? null : hash;
 };
 
 /**

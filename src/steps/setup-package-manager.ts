@@ -7,8 +7,8 @@ import { Data, Effect, Option } from "effect";
 import type { PackageManagerName, PackageManagerSpec } from "../schema/domain.js";
 
 /**
- * Raised when the `devEngines.packageManager` cannot be installed, activated
- * via corepack, or verified afterward.
+ * Raised when the `devEngines.packageManager` cannot be installed, published
+ * to `PATH`, or verified afterward.
  */
 export class PackageManagerError extends Data.TaggedError("PackageManagerError")<{
 	readonly reason: "install" | "activate" | "verify";

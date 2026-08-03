@@ -507,12 +507,21 @@ describe("startTurboCache: embedded", () => {
 					// This is the one server in the suite that binds a *fixed* port —
 					// it has to, because the assertion is that the probe targets the
 					// port the step chose. So it is also the one that can lose the
-					// bind: a leaked turbo-server from an earlier run still holding
-					// 41230 is the plausible case. Without this listener the `listen`
-					// callback never fires, `resume` is never called, and the failure
-					// surfaces as an opaque five-second timeout naming nothing. Dying
-					// with the cause reports `EADDRINUSE` and the port instead.
-					server.on("error", (cause) => resume(Effect.die(cause)));
+					// bind, and 41230 sits inside Linux's ephemeral range: a transient
+					// *outbound* socket on a busy CI runner can hold it for the length
+					// of one request (observed in CI as EADDRINUSE). Those clear in
+					// milliseconds, so EADDRINUSE retries briefly before concluding a
+					// real server leaked. Anything else — and exhaustion — dies with
+					// the cause rather than as an opaque timeout naming nothing.
+					let attempts = 0;
+					server.on("error", (cause: NodeJS.ErrnoException) => {
+						if (cause.code === "EADDRINUSE" && attempts < 10) {
+							attempts++;
+							setTimeout(() => server.listen(port, "127.0.0.1"), 200);
+							return;
+						}
+						resume(Effect.die(cause));
+					});
 					server.listen(port, "127.0.0.1", () =>
 						resume(Effect.succeed({ hits, close: () => new Promise<void>((done) => server.close(() => done())) })),
 					);
