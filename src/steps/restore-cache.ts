@@ -58,29 +58,42 @@ export class CacheError extends Data.TaggedError("CacheError")<{
 	readonly cause?: unknown;
 }> {}
 
-/** The prefix `GITHUB_REF` carries for a branch, and nothing else. */
-const REFS_HEADS = "refs/heads/";
-
 /**
- * The branch this run is on, or `""` when it is not on one.
+ * What this step reads off the run's GitHub context, with the answers a run
+ * outside Actions gets.
  *
  * @remarks
- * `GITHUB_HEAD_REF` first, because on a pull request `GITHUB_REF` names the
- * synthetic merge ref (`refs/pull/12/merge`) rather than the branch — keying on
- * it would give every pull request a cache of its own that nothing else ever
- * restores. A tag or a detached HEAD matches neither and yields `""`, which
- * {@link keySegments} hashes as a literal.
+ * One read rather than two: `env.github` is a decode of the whole `GITHUB_*`
+ * block, and asking it twice would let the workspace and the branch disagree
+ * about whether there is a context at all.
+ *
+ * The branch is `GitHubContext.branch` — `headRef` when the event has one,
+ * otherwise `refName`. That fallback matters because on a pull request
+ * `GITHUB_REF` names the synthetic merge ref (`refs/pull/12/merge`) rather than
+ * the branch, and keying on it would give every pull request a cache of its own
+ * that nothing else ever restores. The kit also encodes the trap that made this
+ * worth handing over: the runner writes `GITHUB_HEAD_REF` as the **empty
+ * string** on non-PR events rather than omitting it, so a raw read reports it
+ * present and keys the whole repository under one empty branch.
+ *
+ * Outside a runner there is no context to read either value from. The workspace
+ * falls back to the process's own directory, which is where the checkout would
+ * be anyway, and the branch to `""` — which {@link keySegments} hashes as a
+ * literal so every contextless run shares one key rather than each getting the
+ * digest of `""` by accident.
+ *
+ * One divergence from the chain this replaces, and it is an improvement rather
+ * than a cost: a **tag** push now keys under the tag name, where the old chain
+ * saw a ref that was not `refs/heads/*` and answered `""`. Every tag used to
+ * share the contextless bucket; each now gets its own, and depth 3 of
+ * {@link RESTORE_DEPTHS} drops the branch segment entirely, so the first run on
+ * a new tag still restores across from the branch it was cut from.
  */
-const branchName = (env: ActionEnvironmentShape): Effect.Effect<string> =>
-	Effect.gen(function* () {
-		const head = yield* env.getOptional("GITHUB_HEAD_REF");
-		if (Option.isSome(head)) return head.value;
-		const ref = yield* env.getOptional("GITHUB_REF");
-		return Option.match(ref, {
-			onNone: () => "",
-			onSome: (value) => (value.startsWith(REFS_HEADS) ? value.slice(REFS_HEADS.length) : ""),
-		});
-	});
+const context = (env: ActionEnvironmentShape): Effect.Effect<{ readonly workspace: string; readonly branch: string }> =>
+	env.github.pipe(
+		Effect.map((github) => ({ workspace: github.workspace, branch: github.branch })),
+		Effect.catch(() => Effect.sync(() => ({ workspace: process.cwd(), branch: "" }))),
+	);
 
 /**
  * Absorbs a failure into `fallback`, logging it as the {@link CacheError} it
@@ -164,16 +177,11 @@ export const restoreCache = (
 		const env = yield* ActionEnvironment;
 
 		// The workspace bounds lockfile discovery: nothing outside it is walked or
-		// hashed. Outside a runner there is no context to read it from, and the
-		// process's own directory is where the checkout would be anyway.
-		const workspace = yield* env.github.pipe(
-			Effect.map((context) => context.workspace),
-			Effect.catch(() => Effect.sync(() => process.cwd())),
-		);
+		// hashed, and the branch scopes the key to the ref that produced it.
+		const { workspace, branch } = yield* context(env);
 		const toolCacheBase = Option.getOrElse(yield* env.getOptional("RUNNER_TOOL_CACHE"), () =>
 			defaultToolCacheBase(process.platform),
 		);
-		const branch = yield* branchName(env);
 
 		const packageManagers = activePackageManagers(args.config);
 		// Biome rides along as a tool: it is versioned, tool-cached, and a version

@@ -13,8 +13,10 @@
  * @module steps/cache-config
  */
 
-import { createHash } from "node:crypto";
 import { posix, win32 } from "node:path";
+import { CacheKey } from "@effected/github-actions";
+import { filenamesFor } from "@effected/lockfiles";
+import { PackageManagerCache } from "@effected/npm";
 import { Option } from "effect";
 
 import type { PackageManagerName, RuntimeConfig } from "../schema/domain.js";
@@ -49,26 +51,45 @@ export const activePackageManagers = (config: RuntimeConfig): ReadonlyArray<Pack
 };
 
 /**
- * The lockfile patterns each package manager contributes.
+ * What each manager contributes to the key *beyond* its lockfile names.
  *
  * @remarks
- * Two of pnpm's three are not lockfiles at all — `pnpm-workspace.yaml` and
- * `.pnpmfile.cjs` change what an install resolves to just as a lockfile does,
- * so they belong in the key, and legacy put them here rather than inventing a
- * second list (oracle 1). They land in the `lockfiles` output as a consequence.
+ * None of these are lockfiles, which is why the kit does not know about them
+ * and this table still exists (upstream round 7's ruling: the lockfile names
+ * are the kit's, the workspace-config extras stay ours). They change what an
+ * install resolves to just as a lockfile does, so they belong in the key, and
+ * legacy put them alongside the lockfiles rather than inventing a second list
+ * (oracle 1). They land in the `lockfiles` output as a consequence.
  *
  * yarn's `.yarn/install-state.gz` is both an input to the key and a file the
  * cache archives, so a saved cache invalidates the key that saved it. Carried
  * over deliberately: the fixtures pin yarn PnP files as lockfiles, and the
  * self-invalidation costs a rebuild rather than correctness.
  */
-const LOCKFILES: Record<PackageManagerName, ReadonlyArray<string>> = {
-	npm: ["**/package-lock.json", "**/npm-shrinkwrap.json"],
-	pnpm: ["**/pnpm-lock.yaml", "**/pnpm-workspace.yaml", "**/.pnpmfile.cjs"],
-	yarn: ["**/yarn.lock", "**/.pnp.cjs", "**/.yarn/install-state.gz"],
-	bun: ["**/bun.lock", "**/bun.lockb"],
-	deno: ["**/deno.lock"],
+const WORKSPACE_CONFIG: Partial<Record<PackageManagerName, ReadonlyArray<string>>> = {
+	pnpm: ["pnpm-workspace.yaml", ".pnpmfile.cjs"],
+	yarn: [".pnp.cjs", ".yarn/install-state.gz"],
 };
+
+/**
+ * The lockfile patterns each package manager contributes.
+ *
+ * @remarks
+ * The names come from `@effected/lockfiles`' `filenamesFor`, primaries first,
+ * rather than from a table restated here — the kit is where "which files is
+ * this format spelled as" is settled, and it knows two this action's own table
+ * had to be told about (npm's `npm-shrinkwrap.json`, bun's legacy `bun.lockb`).
+ * Every name is globbed at any depth, which is this action's policy and not the
+ * kit's: a workspace package's lockfile counts as much as the root's.
+ *
+ * deno is not in the kit's vocabulary — `LockfileFormat` covers the four npm-
+ * ecosystem managers — so its one name stays local rather than being forced
+ * into a format that does not have a row for it.
+ */
+const DENO_LOCKFILES = ["deno.lock"] as const;
+
+const lockfileNames = (packageManager: PackageManagerName): ReadonlyArray<string> =>
+	packageManager === "deno" ? DENO_LOCKFILES : filenamesFor(packageManager);
 
 /**
  * Where a lockfile never counts, whatever it is named.
@@ -118,7 +139,13 @@ export const lockfilePatterns = (
 	packageManagers: ReadonlyArray<PackageManagerName>,
 	additional: ReadonlyArray<string>,
 ): ReadonlyArray<string> => [
-	...sorted(new Set(packageManagers.flatMap((packageManager) => LOCKFILES[packageManager]))),
+	...sorted(
+		new Set(
+			packageManagers.flatMap((packageManager) =>
+				[...lockfileNames(packageManager), ...(WORKSPACE_CONFIG[packageManager] ?? [])].map((name) => `**/${name}`),
+			),
+		),
+	),
 	...additional,
 	...LOCKFILE_EXCLUSIONS,
 ];
@@ -145,34 +172,40 @@ const pathFor = (platform: string) => (platform === "win32" ? win32 : posix);
  * detection: no fixture ever asserted a detected store path, and the step now
  * needs no spawner at all.
  *
+ * The four npm-ecosystem rows come from `@effected/npm`'s `PackageManagerCache`
+ * — a facts table with a cited authority per row — rather than from the verbatim
+ * legacy port that stood here, which had three wrong cells and so archived
+ * directories the manager never writes to: pnpm's macOS store is
+ * `~/Library/pnpm/store` and not the linux path; Classic's and Berry's caches
+ * were swapped *and* both misspelled (`~/.yarn/cache` was never either one); and
+ * bun uses `~/.bun/install/cache` on every platform, Windows included. A wrong
+ * cell costs a cold cache rather than a broken run, which is exactly why it
+ * survived a release — nothing fails, the archive is simply empty.
+ *
  * yarn contributes two because Berry and Classic disagree about where the cache
- * lives, and the manager's major version is not known here.
+ * lives and the manager's major version is not known here — the kit splits them
+ * into two literals and refuses a bare `yarn`, so asking for both is the only
+ * thing this call site *can* say. deno is out of the kit's vocabulary by scoping
+ * and stays local policy.
  */
 const storePaths = (packageManager: PackageManagerName, platform: string, home: string): ReadonlyArray<string> => {
-	const path = pathFor(platform);
-	const windows = platform === "win32";
+	const options = { platform, home };
 	switch (packageManager) {
 		case "npm":
-			return [windows ? path.join(home, "AppData", "Local", "npm-cache") : path.join(home, ".npm")];
 		case "pnpm":
-			return [
-				windows
-					? path.join(home, "AppData", "Local", "pnpm", "store")
-					: path.join(home, ".local", "share", "pnpm", "store"),
-			];
+		case "bun":
+			return [PackageManagerCache.defaultDirectory(packageManager, options)];
 		case "yarn":
 			return [
-				windows ? path.join(home, "AppData", "Local", "Yarn", "Cache") : path.join(home, ".yarn", "cache"),
-				windows ? path.join(home, "AppData", "Local", "Yarn", "Berry", "cache") : path.join(home, ".cache", "yarn"),
-			];
-		case "bun":
-			return [
-				windows
-					? path.join(home, "AppData", "Local", "bun", "install", "cache")
-					: path.join(home, ".bun", "install", "cache"),
+				PackageManagerCache.defaultDirectory("yarn-classic", options),
+				PackageManagerCache.defaultDirectory("yarn-berry", options),
 			];
 		case "deno":
-			return [windows ? path.join(home, "AppData", "Local", "deno") : path.join(home, ".cache", "deno")];
+			return [
+				platform === "win32"
+					? pathFor(platform).join(home, "AppData", "Local", "deno")
+					: pathFor(platform).join(home, ".cache", "deno"),
+			];
 	}
 };
 
@@ -300,19 +333,23 @@ export interface KeySegmentOptions {
  * than each getting the digest of `""` by accident.
  */
 export const keySegments = (options: KeySegmentOptions): readonly [string, ...ReadonlyArray<string>] => {
-	const versions = createHash("sha256");
-	if (Option.isSome(options.cacheBust)) versions.update(options.cacheBust.value);
-	for (const tool of [...options.tools].sort((left, right) => left.name.localeCompare(right.name))) {
-		versions.update(`${tool.name}:${tool.version}`);
-	}
-	versions.update(`${options.packageManager.name}:${options.packageManager.version}`);
+	// Concatenated and hashed once rather than fed to a streaming digest in the
+	// same order: sha256 does not care which, so the segment is byte-identical to
+	// the hand-rolled one it replaces, and `CacheKey.digest` owns the truncation
+	// that every other key segment in the kit is truncated by.
+	const versions = [
+		...Option.match(options.cacheBust, { onNone: () => [], onSome: (bust) => [bust] }),
+		...[...options.tools]
+			.sort((left, right) => left.name.localeCompare(right.name))
+			.map((tool) => `${tool.name}:${tool.version}`),
+		`${options.packageManager.name}:${options.packageManager.version}`,
+	].join("");
 
-	const branch = createHash("sha256").update(options.branch === "" ? "null" : options.branch);
 	return [
 		options.platform,
 		options.arch,
-		versions.digest("hex").slice(0, DIGEST_LENGTH),
-		branch.digest("hex").slice(0, DIGEST_LENGTH),
+		CacheKey.digest(versions, DIGEST_LENGTH),
+		CacheKey.digest(options.branch === "" ? "null" : options.branch, DIGEST_LENGTH),
 		Option.match(options.lockfileHash, {
 			onNone: () => EMPTY_LOCKFILE_SEGMENT,
 			onSome: (hash) => hash.slice(0, DIGEST_LENGTH),
