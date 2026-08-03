@@ -18,9 +18,34 @@ jobs:
         working-directory: __fixtures__/turbo-monorepo
     steps:
       - uses: actions/checkout@v7
+      # `install-deps: false` because a `uses:` step does not honour
+      # `defaults.run.working-directory` — the action always executes at
+      # GITHUB_WORKSPACE. Left on, its install step would install the *action
+      # repo's* dependencies, which is never what this workflow wanted; the
+      # fixture is installed by its own `run:` step below, which does honour the
+      # default. Turbo detection and the cache server are unaffected.
       - uses: ./.github/actions/local
+        id: setup
         with:
           turbo-cache: auto
+          install-deps: "false"
+      # The greps below prove turbo got a cache; this proves the *action* said
+      # which one and where. Values go through `env` rather than being
+      # interpolated into the script, so the assertion cannot become an
+      # injection if an output ever carries something unexpected.
+      - name: Assert the reported backend and port
+        env:
+          BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
+          PORT: ${{ steps.setup.outputs.turbo-cache-port }}
+        run: |
+          [ "$BACKEND" = "github" ] || { echo "Expected backend 'github', got '$BACKEND'"; exit 1; }
+          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+      # A `run:` step *does* honour the working-directory default, so this is
+      # the fixture's own install — its pnpm-workspace.yaml makes it a workspace
+      # root, so pnpm stops there and never sees the repo root's overrides. The
+      # action has already put node and pnpm on PATH via GITHUB_PATH.
+      - name: Install fixture dependencies
+        run: pnpm install --frozen-lockfile
       - name: First build (populates remote cache)
         run: pnpm exec turbo run build --remote-only
       - name: Clear local turbo state
@@ -43,9 +68,22 @@ jobs:
         working-directory: __fixtures__/turbo-monorepo
     steps:
       - uses: actions/checkout@v7
+      # See the note in the double-build job: the action runs at the repo root,
+      # so its own install is disabled and the fixture installs itself below.
       - uses: ./.github/actions/local
+        id: setup
         with:
           turbo-cache: auto
+          install-deps: "false"
+      - name: Assert the reported backend and port
+        env:
+          BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
+          PORT: ${{ steps.setup.outputs.turbo-cache-port }}
+        run: |
+          [ "$BACKEND" = "github" ] || { echo "Expected backend 'github', got '$BACKEND'"; exit 1; }
+          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+      - name: Install fixture dependencies
+        run: pnpm install --frozen-lockfile
       - name: Build on a cold runner (must hit cache populated by the prior job)
         run: |
           OUT=$(pnpm exec turbo run build --remote-only)
@@ -77,13 +115,24 @@ jobs:
           docker run --rm --network host --entrypoint sh minio/mc -c \
             "mc alias set m http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing m/turbo-cache"
       - uses: ./.github/actions/local
+        id: setup
         with:
           turbo-cache: auto
+          install-deps: "false"
           turbo-s3-bucket: turbo-cache
           turbo-s3-region: us-east-1
           turbo-s3-endpoint: http://127.0.0.1:9000
           turbo-s3-access-key-id: minioadmin
           turbo-s3-secret-access-key: minioadmin
+      - name: Assert the reported backend and port
+        env:
+          BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
+          PORT: ${{ steps.setup.outputs.turbo-cache-port }}
+        run: |
+          [ "$BACKEND" = "s3" ] || { echo "Expected backend 's3', got '$BACKEND'"; exit 1; }
+          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+      - name: Install fixture dependencies
+        run: pnpm install --frozen-lockfile
       - name: First build (populates S3)
         run: pnpm exec turbo run build --remote-only
       - name: Clear local turbo state
@@ -92,4 +141,80 @@ jobs:
         run: |
           OUT=$(pnpm exec turbo run build --remote-only)
           echo "$OUT"
-          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected an S3 remote cache hit"; exit 1; }
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected an S3 cache hit"; exit 1; }
+
+  # A `secrets` context cannot be read from a job-level `if:` at all — the
+  # expression is evaluated before secrets are available to the job — so
+  # presence has to become a job *output* first. This one-step gate is the
+  # standard way to spell that, and it never prints the secret: only whether it
+  # was non-empty.
+  real-s3-configured:
+    name: Check real-S3 credentials
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Report whether the org S3 secrets are available
+        id: check
+        env:
+          BUCKET: ${{ secrets.TURBO_S3_BUCKET }}
+          REGION: ${{ secrets.TURBO_S3_REGION }}
+        run: |
+          # Both, not just the bucket: an S3 request is signed per region, so a
+          # bucket without one produces a job that runs, spawns a server and
+          # fails every cache write against a misconfigured signer — a red that
+          # says nothing about this action. Skipping is the honest answer to a
+          # half-configured repository.
+          if [ -n "$BUCKET" ] && [ -n "$REGION" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "TURBO_S3_BUCKET and TURBO_S3_REGION are not both set — skipping the real-S3 job." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Job 4: the same double build against a real S3-compatible service, so the
+  # signing path is proven against something other than MinIO. Forks and any
+  # repository without the org secrets skip it rather than failing.
+  real-s3-double-build:
+    name: S3 backend double build (real S3)
+    needs: real-s3-configured
+    if: needs.real-s3-configured.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: __fixtures__/turbo-monorepo
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/local
+        id: setup
+        with:
+          turbo-cache: auto
+          install-deps: "false"
+          # Namespaced per run so a rerun cannot be satisfied by the previous
+          # run's artifacts — the assertion is that *this* job's first build
+          # populated the bucket its second build read.
+          turbo-cache-prefix: ci/${{ github.run_id }}-${{ github.run_attempt }}/
+          turbo-s3-bucket: ${{ secrets.TURBO_S3_BUCKET }}
+          turbo-s3-region: ${{ secrets.TURBO_S3_REGION }}
+          turbo-s3-endpoint: ${{ secrets.TURBO_S3_ENDPOINT }}
+          turbo-s3-access-key-id: ${{ secrets.TURBO_S3_ACCESS_KEY_ID }}
+          turbo-s3-secret-access-key: ${{ secrets.TURBO_S3_SECRET_ACCESS_KEY }}
+      - name: Assert the reported backend and port
+        env:
+          BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
+          PORT: ${{ steps.setup.outputs.turbo-cache-port }}
+        run: |
+          [ "$BACKEND" = "s3" ] || { echo "Expected backend 's3', got '$BACKEND'"; exit 1; }
+          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+      - name: Install fixture dependencies
+        run: pnpm install --frozen-lockfile
+      - name: First build (populates the bucket)
+        run: pnpm exec turbo run build --remote-only
+      - name: Clear local turbo state
+        run: rm -rf .turbo node_modules/.cache/turbo **/.turbo
+      - name: Second build (must be a real-S3 cache hit)
+        run: |
+          OUT=$(pnpm exec turbo run build --remote-only)
+          echo "$OUT"
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a real-S3 cache hit"; exit 1; }

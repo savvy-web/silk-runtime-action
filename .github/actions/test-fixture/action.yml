@@ -418,19 +418,28 @@ runs:
 
             def check_value(key: str, actual: str, expected: str) -> None:
                 global failed
-                # Skip if no actual value
-                if not actual:
+                # Skip if nothing was asserted. An empty `expected` is the deliberate
+                # opt-out that lets a fixture leave any of these assertions off -- every
+                # expected-* input defaults to empty -- so it stays a skip; a non-empty
+                # actual is still recorded for the report.
+                if not expected:
+                    if actual:
+                        results[key] = {
+                            "actual": actual,
+                            "expected": expected,
+                            "status": "info",
+                        }
                     return
 
-                # Determine status
-                if expected:
-                    if actual == expected:
-                        status = "passed"
-                    else:
-                        status = "failed"
-                        failed = True
+                # An empty actual used to return before reaching the comparison, so a
+                # fixture asserting a version against an output the action had stopped
+                # publishing recorded no result rather than a failure. It falls through
+                # now: an empty string cannot equal a non-empty expected.
+                if actual == expected:
+                    status = "passed"
                 else:
-                    status = "info"
+                    status = "failed"
+                    failed = True
 
                 # Add to results
                 results[key] = {
@@ -441,40 +450,50 @@ runs:
 
             def check_contains(key: str, actual: str, expected: str) -> None:
                 global failed
-                # Skip if no actual value
-                if not actual:
+                # Skip if nothing was asserted. An empty `expected` is the deliberate
+                # opt-out that lets a fixture leave any of these assertions off, so it
+                # stays a skip; a non-empty actual is still recorded for the report.
+                if not expected:
+                    if actual:
+                        results[key] = {
+                            "actual": actual,
+                            "expected": expected,
+                            "status": "info",
+                        }
                     return
 
-                # Determine status - check if all expected items are in actual
-                if expected:
-                    # Parse both actual and expected as comma-separated lists
-                    actual_items = [item.strip() for item in actual.split(",") if item.strip()]
-                    expected_items = [item.strip() for item in expected.split(",") if item.strip()]
+                # An empty actual used to return before reaching any comparison, so a
+                # fixture that asserted lockfiles and got an empty output back recorded
+                # nothing at all -- the emptied-output regression these assertions exist
+                # to catch passed as quietly as a match. It falls through now, where an
+                # empty item list makes every expected item missing by definition.
 
-                    # Check if each expected item is found in any actual item
-                    # This allows matching "custom.lock" against "/path/to/custom.lock"
-                    # or "**/build" against "**/build"
-                    missing_items = []
-                    for exp_item in expected_items:
-                        found = False
-                        for act_item in actual_items:
-                            # Check exact match first, then substring match
-                            if exp_item == act_item or exp_item in act_item:
-                                found = True
-                                break
-                        if not found:
-                            missing_items.append(exp_item)
+                # Parse both actual and expected as comma-separated lists
+                actual_items = [item.strip() for item in actual.split(",") if item.strip()]
+                expected_items = [item.strip() for item in expected.split(",") if item.strip()]
 
-                    if not missing_items:
-                        status = "passed"
-                    else:
-                        status = "failed"
-                        failed = True
-                        print(f"::error::{key}: Missing expected items: {', '.join(sorted(missing_items))}")
-                        print(f"::error::{key}: Expected items: {', '.join(sorted(expected_items))}")
-                        print(f"::error::{key}: Actual items: {', '.join(sorted(actual_items))}")
+                # Check if each expected item is found in any actual item
+                # This allows matching "custom.lock" against "/path/to/custom.lock"
+                # or "**/build" against "**/build"
+                missing_items = []
+                for exp_item in expected_items:
+                    found = False
+                    for act_item in actual_items:
+                        # Check exact match first, then substring match
+                        if exp_item == act_item or exp_item in act_item:
+                            found = True
+                            break
+                    if not found:
+                        missing_items.append(exp_item)
+
+                if not missing_items:
+                    status = "passed"
                 else:
-                    status = "info"
+                    status = "failed"
+                    failed = True
+                    print(f"::error::{key}: Missing expected items: {', '.join(sorted(missing_items))}")
+                    print(f"::error::{key}: Expected items: {', '.join(sorted(expected_items))}")
+                    print(f"::error::{key}: Actual items: {', '.join(sorted(actual_items))}")
 
                 # Add to results
                 results[key] = {

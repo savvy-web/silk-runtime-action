@@ -7,6 +7,7 @@
 		"type": "git",
 		"url": "git+https://github.com/savvy-web/silk-runtime-action.git"
 	},
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"build": "turbo run build:prod --log-order=grouped",
@@ -30,11 +31,25 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:effect",
+		"@effected/commands": "^0.2.0",
+		"@effected/git": "^0.5.1",
+		"@effected/github": "^0.2.1",
+		"@effected/github-actions": "^0.3.0",
+		"@effected/glob": "^0.2.1",
 		"@effected/jsonc": "^0.5.1",
-		"@savvy-web/github-action-effects": "^3.1.0",
+		"@effected/lockfiles": "^0.2.3",
+		"@effected/markdown": "^0.4.1",
+		"@effected/npm": "^0.7.0",
+		"@effected/package-json": "^0.7.0",
+		"@effected/runtimes": "^0.2.2",
+		"@effected/sbom": "^0.2.1",
+		"@effected/semver": "^0.3.0",
+		"@effected/workspaces": "^0.9.2",
+		"@effected/yaml": "^0.6.0",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
+		"@effect/vitest": "catalog:effect",
 		"@savvy-web/github-action-builder": "^2.1.1",
 		"@savvy-web/silk": "^3.2.11",
 		"@vitest-agent/plugin": "^2.0.10"

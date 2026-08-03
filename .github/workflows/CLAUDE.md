@@ -23,6 +23,15 @@ test coverage:
 * **test-node-restore-cache** - Node.js tests restoring from cache
 * **summary** - Aggregates test results and reports overall status
 
+### [test-turbo-cache.yml](test-turbo-cache.yml)
+
+Exercises the embedded Turbo remote-cache server end to end: a within-job
+double build on the GitHub backend, a cross-job cache hit, an S3 backend run
+against MinIO, and a real-S3 job gated on the `TURBO_S3_*` secrets being
+present. Fixtures install their own dependencies in `run:` steps
+(`install-deps: "false"`) because `uses:` steps always execute at the
+repository root.
+
 ## Reusable Composite Actions
 
 ### [test-fixture](../actions/test-fixture/action.yml)
@@ -102,7 +111,7 @@ test-node:
     matrix:
       include:
         - name: NPM
-          fixture: node-minimal
+          fixture: node-npm
           expected-package-manager: npm
           title: "NPM Test Results"
 
@@ -255,6 +264,6 @@ as a GitHub step summary.
 
 * [Root CLAUDE.md](../../CLAUDE.md) - Repository overview
 * [**fixtures**/CLAUDE.md](../../__fixtures__/CLAUDE.md) - Available test fixtures
-* [src/CLAUDE.md](../../src/CLAUDE.md) - Source code architecture and co-located unit tests
+* [src/CLAUDE.md](../../src/CLAUDE.md) - Source code architecture (unit tests live in `__test__/unit/`)
 * [GitHub Actions Documentation](https://docs.github.com/en/actions) - GitHub Actions reference
 * [nektos/act](https://github.com/nektos/act) - Run GitHub Actions locally

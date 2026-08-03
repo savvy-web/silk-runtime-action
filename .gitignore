@@ -40,3 +40,6 @@ CLAUDE.local.md
 .claude/plugins-debug.log
 # Superpowers working docs (specs, plans) — kept local, not tracked
 docs/superpowers/
+
+# dogfood mailbox (local-only cross-repo collaboration state)
+.claude/dogfood/
