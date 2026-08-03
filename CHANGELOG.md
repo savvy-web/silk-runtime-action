@@ -1,5 +1,61 @@
 # @savvy-web/silk-runtime-action
 
+## 1.3.0
+
+### Features
+
+* Rebuilt the action's internals on the `@effected/*` Effect v4 suite (`github-actions` 0.3.0, `npm` 0.7.0, `package-json` 0.7.0, `semver` 0.3.0), replacing `@savvy-web/github-action-effects`. The public interface is unchanged — same inputs, outputs, and `devEngines` contract, and the same job summary and log output. Consuming repos require no changes.
+
+  ### Package managers provisioned without Corepack
+
+  Package managers are now installed directly into the tool cache. Corepack has been removed from the install path and is no longer required in consuming repos.
+
+  ### Hardened dependency cache key
+
+  The dependency cache key now includes a CPU-architecture segment, and a partial cache hit falls back through a hardened two-rung restore ladder.
+
+  ### Turbo remote-cache server hardening
+
+  The embedded Turbo remote-cache server is more resilient:
+
+  * A per-run random auth token fails closed instead of accepting unauthenticated requests
+  * `SIGTERM` triggers a graceful teardown so in-flight artifact writes are not lost
+  * `EADDRINUSE` on the chosen port is handled instead of crashing the job
+
+  ### Runtimes visible to lifecycle scripts
+
+  Lifecycle scripts such as `postinstall` now see the installed runtimes and package manager on `PATH`. This fixes failures in consuming repos whose `postinstall` invokes `bun` or `deno`.
+
+### Bug Fixes
+
+* Windows package manager shims are now invoked safely, mitigating CVE-2024-27980 [#206][#206]
+
+### Dependencies
+
+* | Dependency                       | Type       | Action  | From   | To     |                                                                       |
+  | -------------------------------- | ---------- | ------- | ------ | ------ | --------------------------------------------------------------------- |
+  | @savvy-web/github-action-effects | dependency | removed | ^3.1.0 | —      |                                                                       |
+  | @effected/commands               | dependency | added   | —      | ^0.2.0 |                                                                       |
+  | @effected/git                    | dependency | added   | —      | ^0.5.1 |                                                                       |
+  | @effected/github                 | dependency | added   | —      | ^0.2.1 |                                                                       |
+  | @effected/github-actions         | dependency | added   | —      | ^0.3.0 |                                                                       |
+  | @effected/glob                   | dependency | added   | —      | ^0.2.1 |                                                                       |
+  | @effected/lockfiles              | dependency | added   | —      | ^0.2.3 |                                                                       |
+  | @effected/markdown               | dependency | added   | —      | ^0.4.1 |                                                                       |
+  | @effected/npm                    | dependency | added   | —      | ^0.7.0 |                                                                       |
+  | @effected/package-json           | dependency | added   | —      | ^0.7.0 |                                                                       |
+  | @effected/runtimes               | dependency | added   | —      | ^0.2.2 |                                                                       |
+  | @effected/sbom                   | dependency | added   | —      | ^0.2.1 |                                                                       |
+  | @effected/semver                 | dependency | added   | —      | ^0.3.0 |                                                                       |
+  | @effected/workspaces             | dependency | added   | —      | ^0.9.2 |                                                                       |
+  | @effected/yaml                   | dependency | added   | —      | ^0.6.0 | [#206][#206] Thanks [@spencerbeggs](https://github.com/spencerbeggs)! |
+
+### Patch Changes
+
+Thanks to [@spencerbeggs](https://github.com/spencerbeggs) for their contributions!
+
+[#206]: https://github.com/savvy-web/silk-runtime-action/pull/206
+
 ## 1.2.3
 
 ### Dependencies
