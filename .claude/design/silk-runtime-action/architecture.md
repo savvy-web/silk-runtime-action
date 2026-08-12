@@ -36,7 +36,7 @@ Top-level architecture of the Effect-based GitHub Action that sets up JavaScript
 
 The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
 
-Built on Effect v4 (`effect@4.0.0-beta.101` via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `@effected/npm`, `@effected/semver` and `@effected/jsonc`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
+Built on Effect v4 (`effect@4.0.0-beta.107` via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `@effected/npm`, `@effected/semver` and `@effected/jsonc`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
 
 **Design principles:**
 

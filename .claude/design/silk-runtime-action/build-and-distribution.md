@@ -114,7 +114,7 @@ runs:
 
 | Package | Role |
 | --- | --- |
-| `effect` (`catalog:effect` → `4.0.0-beta.101`) | The framework. In v4 the former `@effect/platform` is dissolved into core `effect` |
+| `effect` (`catalog:effect` → `4.0.0-beta.107`) | The framework. In v4 the former `@effect/platform` is dissolved into core `effect` |
 | `@effect/platform-node` | Node platform layers (`NodeFileSystem`, `NodeHttpClient.layerUndici`) |
 | `@effected/github-actions` (`^0.3.0`) | Every GitHub Actions runtime interaction |
 | `@effected/npm` (`^0.7.0`) | `PackageManagerPin` |
