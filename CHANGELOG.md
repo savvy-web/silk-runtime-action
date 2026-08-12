@@ -1,5 +1,20 @@
 # @savvy-web/silk-runtime-action
 
+## 1.3.4
+
+### Dependencies
+
+* | Dependency           | Type       | Action  | From    | To      |                                                                              |
+  | -------------------- | ---------- | ------- | ------- | ------- | ---------------------------------------------------------------------------- |
+  | @effected/lockfiles  | dependency | updated | ^0.4.0  | ^0.4.1  |                                                                              |
+  | @effected/markdown   | dependency | updated | ^0.5.0  | ^0.5.1  |                                                                              |
+  | @effected/workspaces | dependency | updated | ^0.11.1 | ^0.11.2 |                                                                              |
+  | @effected/yaml       | dependency | updated | ^0.7.0  | ^0.8.0  | [#230][#230] Thanks [@savvy-web-bot](https://github.com/apps/savvy-web-bot)! |
+
+### Patch Changes
+
+[#230]: https://github.com/savvy-web/silk-runtime-action/pull/230
+
 ## 1.3.3
 
 ### Dependencies
