@@ -154,7 +154,7 @@ Classification helpers are written to be **exhaustive by construction**. `setup-
 | `installDependencies` | Fatal, no timeout, no retry |
 | `installBiome` | Fails typed; `program.ts` catches at the call site and folds `Option.none()` |
 | `startTurboCache` | Self-catching: `Effect.catch` + `Effect.catchDefect` → `DISABLED` |
-| `writeSummary` | Self-catching: render and write both degrade to a warning |
+| `writeSummary` | Self-catching: the write degrades to a warning; the render is total (effected#239) |
 | `post` | Two independent inner catches, plus an outer `catch` + `catchDefect` |
 
 `main` has **no** `catchDefect`: a defect is a bug in this action and failing the job is the correct outcome. `post` keeps one because a post-action failure must never fail a workflow whose work already succeeded.

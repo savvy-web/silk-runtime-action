@@ -107,11 +107,11 @@ Every stage collapses into one `RuntimeInstallError` carrying the runtime and ve
 ```text
 bun | deno  -> complete no-op ("<name> is its own package manager, no additional setup needed")
 otherwise   -> PackageManagerPin.parse(`${name}@${version}`)
-               PackageManagerInstaller.install(pin)
-               source === "tool-cache" ? ActionOutputs.addPath(installed.binDir) : (ambient, already on PATH)
+               PackageManagerInstaller.install(pin, { allowAmbient: false })
+               source === "tool-cache" ? ActionOutputs.addPath(installed.binDir) : (ambient — unreachable, arm kept)
 ```
 
-The whole corepack apparatus v1 carried is **gone**: no `corepack enable`, no `corepack prepare --activate`, no `sudo npm install -g`, no `~/.npm` chown, no tmpdir cwd to dodge `pnpm-workspace.yaml` hangs, no Node-25 corepack bootstrap, no stale-shim retry. `PackageManagerInstaller` owns all of it, including the npm ambient short-circuit.
+The whole corepack apparatus v1 carried is **gone**: no `corepack enable`, no `corepack prepare --activate`, no `sudo npm install -g`, no `~/.npm` chown, no tmpdir cwd to dodge `pnpm-workspace.yaml` hangs, no Node-25 corepack bootstrap, no stale-shim retry. `PackageManagerInstaller` owns all of it. Its npm ambient short-circuit is suppressed here with `allowAmbient: false` (see the PATH section below), so every manager arrives from its exact pin.
 
 The pin string is assembled from `devEngines` and handed to `PackageManagerPin.parse`, which owns the `<name>@<version>[+<integrity>]` grammar — a `devEngines` version may carry an integrity tail (`10.20.0+sha512.…`) and the first `+` always begins integrity, so the split is the pin's to make. `install` runs with default options; `requireIntegrity` stays **off** because in-the-wild pins routinely carry no hash, and the installer already warns when one does not.
 
@@ -180,7 +180,13 @@ The runtimes are in the list because **the install is not a leaf**. A package ma
 
 The manager is still spawned by **bare name** with its directory prepended, rather than by absolute path, for the same reason: children inherit `PATH`, not the absolute path their parent was invoked with.
 
-**One ruled exception — ambient npm shadowing.** `PackageManagerInstaller` short-circuits an already-satisfied npm without caching anything, so it reports no `binDir` and contributes nothing to the list — while node's own bin directory does, carrying the npm bundled with the pinned node. The install child therefore runs *that* npm rather than the ambient one it was told was good enough, and `addPath` gives later steps the same answer. This is the intended reading ("the npm belonging to the node you pinned"), it matches v1's effective semantics, and no fixture asserts which npm executes — the fixture versions coincide, so the matrix structurally cannot catch it. Upstream now offers `allowAmbient: false`, which would make the executed npm provably the pinned one at the cost of always installing; the ruling is to keep the default (legacy parity) and revisit at a hardening pass.
+**The npm exception, now closed (issue #220).** `setupPackageManager` passes `allowAmbient: false`, so no manager reaches this list without a `binDir` and the head is always the pinned manager. That reverses an earlier ruling, and the reason is that the ruling described a rule the code did not actually implement.
+
+The old shape: `PackageManagerInstaller` probed the runner's npm with `npm --version` and, on an exact match, short-circuited without caching — reporting no `binDir`, so it contributed nothing to the list while node's own bin directory did, carrying the npm *bundled with* the pinned node. That was defended as "the npm belonging to the node you pinned." But it only held when the probe **hit**. On a **miss** the installer tool-cached the pin, its `binDir` led, and the pinned npm ran. So which npm executed was a function of the runner image's npm version — the pin honoured on a miss and quietly dropped on a hit, and the `package-manager-version` output (an echo of the request, ruling 47) reporting the pin either way. For an action whose premise is "absolute versions only, so builds are reproducible," that is the wrong non-determinism to keep, and the kit's own docstring names this repo's case: the probe interrogates the runner's npm, whose match can diverge from the npm that executes once the pinned node shadows it.
+
+Suppressing the probe makes npm behave like every other tool here — node, bun, deno, pnpm and yarn are all installed to their exact pin, npm was the lone short-circuit — and costs one small tarball on runs where the runner's npm happened to match. The rule the list implements is now uniform: **the manager you pinned leads**.
+
+The "no fixture asserts which npm executes" gap closed with it. The integration matrix structurally cannot catch this (its fixture versions coincide), so the coverage is a unit fixture: `program.test.ts`'s *runs the pinned npm, not the one bundled with the pinned node*, whose `PackageManagerInstaller` double reproduces the installer's own ambient branch. Drop the option and the double answers `ambient`, the pinned npm falls out of the list, and the case fails on the real symptom.
 
 ### 3. Windows `.cmd` shims need `shell: true`
 

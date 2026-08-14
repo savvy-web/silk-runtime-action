@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { ActionLogger, ActionOutputError, ActionOutputs } from "@effected/github-actions";
-import { Effect, Layer, Logger, Option } from "effect";
+import { Cause, Effect, Exit, Layer, Logger, Option } from "effect";
 import type { OutputsModel } from "../../../src/schema/outputs.js";
 import { initialOutputs } from "../../../src/schema/outputs.js";
 import { CacheState } from "../../../src/state.js";
@@ -161,20 +161,23 @@ describe("writeSummary", () => {
 		}).pipe(Effect.provide(layer));
 	});
 
-	it.effect("degrades a failed render to a warning, without attempting a write", () => {
-		const { panels, logs, layer } = harness();
+	it.effect("does not degrade a smuggled-past-the-types cache state, which is a defect", () => {
+		const { panels, layer } = harness();
 		return Effect.gen(function* () {
-			// A cache state whose `lockfiles` is not an array is unreachable through
-			// the schema, so the render throw is provoked the only way a defect can
-			// actually arrive here: a value smuggled past the types.
+			// The counterpart to the deleted render-degradation case (effected#239).
+			// Renders cannot fail, so the `Effect.try` that used to sit here was
+			// catching nothing it was written for — and this, which it was not: a
+			// `CacheState` whose `lockfiles` is not an array, unreachable through the
+			// schema. The wrapper turned that impossible state into a warning nobody
+			// reads. It dies now, which is what an impossible state deserves, and this
+			// case is what stops the wrapper being reinstated to "fix" it.
 			const broken = { primaryKey: "k", restoredKey: Option.none(), lockfiles: null } as unknown as CacheState;
 			const exit = yield* writeSummary(facts({ cache: broken })).pipe(Effect.exit);
-			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("Failed to render job summary: ");
+			expect(exit._tag).toBe("Failure");
+			// A defect, not the step's typed failure: `SummaryError` no longer has an
+			// arm that could carry this.
+			expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
 			expect(panels).toHaveLength(0);
-			// Ruling 53: the render arm is new — v1 covered only the write and a
-			// render throw took the job down.
-			expect(logs).toContain("Dependencies: installed");
 		}).pipe(Effect.provide(layer));
 	});
 });

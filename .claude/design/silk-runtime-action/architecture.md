@@ -178,7 +178,7 @@ Before step 1 the program sets four variables **on this process only** — `NPM_
 - `onInstallPath(pm, runtimes)` — when the package manager *is* one of the installed runtimes (bun, deno), the PM step reports no `binDir` because the runtime install owns that binary. This fills it in from the matching `InstalledRuntime.path`. A manager that already knows where it is keeps its answer.
 - `installPathPrepends(pm, runtimes)` — the ordered, de-duplicated directory list the dependency install's child process searches: the manager's bin directory first, then every installed runtime. The runtimes are not optional garnish; a `postinstall` script running `deno install` inherits the install child's `PATH`, and omitting them produced `deno: not found` on every runner in a multi-runtime workspace.
 
-See [runtime installation](./runtime-installation.md) for the full PATH story, including the ruled npm-ambient shadowing case.
+See [runtime installation](./runtime-installation.md) for the full PATH story, including the closed npm-ambient shadowing case.
 
 ### Error model
 
@@ -195,7 +195,7 @@ There is **no central `ActionError` union and no `errors/` module**. Each step e
 | `InstallError` | `install-dependencies` | `spawn`, `exit-code` |
 | `BiomeInstallError` | `install-biome` | `detect`, `download`, `cache` |
 | `TurboCacheError` | `turbo-cache` | `spawn`, `readiness` |
-| `SummaryError` | `summary` | `render`, `write` |
+| `SummaryError` | `summary` | `write` |
 
 Several of these are declared on a signature and never raised. That is deliberate: the error type is the shape a failure is *logged as*, and keeping it on the contract leaves room for a genuinely unexpected case without making today's tolerance a lie.
 
