@@ -115,7 +115,8 @@ main — program.ts "Start turbo remote cache" group (LAST in the pipeline)
                     DetachedProcess.spawn({ command: process.execPath,
                                             args: [serverEntry], logFile, env })
                     ActionState.save(turboServer, TurboServerState)   # BEFORE the probe
-                    DetachedProcess.awaitReady(readinessProbe(port))
+                    DetachedProcess.awaitReady(                        # via ops seam
+                      DetachedProcess.httpProbe(.../v8/artifacts/status))
                       ready     -> export TURBO_API / TURBO_TOKEN / TURBO_TEAM
                       exhausted -> logError, continue WITHOUT a remote cache
 
@@ -192,7 +193,9 @@ Three things happen, all before anything is spawned:
 
 1. **Masking is unconditional and runs before the activation table.** A secret a workflow supplied is worth redacting whether or not the resolution uses it: a run setting `turbo-s3-secret-access-key` alongside passthrough credentials resolves to Vercel and never touches S3, and would otherwise carry an unmasked key through a job that logs its environment.
 2. **`turbo-s3-access-key-id` is masked too**, which v1 did not do. It is the least sensitive of the four and pairing it with the secret it authenticates alongside costs nothing.
-3. **Declassification goes through `Secret.*`, never `Redacted.value`.** `Secret.forSigning` masks first and returns plaintext — for the two mask-only calls the plaintext is deliberately discarded. `Secret.forChildEnv(record)` masks the whole set before returning any of it, and is the one sanctioned way a `Redacted` becomes a child's environment variable. `Secret.forRunnerFile` covers the passthrough token on its way to `exportVariable`.
+3. **Masking and declassification both go through `Secret.*`, never `Redacted.value`.** `Secret.mask` registers a value with the log filter and returns nothing — that is the mask-only call, and this repo's call site is why the member exists. `Secret.forSigning` masks first and *then* returns plaintext, for a value that is genuinely about to be used. `Secret.forChildEnv(record)` masks the whole set before returning any of it, and is the one sanctioned way a `Redacted` becomes a child's environment variable. `Secret.forRunnerFile` covers the passthrough token on its way to `exportVariable`.
+
+**`Secret.adopt` is deliberately not used, and it will keep looking like it should be.** The kit ships it as the far side of a handoff — re-wrapping a plaintext environment variable — which is exactly the shape of `server-config.ts`'s `Redacted.make(read(env, …))` calls in the detached worker. It is the wrong fit twice over, and both reasons are invisible from the signature. First, `adopt` is a `Config`, so it assumes an effectful reader; `readServerConfig` is deliberately pure, takes the environment as a *parameter*, and is tested by passing a plain record with no runtime — adopting it would make the cache server's boot path effectful and take that suite with it. Second, `adopt`'s contract is that a missing **or empty** value fails as a `ConfigError` naming the variable, which reverses the ruling directly above: an empty credential is passed through so the S3 backend can report its own misconfiguration with the bucket and the failed request's status, which beats anything synthesized here. Raised with the kit and accepted upstream; the residual ask — a `Result`-shaped primitive over `string | undefined` — was logged as a data point, not built.
 
 The embedded credential is a **fresh `randomUUID` per run**, replacing v1's constant compiled into the source. It is simultaneously the server's `expectedToken` and the `TURBO_TOKEN`/`TURBO_TEAM` turbo authenticates with, so both sides come from one value and a leaked build no longer discloses every runner's cache credential.
 

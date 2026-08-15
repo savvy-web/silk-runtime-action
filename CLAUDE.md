@@ -157,6 +157,12 @@ All in-progress work lands on the long-lived **`dev`** branch, never directly on
 4. Merging the release PR triggers **Phase 3** — publish, Git tags, GitHub release.
 5. The published release fires `release-sync.yml`.
 
+**`Closes #N` does not fire on a merge into `dev`.** GitHub auto-closes a linked issue only
+when the PR merges into the **default branch**, and ordinary work here targets `dev` — so
+close the issue by hand after merging, with a pointer to the merge commit. Keep the trailer
+in the PR body anyway: it still links the issue in the UI, and it is what fires later when
+`dev` reaches `main`. Two issues were left silently open this way before it was noticed.
+
 **`release-sync.yml`** — on `release: [published]` (plus `workflow_dispatch` with `tag` +
 `dry-run`), as the GitHub App bot so its pushes bypass protection without recursing. On a
 **stable SemVer release `>= 1.0.0`** (bare `MAJOR.MINOR.PATCH`) it moves the **`v<major>`**

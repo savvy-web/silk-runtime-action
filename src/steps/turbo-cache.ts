@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ActionOutputError } from "@effected/github-actions";
+import type { ActionOutputError, DetachedProcessOps } from "@effected/github-actions";
 import { ActionOutputs, ActionState, DetachedProcess, Secret } from "@effected/github-actions";
 import type { Redacted } from "effect";
 import { Data, Effect, Option } from "effect";
+import type { HttpClient } from "effect/unstable/http";
 
 import type { Inputs } from "../schema/inputs.js";
 import { STATE_KEYS, TurboServerState } from "../state.js";
@@ -38,39 +39,31 @@ export class TurboCacheError extends Data.TaggedError("TurboCacheError")<{
 	readonly cause?: unknown;
 }> {}
 
-/**
- * The two `DetachedProcess` operations the `main` phase performs, as an
- * injectable seam.
- *
- * @remarks
- * `DetachedProcess`' members are **statics on a class**, not a service, so
- * there is no layer to swap and no `R` position to inject through. That is the
- * right shape for the kit — a detached child has no scope to hang a service off
- * — but it leaves this step with two operations a unit test must not perform
- * for real: `spawn` starts a node process that outlives the test run, and
- * `awaitReady` polls a port for six seconds before giving up.
- *
- * The seam is therefore a **defaulted field on the params object**, matching
- * `installRuntimes`' `host` and `installDependencies`' `platform`: no caller
- * passes it, the production path is the kit's own statics, and `R` is
- * unchanged — which is the point. A service wrapper would have put a
- * repository-local service into every consumer's layer composition and into
- * `PostLive` as well, to make two functions overridable.
- *
- * `reap` is absent because it belongs to the *other* phase; `post.ts` carries
- * its own seam for the same reason.
- */
-export interface DetachedProcessOps {
-	readonly spawn: typeof DetachedProcess.spawn;
-	readonly awaitReady: typeof DetachedProcess.awaitReady;
-}
-
 /** Everything {@link startTurboCache} decides from. */
 export interface StartTurboCacheArgs {
 	readonly inputs: Inputs;
 	/** Whether `turbo.json` was detected — rule R1's first half. */
 	readonly turbo: { readonly enabled: boolean };
-	/** The detached-process operations, defaulting to the kit's. See {@link DetachedProcessOps}. */
+	/**
+	 * The detached-process operations, defaulting to `DetachedProcess.ops`.
+	 *
+	 * @remarks
+	 * The kit's own seam now (effected#240), replacing the two-member interface
+	 * this module used to declare. `DetachedProcess`' members are statics on a
+	 * class rather than a service — the right shape, since a child that outlives
+	 * the process holding its handle has no scope to hang a service off — so
+	 * there is no layer to swap and the seam has to be parameter injection.
+	 *
+	 * Still a **defaulted field on the params object**, matching
+	 * `installRuntimes`' `host` and `installDependencies`' `platform`: no
+	 * production caller passes it, and `R` is unchanged by the seam itself.
+	 *
+	 * A test passes `DetachedProcess.makeTestOps({ … })` with only the members it
+	 * means to observe; the rest die naming themselves. That is strictly better
+	 * than the local interface it replaces, which had to be satisfied in full and
+	 * so let a test supply a real static by omission — the hazard being a unit
+	 * test that spawns a node process outliving the run, or signals a live pid.
+	 */
 	readonly detached?: DetachedProcessOps;
 	/** The server bundle to run, defaulting to the sibling of this bundle. See {@link defaultServerEntry}. */
 	readonly serverEntry?: string;
@@ -137,24 +130,23 @@ export const defaultServerEntry = (): string => join(dirname(fileURLToPath(impor
 const STATUS_PATH = "/v8/artifacts/status";
 
 /**
- * Whether the embedded server is answering on `port` yet.
+ * The readiness probe `awaitReady` polls: whether the embedded server is
+ * answering on `port` yet.
  *
  * @remarks
- * **False rather than failed on a refused connection** (ruling 63). The kit's
- * `awaitReady` propagates probe *failures* — a probe that cannot run is a
- * different situation from a child that is not up yet, and retrying the first
- * for six seconds hides a misconfiguration behind a timeout. But a connection
- * refused by a server that has not finished binding is precisely "not up yet",
- * so it has to arrive as `false`; the same is true of a non-2xx answer, which
- * is a server that is listening but not serving.
+ * `DetachedProcess.httpProbe` now carries ruling 63 for us, on the kit's own
+ * terms and in the same words: a refused connection, a transport error and a
+ * non-2xx answer all arrive as `false`, because every failure an HTTP readiness
+ * check can see means "not up yet". That leaves the error channel `never`, so
+ * the only failure `awaitReady` can produce is its own exhaustion — which the
+ * caller degrades on. The fifteen lines of local reasoning this replaces said
+ * exactly that and are gone (effected#240).
  *
- * That leaves the error channel `never`, and the only failure `awaitReady` can
- * then produce is its own exhaustion — which the caller degrades on.
+ * The trade the kit's TSDoc names is one this repo had already accepted: a
+ * typo'd port is indistinguishable from a slow start and surfaces as
+ * not-ready-after-budget rather than as a configuration error.
  */
-export const readinessProbe = (port: number): Effect.Effect<boolean> =>
-	Effect.tryPromise(() => fetch(`http://127.0.0.1:${port}${STATUS_PATH}`).then((response) => response.ok)).pipe(
-		Effect.catch(() => Effect.succeed(false)),
-	);
+const readinessProbe = (port: number) => DetachedProcess.httpProbe(`http://127.0.0.1:${port}${STATUS_PATH}`);
 
 /**
  * Registers every secret this run was handed with the runner's log filter.
@@ -170,16 +162,23 @@ export const readinessProbe = (port: number): Effect.Effect<boolean> =>
  * is the least sensitive of the four and pairing it with the secret it
  * authenticates alongside costs nothing.
  *
- * The two `Redacted` values go through `Secret.forSigning` rather than
- * `Redacted.value`: declassification is the kit's seam and masking is what it
- * does first, so this call *is* the mask — the returned plaintext is
- * deliberately discarded.
+ * The `Redacted` values go through `Secret.mask`, which registers with the log
+ * filter and returns nothing. This site is the reason that member exists
+ * (effected#239's sibling): it previously called `Secret.forSigning` purely for
+ * the mask and threw the plaintext away, which recorded "declassified for
+ * signing" in the kit's audit seam about values that never sign. The kit's
+ * invariant now reads *masking is the floor, declassification implies it*, and
+ * the honest call for a site that only masks is the one that only masks.
+ *
+ * `turbo-s3-access-key-id` goes through `outputs.setSecret` because it is a
+ * plain `string` rather than a `Redacted` — an asymmetry that is now about the
+ * value's shape rather than about which member happened to mask.
  */
 const maskSuppliedSecrets = (inputs: Inputs) =>
 	Effect.gen(function* () {
 		const outputs = yield* ActionOutputs;
 		for (const redacted of [inputs.turboToken, inputs.turboS3SecretAccessKey, inputs.turboS3SessionToken]) {
-			if (Option.isSome(redacted)) yield* Secret.forSigning(redacted.value);
+			if (Option.isSome(redacted)) yield* Secret.mask(redacted.value);
 		}
 		if (Option.isSome(inputs.turboS3AccessKeyId)) yield* outputs.setSecret(inputs.turboS3AccessKeyId.value);
 	});
@@ -259,10 +258,14 @@ const spawnEnvironment = (
 const startEmbeddedServer = (
 	resolution: Extract<TurboCacheResolution, { mode: "embedded" }>,
 	args: StartTurboCacheArgs,
-): Effect.Effect<StartedTurboCache, TurboCacheError | ActionOutputError, ActionOutputs | ActionState> =>
+): Effect.Effect<
+	StartedTurboCache,
+	TurboCacheError | ActionOutputError,
+	ActionOutputs | ActionState | HttpClient.HttpClient
+> =>
 	Effect.gen(function* () {
 		const outputs = yield* ActionOutputs;
-		const detached = args.detached ?? DetachedProcess;
+		const detached = args.detached ?? DetachedProcess.ops;
 		const port = args.port ?? DEFAULT_TURBO_SERVER_PORT;
 		const logFile = serverLogPath(port);
 		const credential = randomUUID();
@@ -374,7 +377,7 @@ const startEmbeddedServer = (
  */
 export const startTurboCache = (
 	args: StartTurboCacheArgs,
-): Effect.Effect<StartedTurboCache, TurboCacheError, ActionState | ActionOutputs> =>
+): Effect.Effect<StartedTurboCache, TurboCacheError, ActionState | ActionOutputs | HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const outputs = yield* ActionOutputs;
 		yield* maskSuppliedSecrets(args.inputs);

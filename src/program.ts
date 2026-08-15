@@ -94,19 +94,15 @@ const onInstallPath = (
  * the two entries are the same directory. `Set` drops that duplicate while
  * keeping first-seen order, so the head stays the manager's answer.
  *
- * One collision the manager does **not** win, ruled and deliberate: an *ambient*
- * npm. `PackageManagerInstaller` short-circuits an already-satisfied npm without
- * caching anything, so it reports no `binDir` and contributes nothing here —
- * while node's own bin directory does, carrying the npm bundled with the pinned
- * node. The install child therefore runs that npm rather than the ambient one it
- * was told was good enough, and `addPath` gives later workflow steps the same
- * answer. That is the intended reading: the npm belonging to the node you
- * pinned. It also matches v1's effective semantics — legacy's `npm install -g`
- * upgraded the ambient prefix, which was then invisible behind the tool-cache
- * node already on `GITHUB_PATH` — and no fixture asserts which npm executes.
- * Whether the ambient short-circuit should consider a consumer-installed node at
- * all is an upstream question, raised in the dogfood loop rather than patched
- * around here.
+ * The npm collision is the one this had to rule on, and it is now settled
+ * upstream of here rather than in this list (issue #220). An *ambient* npm
+ * answer carries no `binDir`, so it contributed nothing and the pinned node's
+ * bin directory led — meaning the install child ran the npm **bundled with** the
+ * pinned node, not the pinned npm, on exactly the runs where the runner's own
+ * npm happened to match the pin. `setupPackageManager` passes `allowAmbient:
+ * false`, so no npm reaches this function without a `binDir` and the head of the
+ * list is the pinned npm on every run. The rule the list implements is therefore
+ * uniform for all five managers: **the manager you pinned leads**.
  */
 const installPathPrepends = (
 	pm: ActivatedPackageManager,

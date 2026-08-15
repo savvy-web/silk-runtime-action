@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import type { PackageManagerInstallOptions } from "@effected/github-actions";
 import {
 	ActionLogger,
 	ActionOutputError,
@@ -21,11 +22,13 @@ const specOf = (name: PackageManagerName, version: string) => PackageManagerSpec
 /** Records what a case's doubles were asked to do, so elision is assertable. */
 interface Recorder {
 	readonly pins: Array<PackageManagerPin>;
+	/** The options each `install` was called with, positionally alongside `pins`. */
+	readonly options: Array<PackageManagerInstallOptions | undefined>;
 	readonly paths: Array<string>;
 	readonly logs: Array<string>;
 }
 
-const recorder = (): Recorder => ({ pins: [], paths: [], logs: [] });
+const recorder = (): Recorder => ({ pins: [], options: [], paths: [], logs: [] });
 
 /**
  * A tool-cache answer, overridable field by field.
@@ -195,9 +198,41 @@ describe("setupPackageManager", () => {
 		}),
 	);
 
+	it.effect("suppresses the installer's ambient npm probe", () =>
+		Effect.gen(function* () {
+			const log = recorder();
+			yield* setupPackageManager(specOf("npm", "11.6.0")).pipe(
+				Effect.provide(
+					layerFor(log, {
+						install: (pin, options) =>
+							Effect.sync(() => {
+								log.pins.push(pin);
+								log.options.push(options);
+								return cached({ name: "npm", version: "11.6.0" });
+							}),
+					}),
+				),
+			);
+
+			// Issue #220. The probe interrogates the *runner's* npm, before this
+			// action's PATH assembly exists — so on a match it answers `ambient` with
+			// no directory, and the pinned node's bin directory leads instead,
+			// executing the npm bundled with that node rather than the pinned one.
+			// Which npm ran was therefore a function of the runner image. `false` is
+			// what makes it a function of the manifest.
+			expect(log.options[0]?.allowAmbient).toBe(false);
+		}),
+	);
+
 	it.effect("publishes nothing to PATH for an ambient package manager", () =>
 		Effect.gen(function* () {
 			const log = recorder();
+			// Not reachable through this step any more — `allowAmbient: false` closes
+			// the only branch that answers `ambient`. The case stays because the
+			// installer's return type still carries the arm, and the step reads it off
+			// the discriminant rather than asserting a shape: if the option is ever
+			// revisited, the directoryless answer is still handled rather than
+			// producing an `addPath(undefined)`.
 			const result = yield* setupPackageManager(specOf("npm", "11.6.0")).pipe(
 				Effect.provide(
 					layerFor(log, {

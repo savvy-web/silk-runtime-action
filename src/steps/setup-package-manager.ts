@@ -77,10 +77,25 @@ const classify = (error: SetupFailure): PackageManagerError["reason"] => {
  * (`10.20.0+sha512.…`), and the first `+` always begins integrity — so the
  * split is the pin's to make, never this step's.
  *
- * `install` runs with default options. In particular `requireIntegrity` stays
- * off: in-the-wild `devEngines` pins routinely carry no hash, and the installer
- * already warns when one does not. Warnings are not buffered, so that notice
- * reaches the log even on a green run.
+ * `requireIntegrity` stays off: in-the-wild `devEngines` pins routinely carry no
+ * hash, and the installer already warns when one does not. Warnings are not
+ * buffered, so that notice reaches the log even on a green run.
+ *
+ * `allowAmbient: false` is the one option this step does set, and it is the
+ * whole npm ruling (issue #220). Left on, an npm pin may be answered by the
+ * *runner's* npm — probed with `npm --version` before this action's PATH
+ * assembly exists — and an ambient answer carries no `binDir`, so it contributes
+ * nothing to `program.ts`'s PATH assembly and the pinned node's bin directory
+ * leads instead. The install child then runs the npm *bundled with* the pinned
+ * node, which is a different binary from the one the probe matched and need not
+ * be the pinned version. A probe **miss** tool-caches the pin and does run it.
+ * So which npm executes was a function of the runner image, and the pin was
+ * honoured on a miss and quietly dropped on a hit.
+ *
+ * Suppressing the probe makes npm behave like every other tool this action
+ * provisions — node, bun, deno, pnpm and yarn are all installed to their exact
+ * pin with no ambient short-circuit — and costs one small tarball on the runs
+ * where the runner's npm happened to match.
  */
 const provision = (spec: PackageManagerSpec) =>
 	Effect.gen(function* () {
@@ -88,11 +103,15 @@ const provision = (spec: PackageManagerSpec) =>
 		const outputs = yield* ActionOutputs;
 
 		const pin = yield* PackageManagerPin.parse(`${spec.name}@${spec.version}`);
-		const installed = yield* installer.install(pin);
+		const installed = yield* installer.install(pin, { allowAmbient: false });
 		yield* Effect.logDebug(`${spec.name} ${spec.version}: ${installed.source}`);
 
-		// An `ambient` answer is already on `PATH` — it is what the probe found
-		// there — and carries no directory. A `tool-cache` answer does, and
+		// Every install through this step now answers `tool-cache`: `allowAmbient:
+		// false` suppresses the only branch that could answer `ambient`. The narrow
+		// stays because the *union* still has that arm — reading it off the
+		// discriminant is what keeps this correct if the option is ever revisited,
+		// rather than a cast asserting a shape the types do not promise.
+		//
 		// `PackageManagerInstaller` deliberately stops at the cache: putting a
 		// cached bin on `PATH` is `ActionOutputs.addPath` (dossier §A8).
 		//
@@ -126,11 +145,11 @@ const provision = (spec: PackageManagerSpec) =>
  * command lives when it lives anywhere this action put it.
  *
  * @remarks
- * `binDir` is `Some` only for a tool-cache install — the directory handed to
- * `addPath`. It is `None` for an ambient manager (already on the runner's
- * `PATH`) and for the bun/deno no-op (the runtime install owns that binary).
- * The next step needs it because `addPath` writes `GITHUB_PATH` for *later*
- * workflow steps and never touches this process's own `PATH`.
+ * `binDir` is `Some` for every install this step performs — the directory handed
+ * to `addPath` — and `None` only for the bun/deno no-op, where the runtime
+ * install owns the binary. It is what makes the ambient-npm hole closable: the
+ * next step needs it because `addPath` writes `GITHUB_PATH` for *later* workflow
+ * steps and never touches this process's own `PATH`.
  */
 export interface ActivatedPackageManager {
 	readonly name: PackageManagerName;
@@ -150,7 +169,8 @@ export interface ActivatedPackageManager {
  * Everything else goes through `PackageManagerInstaller`, which replaces the
  * whole corepack/sudo/shim apparatus v1 carried (rulings 20-27): no `sudo npm
  * install -g`, no `~/.npm` chown, no tmpdir cwd, no Node-25 corepack bootstrap,
- * no shim cleanup. The npm ambient short-circuit lives inside the installer.
+ * no shim cleanup. The installer's npm ambient short-circuit is suppressed here
+ * (see {@link provision}), so every manager arrives from its exact pin.
  *
  * The reported name and version are a pure echo of the request — never the
  * installed manager's own report — because the `package-manager` and
