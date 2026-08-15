@@ -8,6 +8,7 @@ import {
 	ActionLogger,
 	ActionOutputs,
 	ActionState,
+	AmbientPackageManager,
 	CachedPackageManager,
 	PackageManagerInstaller,
 	ToolInstaller,
@@ -87,21 +88,39 @@ const toolInstallerTest = ToolInstaller.layerTest({
 });
 
 /**
- * A `PackageManagerInstaller` double reporting the manifest's pnpm as already
+ * A `PackageManagerInstaller` double reporting the manifest's manager as already
  * in the tool cache, so the program's real package-manager step runs its
  * `addPath` path without downloading anything.
+ *
+ * @remarks
+ * The npm arm reproduces the installer's own branch rather than answering
+ * `tool-cache` unconditionally — `PackageManagerInstaller.ts` probes `npm
+ * --version` when `pin.name === "npm" && options?.allowAmbient !== false`, and
+ * this double stands in for a runner whose ambient npm matches the pin exactly.
+ * That is what makes the npm-precedence case below discriminating: drop
+ * `allowAmbient: false` from the step and this double answers `ambient` with no
+ * directory, the pinned npm falls out of the prepend list, and the assertion
+ * fails. An unconditional tool-cache answer would pass either way.
  */
 const packageManagerInstallerTest = PackageManagerInstaller.layerTest({
-	install: (pin) =>
-		Effect.succeed(
-			CachedPackageManager.make({
-				name: pin.name,
-				version: pin.version.toString(),
-				directory: `/opt/toolcache/${pin.name}/${pin.version.toString()}`,
-				binDir: `/opt/toolcache/${pin.name}/${pin.version.toString()}/.bin`,
-				bins: { [pin.name]: `/opt/toolcache/${pin.name}/${pin.version.toString()}/bin/${pin.name}.cjs` },
-			}),
-		),
+	install: (pin, options) =>
+		pin.name === "npm" && options?.allowAmbient !== false
+			? Effect.succeed(
+					AmbientPackageManager.make({
+						name: "npm",
+						version: pin.version.toString(),
+						bins: { npm: "npm", npx: "npx" },
+					}),
+				)
+			: Effect.succeed(
+					CachedPackageManager.make({
+						name: pin.name,
+						version: pin.version.toString(),
+						directory: `/opt/toolcache/${pin.name}/${pin.version.toString()}`,
+						binDir: `/opt/toolcache/${pin.name}/${pin.version.toString()}/.bin`,
+						bins: { [pin.name]: `/opt/toolcache/${pin.name}/${pin.version.toString()}/bin/${pin.name}.cjs` },
+					}),
+				),
 });
 
 /** No inputs supplied, so every `action.yml` default applies. */
@@ -143,6 +162,17 @@ const allRuntimesPackageJson = JSON.stringify({
 			{ name: "bun", version: "1.3.3" },
 			{ name: "deno", version: "2.5.6" },
 		],
+	},
+});
+
+/**
+ * A manifest pinning npm as the manager over a pinned node — the pair the
+ * ambient short-circuit used to decide between (issue #220).
+ */
+const npmPackageJson = JSON.stringify({
+	devEngines: {
+		packageManager: { name: "npm", version: "11.6.2" },
+		runtime: { name: "node", version: "24.11.0" },
 	},
 });
 
@@ -459,6 +489,37 @@ describe("program", () => {
 			// The inherited PATH stays last, and nothing else was invented.
 			expect(entries[4]).toBe("/usr/bin");
 			expect(entries).toHaveLength(5);
+		}),
+	);
+
+	it.effect("runs the pinned npm, not the one bundled with the pinned node", () =>
+		Effect.gen(function* () {
+			const spawns: Array<Spawned> = [];
+			const previous = process.env.PATH;
+			process.env.PATH = "/usr/bin";
+			try {
+				yield* program.pipe(
+					Effect.provide(makeLayer({ set: () => Effect.void }, undefined, { manifest: npmPackageJson, spawns })),
+				);
+			} finally {
+				process.env.PATH = previous;
+			}
+
+			// Issue #220, and the fixture its docblock said did not exist: nothing
+			// asserted *which* npm executes. The double stands in for a runner whose
+			// own npm matches the pin, which is precisely the case the ambient probe
+			// used to short-circuit — answering with no directory, so node's bin
+			// directory led and the install child ran the npm bundled with node
+			// instead. `allowAmbient: false` puts the pinned npm at the head.
+			const install = spawns.find((spawned) => spawned.args[0] === "install");
+			expect(install?.command).toBe("npm");
+			const entries = (install?.env?.PATH ?? "").split(delimiter);
+			expect(entries[0]).toBe("/opt/toolcache/npm/11.6.2/.bin");
+			// node still follows, so a lifecycle script resolves the pinned node —
+			// but it no longer decides which npm runs.
+			expect(entries[1]?.startsWith("/opt/toolcache/node/24.11.0")).toBe(true);
+			expect(entries[2]).toBe("/usr/bin");
+			expect(entries).toHaveLength(3);
 		}),
 	);
 

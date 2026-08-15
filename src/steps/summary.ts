@@ -8,22 +8,26 @@ import type { InstalledRuntime } from "./install-runtimes.js";
 import type { StartedTurboCache } from "./turbo-cache.js";
 
 /**
- * Raised when the job summary panel cannot be rendered, or cannot be written.
+ * Raised when the job summary panel cannot be written.
  *
  * @remarks
  * Shaped, then logged — never raised, on the same terms as `CacheError`: a
  * summary is a report *about* a run that already happened, and failing the job
  * over one would discard work that succeeded.
  *
- * Two reasons because the two failures call for different responses. `write` is
- * the runner refusing `GITHUB_STEP_SUMMARY`, which is an environment problem
- * and usually transient; `render` is this action's own markdown assembly
- * throwing, which is a bug here. v1 covered only the write, so a render throw
- * became a defect that took the job down after every install had succeeded
- * (ruling 53).
+ * One reason, `write`: the runner refusing `GITHUB_STEP_SUMMARY`, an environment
+ * problem and usually transient. A `render` reason stood beside it while the
+ * panel's assembly was believed to be fallible — ruling 53, v1 having taken the
+ * job down on a render throw after every install had succeeded. It is gone
+ * because the render is now known to be total (see {@link writeSummary}), and a
+ * literal no arm can produce reads as coverage where there is none.
+ *
+ * The union is kept for a single member deliberately: `reason` is the step
+ * contract's discriminant, and a second failure mode arriving later should widen
+ * a union rather than introduce one.
  */
 export class SummaryError extends Data.TaggedError("SummaryError")<{
-	readonly reason: "render" | "write";
+	readonly reason: "write";
 	readonly message: string;
 	readonly cause?: unknown;
 }> {}
@@ -138,49 +142,46 @@ const finalGroup = (facts: SummaryFacts): Effect.Effect<void> =>
  * remember (note 48): the panel is written first, the group logged after, and a
  * reader of the workflow log sees the run end where it ended.
  *
- * **It cannot fail.** The declared {@link SummaryError} is the shape a failure
- * takes before it is logged. The render arm degrades to a warning and skips the
- * write — there is nothing to write — while the group still runs, because the
+ * **It cannot fail.** The declared {@link SummaryError} is the shape a failed
+ * write takes before it is logged; the group still runs after one, because the
  * facts it logs were already known before anything was rendered.
  *
- * The render goes through `Effect.try` rather than being called directly:
- * `GitHubMarkdown` throws its serializer's failures as defects by design, and a
- * defect escaping here is exactly the thing v1 could not survive.
+ * `buildRuntimeSummary` is called directly rather than through `Effect.try`.
+ * `GitHubMarkdown` used to throw its serializer's failures as defects, and this
+ * step wrapped every render because a defect escaping here is the thing v1 could
+ * not survive. The kit settled that (effected#239): a fragment handed to a
+ * member becomes a leaf, so tree depth is fixed by the construct rather than by
+ * input, the serializer's one failure mode — a nesting-depth guard — is
+ * unreachable, and renders cannot fail. The two documented exceptions are both
+ * in `tableFor`, which this action's panel does not use.
+ *
+ * What the wrapper actually caught, in the end, was not the serializer at all
+ * but a `CacheState` smuggled past its schema — an impossible state, and a
+ * defect is what one deserves. Widening a reporting surface's degradation to
+ * cover this action's own type violations is the wrong trade: it turns a loud
+ * bug into a warning nobody reads.
  */
 export const writeSummary = (facts: SummaryFacts): Effect.Effect<void, SummaryError, ActionOutputs | ActionLogger> =>
 	Effect.gen(function* () {
 		const outputs = yield* ActionOutputs;
 		const logger = yield* ActionLogger;
 
-		yield* Effect.try({
-			try: () =>
-				buildRuntimeSummary({
-					runtimes: facts.runtimes,
-					packageManager: { name: facts.outputs.packageManager, version: facts.outputs.packageManagerVersion },
-					biome: Option.map(facts.biome, (installed) => installed.version),
-					turbo: { backend: facts.turboCache.backend, port: facts.turboCache.port },
-					cache: facts.cache,
-					dependenciesInstalled: facts.dependenciesInstalled,
-				}),
-			catch: (cause) =>
-				new SummaryError({
-					reason: "render",
-					message: `Failed to render job summary: ${cause instanceof Error ? cause.message : String(cause)}`,
-					cause,
-				}),
-		}).pipe(
-			Effect.flatMap((panel) =>
-				outputs
-					.summary(panel)
-					.pipe(
-						Effect.mapError(
-							(cause) =>
-								new SummaryError({ reason: "write", message: `Failed to write job summary: ${cause.message}`, cause }),
-						),
-					),
+		const panel = buildRuntimeSummary({
+			runtimes: facts.runtimes,
+			packageManager: { name: facts.outputs.packageManager, version: facts.outputs.packageManagerVersion },
+			biome: Option.map(facts.biome, (installed) => installed.version),
+			turbo: { backend: facts.turboCache.backend, port: facts.turboCache.port },
+			cache: facts.cache,
+			dependenciesInstalled: facts.dependenciesInstalled,
+		});
+
+		yield* outputs.summary(panel).pipe(
+			Effect.mapError(
+				(cause) =>
+					new SummaryError({ reason: "write", message: `Failed to write job summary: ${cause.message}`, cause }),
 			),
-			// One arm for both reasons: each has already said which it is in its own
-			// prose, and the response to either is the same — say so and carry on.
+			// Shaped, then said out loud, then carried past: the panel is an extra,
+			// and the group below reports a run that already succeeded.
 			Effect.catch((error) => Effect.logWarning(error.message)),
 		);
 

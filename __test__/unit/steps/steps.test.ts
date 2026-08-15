@@ -91,9 +91,9 @@ describe("startTurboCache", () => {
 // summary.test.ts, beside the formatter tests in summary/format.test.ts.
 describe("writeSummary", () => {
 	it("SummaryError carries its tag and reason", () => {
-		const error = new SummaryError({ reason: "render", message: "render failed" });
+		const error = new SummaryError({ reason: "write", message: "write failed" });
 		expect(error._tag).toBe("SummaryError");
-		expect(error.reason).toBe("render");
-		expect(error.message).toBe("render failed");
+		expect(error.reason).toBe("write");
+		expect(error.message).toBe("write failed");
 	});
 });
