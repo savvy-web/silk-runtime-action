@@ -15,6 +15,7 @@
  * @module post
  */
 
+import type { DetachedProcessOps } from "@effected/github-actions";
 import { Action, ActionCache, ActionState, DetachedProcess } from "@effected/github-actions";
 import { Effect, Option } from "effect";
 
@@ -95,7 +96,7 @@ const saveDependencyCache = (saved: CacheState) =>
  * exists, and this is the layer that keeps it from ever being the thing that
  * skips the save.
  */
-const reapCacheServer = (saved: TurboServerState, reap: Reap) =>
+const reapCacheServer = (saved: TurboServerState, reap: DetachedProcessOps["reap"]) =>
 	Effect.gen(function* () {
 		yield* Effect.logDebug(`Stopping turbo cache server pid=${saved.pid} (log: ${saved.logFile})`);
 		const signalled = yield* reap(saved.pid);
@@ -118,25 +119,26 @@ const reapCacheServer = (saved: TurboServerState, reap: Reap) =>
 	);
 
 /**
- * How `post` stops the child, as an injectable seam.
- *
- * @remarks
- * `DetachedProcess.reap` is a static rather than a service, so this is a
- * defaulted parameter for the same reason `startTurboCache` takes one — and
- * with a sharper edge here: a test that let the default through would send a
- * real `SIGTERM` to whatever process happens to own the pid its fixture made
- * up.
- */
-type Reap = (pid: number) => Effect.Effect<boolean, unknown>;
-
-/**
- * The post phase, over an injectable {@link Reap}.
+ * The post phase, over the kit's injectable detached-process seam.
  *
  * @remarks
  * `makePost` exists only for that seam; {@link post} is the value the entry
  * point and every other caller use.
+ *
+ * The seam is `DetachedProcessOps` (effected#240), replacing a local `Reap`
+ * function type. `DetachedProcess.reap` is a static rather than a service, so
+ * injection has to be by parameter — and the edge here is sharper than
+ * `startTurboCache`'s: a test that let the default through would send a real
+ * `SIGTERM` to whatever process happens to own the pid its fixture made up.
+ *
+ * That is exactly why the kit's seam is the better one. A test supplies
+ * `DetachedProcess.makeTestOps({ reap })` and the two members it did not stub
+ * die naming themselves, where the old hand-rolled type could only be satisfied
+ * in full — so an unstubbed operation fell through to the real static silently.
+ * This phase only ever calls `reap`, but the guarantee now covers the other two
+ * for free.
  */
-export const makePost = (reap: Reap = DetachedProcess.reap) =>
+export const makePost = (ops: DetachedProcessOps = DetachedProcess.ops) =>
 	Effect.gen(function* () {
 		const state = yield* ActionState;
 		yield* Effect.logDebug("Running post-action script");
@@ -160,7 +162,7 @@ export const makePost = (reap: Reap = DetachedProcess.reap) =>
 			);
 		yield* Option.match(server, {
 			onNone: () => Effect.logDebug("No embedded turbo cache server was started; nothing to reap"),
-			onSome: (saved) => reapCacheServer(saved, reap),
+			onSome: (saved) => reapCacheServer(saved, ops.reap),
 		});
 
 		const cache = yield* state.getOptional(STATE_KEYS.cache, CacheState);

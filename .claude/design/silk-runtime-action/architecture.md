@@ -344,7 +344,7 @@ The reap runs first and unconditionally, ahead of every branch that can return e
 | `PackageManagerInstaller` | Manager provisioning and shims | `setup-package-manager.ts` |
 | `DetachedProcess` | `spawn`, `awaitReady`, `reap` | `turbo-cache.ts`, `post.ts` |
 | `BlobStore` / `GitHubCacheBlobStore` | Backend for the embedded cache | `turbo-cache/handler.ts`, `server-config.ts` |
-| `Secret` | `forSigning`, `forChildEnv`, `forRunnerFile` | `turbo-cache.ts` |
+| `Secret` | `mask`, `forSigning`, `forChildEnv`, `forRunnerFile` | `turbo-cache.ts` |
 | `GitHubMarkdown` | Job-summary markdown | `summary/format.ts` |
 | `PackageManagerPin` (`@effected/npm`) | `<name>@<version>[+<integrity>]` grammar | `setup-package-manager.ts` |
 | `SemVer.ExactVersionString` (`@effected/semver`) | Backs `AbsoluteVersion` | `schema/domain.ts` |
