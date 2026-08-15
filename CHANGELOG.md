@@ -1,5 +1,54 @@
 # @savvy-web/silk-runtime-action
 
+## 1.3.7
+
+### Bug Fixes
+
+* The npm named in `devEngines.packageManager` is now the npm that actually runs the dependency install.
+
+  Previously an npm pin could be answered by the runner's own npm when its version matched the pin exactly. That answer carries no directory, so it contributed nothing to the `PATH` this action assembles — and the pinned node's bin directory led instead, meaning the install ran the npm *bundled with* that node rather than the pinned one. When the runner's npm did **not** match, the pin was downloaded and did run. So which npm executed depended on the runner image, while the `package-manager-version` output reported the pinned version either way.
+
+  The action now installs the pinned npm unconditionally, so npm behaves like every other tool it provisions. The visible cost is one small download on runs where the runner's npm happened to match.
+
+  * No change for `pnpm`, `yarn`, `bun` or `deno` — none of them had an ambient short-circuit
+  * `package-manager` and `package-manager-version` outputs are unchanged
+
+### Refactoring
+
+* Adopts three members `@effected/github-actions` 0.7.0 added for this action, replacing local constructs that existed only because the kit did not ship them. No behavior changes.
+
+  * The turbo cache server's readiness check is now `DetachedProcess.httpProbe`, replacing a local probe. Refused connections, transport errors and non-2xx answers still all mean "not ready yet", and a server that never answers still degrades to a cacheless run
+  * The detached-process test seams — one in the main phase, one in `post` — collapse onto the kit's `DetachedProcessOps` / `makeTestOps`
+  * Secrets supplied to the action are registered with the runner's log filter through `Secret.mask`, which masks and returns nothing, rather than through a declassification member whose plaintext was discarded
+
+- Removed the defensive wrapper around job-summary rendering. `@effected/github-actions` 0.6.1 documents that a `GitHubMarkdown` render cannot fail, so the wrapper only widened the failure it caught. `SummaryError` now carries the single reason `write`.
+
+### Tests
+
+* Added coverage asserting which npm leads the install's `PATH`, the gap that let the behavior above go unnoticed [#243][#243]
+
+- The readiness cases run against a stubbed `HttpClient` instead of standing up a loopback server, and now assert the probe's exact URL against the exported `TURBO_API` [#243][#243]
+
+### Dependencies
+
+* | Dependency               | Type       | Action  | From  | To    |
+  | :----------------------- | :--------- | :------ | :---- | :---- |
+  | @effected/github-actions | dependency | updated | 0.6.1 | 0.7.0 |
+
+- | Dependency             | Type       | Action  | From    | To      |                                                                              |
+  | ---------------------- | ---------- | ------- | ------- | ------- | ---------------------------------------------------------------------------- |
+  | @effected/git          | dependency | updated | ^0.7.0  | ^0.8.0  |                                                                              |
+  | @effected/github       | dependency | updated | ^0.4.1  | ^0.4.2  |                                                                              |
+  | @effected/package-json | dependency | updated | ^0.8.0  | ^0.9.0  |                                                                              |
+  | @effected/sbom         | dependency | updated | ^0.3.0  | ^0.3.1  |                                                                              |
+  | @effected/workspaces   | dependency | updated | ^0.12.0 | ^0.13.0 | [#243][#243] Thanks [@savvy-web-bot](https://github.com/apps/savvy-web-bot)! |
+
+### Patch Changes
+
+Thanks to [@savvy-web-bot](https://github.com/apps/savvy-web-bot) for their contributions!
+
+[#243]: https://github.com/savvy-web/silk-runtime-action/pull/243
+
 ## 1.3.6
 
 ### Dependencies
