@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
+import type { DetachedProcessOps } from "@effected/github-actions";
 import {
 	ActionCache,
 	ActionCacheError,
 	ActionLogger,
 	ActionState,
 	ActionStateError,
+	DetachedProcess,
 	DetachedProcessError,
 	ProcessId,
 } from "@effected/github-actions";
@@ -12,6 +14,22 @@ import { Effect, Layer, Logger, Option, References } from "effect";
 
 import { makePost, post } from "../../src/post.js";
 import { CacheState, STATE_KEYS, TurboServerState } from "../../src/state.js";
+
+/**
+ * `makePost` over a seam that stubs `reap` and nothing else.
+ *
+ * @remarks
+ * The post phase calls exactly one detached operation, so the other two are left
+ * unstubbed deliberately: `DetachedProcess.makeTestOps` makes them die naming
+ * themselves (effected#240), which turns "this phase does not spawn" from an
+ * untested assumption into a failing test if it ever stops being true.
+ *
+ * That guarantee is worth more here than anywhere else in the suite. The member
+ * being replaced signals a pid read back out of `GITHUB_STATE` — so a seam that
+ * silently fell through to the real static would send `SIGTERM` to whatever
+ * process happens to own the number a fixture made up.
+ */
+const postReaping = (reap: DetachedProcessOps["reap"]) => makePost(DetachedProcess.makeTestOps({ reap }));
 
 /**
  * The keys `post` reads, in the order it reads them.
@@ -216,7 +234,7 @@ describe("post", () => {
 		Effect.gen(function* () {
 			const saves: Array<Saved> = [];
 			const reaped: Array<number> = [];
-			const exit = yield* makePost((pid) =>
+			const exit = yield* postReaping((pid) =>
 				Effect.sync(() => {
 					reaped.push(pid);
 					return true;
@@ -245,7 +263,7 @@ describe("post", () => {
 	it.effect("names the pid and the log file it is reaping", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
-			yield* makePost(() => Effect.succeed(true)).pipe(
+			yield* postReaping(() => Effect.succeed(true)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
 						serverOnly,
@@ -267,7 +285,7 @@ describe("post", () => {
 	it.effect("treats a child that already exited as the normal ending", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
-			const exit = yield* makePost(() => Effect.succeed(false)).pipe(
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
 						serverOnly,
@@ -287,7 +305,7 @@ describe("post", () => {
 
 	it.effect("never fails the workflow when the reap itself fails", () =>
 		Effect.gen(function* () {
-			const exit = yield* makePost(() =>
+			const exit = yield* postReaping(() =>
 				Effect.fail(new DetachedProcessError({ reason: "signalFailed", pid: 4242 })),
 			).pipe(
 				Effect.provide(Layer.mergeAll(serverOnly, ActionCache.layerTest({}), ActionLogger.layerSilent)),
@@ -301,7 +319,7 @@ describe("post", () => {
 		Effect.gen(function* () {
 			const saves: Array<Saved> = [];
 			const logs: Array<string> = [];
-			const exit = yield* makePost(() => Effect.die(new Error("kill exploded"))).pipe(
+			const exit = yield* postReaping(() => Effect.die(new Error("kill exploded"))).pipe(
 				Effect.provide(
 					Layer.mergeAll(
 						ActionState.layerTest({
@@ -330,7 +348,7 @@ describe("post", () => {
 	it.effect("saves the cache even when the reap fails typed", () =>
 		Effect.gen(function* () {
 			const saves: Array<Saved> = [];
-			const exit = yield* makePost(() =>
+			const exit = yield* postReaping(() =>
 				Effect.fail(new DetachedProcessError({ reason: "signalFailed", pid: 4242 })),
 			).pipe(
 				Effect.provide(
@@ -356,7 +374,7 @@ describe("post", () => {
 		Effect.gen(function* () {
 			const saves: Array<Saved> = [];
 			const logs: Array<string> = [];
-			const exit = yield* makePost(() => Effect.succeed(true)).pipe(
+			const exit = yield* postReaping(() => Effect.succeed(true)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
 						ActionState.layerTest({

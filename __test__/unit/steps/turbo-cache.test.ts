@@ -1,25 +1,66 @@
-import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NodeFileSystem } from "@effect/platform-node";
 import { describe, expect, it } from "@effect/vitest";
-import type { DetachedSpawnOptions } from "@effected/github-actions";
+import type { DetachedProcessOps, DetachedSpawnOptions } from "@effected/github-actions";
 import {
 	ActionEnvironment,
 	ActionOutputs,
 	ActionState,
 	ActionStateError,
+	DetachedProcess,
 	DetachedProcessError,
 	ProcessId,
 } from "@effected/github-actions";
 import { Effect, FileSystem, Layer, Logger, Option, Redacted } from "effect";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import type { Inputs } from "../../../src/schema/inputs.js";
 import { STATE_KEYS, TurboServerState } from "../../../src/state.js";
-import type { DetachedProcessOps, StartedTurboCache, TurboCacheError } from "../../../src/steps/turbo-cache.js";
-import { defaultServerEntry, readinessProbe, serverLogPath, startTurboCache } from "../../../src/steps/turbo-cache.js";
+import type { StartedTurboCache, TurboCacheError } from "../../../src/steps/turbo-cache.js";
+import { defaultServerEntry, serverLogPath, startTurboCache } from "../../../src/steps/turbo-cache.js";
+
+/** Every URL the readiness probe asked for, in order. */
+interface Probed {
+	readonly urls: Array<string>;
+}
+
+/**
+ * An `HttpClient` answering every request with `status`, or refusing to connect.
+ *
+ * @remarks
+ * Replaces the loopback `createServer` this suite used to stand up for the
+ * readiness cases. The probe is `DetachedProcess.httpProbe` now (effected#240),
+ * so `HttpClient` is the seam — which is the upgrade the swap buys: these cases
+ * used to need a real listener on a real port, in a job that is *itself* set up
+ * by this action and therefore may already hold one.
+ *
+ * `refused` fails the way a transport error arrives rather than answering a
+ * status, because "the child has not finished binding" is the case ruling 63
+ * exists for and it is not reachable by any status code.
+ */
+const httpClientStub = (
+	probed: Probed,
+	options: { readonly status?: number; readonly refused?: boolean } = {},
+): Layer.Layer<HttpClient.HttpClient> =>
+	Layer.succeed(
+		HttpClient.HttpClient,
+		HttpClient.make((request, url) => {
+			probed.urls.push(url.toString());
+			return options.refused === true
+				? Effect.fail(
+						new HttpClientError.HttpClientError({
+							reason: new HttpClientError.TransportError({
+								request,
+								cause: new Error("connect ECONNREFUSED"),
+							}),
+						}),
+					)
+				: Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: options.status ?? 200 })));
+		}),
+	);
 
 /** Every optional input absent, every default applied. */
 const BASE_INPUTS: Inputs = {
@@ -69,7 +110,7 @@ interface Recorded {
 	 * the difference between asserting a probe was passed and asserting the right
 	 * one was.
 	 */
-	readonly probes: Array<Effect.Effect<boolean>>;
+	readonly probes: Array<Effect.Effect<boolean, never, HttpClient.HttpClient>>;
 }
 
 const recorder = (): Recorded => ({
@@ -86,7 +127,18 @@ const recorder = (): Recorded => ({
 const exported = (recorded: Recorded, name: string): string | undefined =>
 	recorded.exported.find(([key]) => key === name)?.[1];
 
-/** A `DetachedProcess` seam recording its calls and answering as `options` says. */
+/**
+ * A `DetachedProcess` seam recording its calls and answering as `options` says.
+ *
+ * @remarks
+ * Built through `DetachedProcess.makeTestOps` (effected#240) rather than as an
+ * object literal, which is what makes the omission meaningful: `reap` belongs to
+ * the post phase and is never called here, so leaving it unstubbed should be an
+ * assertion rather than a gap. The kit's unstubbed members die naming themselves
+ * — where the local interface this replaces had to be satisfied in full, so the
+ * only way to leave a member out was to hand over the real static, which for
+ * `reap` means signalling whatever process owns a made-up pid.
+ */
 const detachedTest = (
 	recorded: Recorded,
 	options: {
@@ -94,29 +146,45 @@ const detachedTest = (
 		readonly spawn?: Effect.Effect<ChildProcessSpawner.ProcessId, DetachedProcessError>;
 		readonly ready?: Effect.Effect<void, DetachedProcessError>;
 	} = {},
-): DetachedProcessOps => ({
-	spawn: (spec) =>
-		Effect.suspend(() => {
-			recorded.spawns.push(spec);
-			recorded.order.push("spawn");
-			return options.spawn ?? Effect.succeed(ChildProcessSpawner.ProcessId(options.pid ?? 4242));
-		}),
-	// The probe is captured, never run here: a unit test must not reach the
-	// network by default. `readinessProbe` has its own tests against a real
-	// server, and one case below runs the *captured* probe against one.
-	awaitReady: ((probe: Effect.Effect<boolean, never, never>) =>
-		Effect.suspend(() => {
-			recorded.probes.push(probe);
-			recorded.order.push("awaitReady");
-			return options.ready ?? Effect.void;
-		})) as unknown as DetachedProcessOps["awaitReady"],
-});
+): DetachedProcessOps =>
+	DetachedProcess.makeTestOps({
+		spawn: (spec) =>
+			Effect.suspend(() => {
+				recorded.spawns.push(spec);
+				recorded.order.push("spawn");
+				return options.spawn ?? Effect.succeed(ChildProcessSpawner.ProcessId(options.pid ?? 4242));
+			}),
+		// The probe is captured, never run here: a unit test must not reach the
+		// network by default. The cases that exercise it run the *captured* probe
+		// against `httpClientStub`.
+		awaitReady: ((probe: Effect.Effect<boolean, never, HttpClient.HttpClient>) =>
+			Effect.suspend(() => {
+				recorded.probes.push(probe);
+				recorded.order.push("awaitReady");
+				return options.ready ?? Effect.void;
+			})) as unknown as DetachedProcessOps["awaitReady"],
+	});
+
+/**
+ * An `HttpClient` that dies if the step itself issues a request.
+ *
+ * @remarks
+ * The step never runs the probe — it hands it to `awaitReady`, which this
+ * suite's seam captures without running. So `HttpClient` is in the step's `R`
+ * statically and unused dynamically, and the honest default is a client that
+ * fails loudly rather than one that answers. The cases that exercise the probe
+ * run the captured value themselves, against `httpClientStub`.
+ */
+const httpClientUnused: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(
+	HttpClient.HttpClient,
+	HttpClient.make(() => Effect.die(new Error("the step issued an HTTP request; only the captured probe should"))),
+);
 
 /** The services `startTurboCache` needs, all recording into `recorded`. */
 const layer = (
 	recorded: Recorded,
 	options: { readonly save?: Effect.Effect<void, ActionStateError> } = {},
-): Layer.Layer<ActionOutputs | ActionState> =>
+): Layer.Layer<ActionOutputs | ActionState | HttpClient.HttpClient> =>
 	Layer.mergeAll(
 		ActionOutputs.layerTest({
 			exportVariable: (name, value) =>
@@ -135,6 +203,7 @@ const layer = (
 				})) as ActionState["Service"]["save"],
 		}),
 		Logger.layer([Logger.make(({ message }) => void recorded.logs.push(String(message)))]),
+		httpClientUnused,
 	);
 
 /** Runs the step over recording doubles and hands back both halves. */
@@ -182,56 +251,51 @@ describe("defaultServerEntry", () => {
 	});
 });
 
-describe("readinessProbe", () => {
-	/** A loopback server answering `/v8/artifacts/status` with `status`. */
-	const withServer = <A, E, R>(status: number, use: (port: number) => Effect.Effect<A, E, R>) =>
-		Effect.acquireUseRelease(
-			Effect.callback<{ readonly port: number; readonly close: () => Promise<void> }>((resume) => {
-				const server = createServer((request, response) => {
-					response.writeHead(request.url?.startsWith("/v8/artifacts/status") === true ? status : 404);
-					response.end();
-				});
-				server.listen(0, "127.0.0.1", () => {
-					const address = server.address();
-					resume(
-						Effect.succeed({
-							port: typeof address === "object" && address !== null ? address.port : 0,
-							close: () => new Promise<void>((done) => server.close(() => done())),
-						}),
-					);
-				});
-			}),
-			(server) => use(server.port),
-			(server) => Effect.promise(() => server.close()),
-		);
+describe("the readiness probe the step hands awaitReady", () => {
+	/** Runs the probe the step captured, against a stubbed client. */
+	const probeAgainst = (options: { readonly status?: number; readonly refused?: boolean } = {}) =>
+		Effect.gen(function* () {
+			const probed: Probed = { urls: [] };
+			const { recorded } = yield* run({ port: 41999 });
+			expect(recorded.probes).toHaveLength(1);
+			const answer = yield* (recorded.probes[0] as Effect.Effect<boolean, never, HttpClient.HttpClient>).pipe(
+				Effect.provide(httpClientStub(probed, options)),
+			);
+			return { answer, probed };
+		});
+
+	it.effect("asks the server's own status route, on the port it was spawned for", () =>
+		Effect.gen(function* () {
+			const { probed } = yield* probeAgainst();
+			// The one assertion that is genuinely this repo's rather than the kit's:
+			// `httpProbe` is handed the right URL. Ruling 73 — the status route
+			// answers without auth, which is what makes it usable as a probe.
+			expect(probed.urls).toEqual(["http://127.0.0.1:41999/v8/artifacts/status"]);
+		}),
+	);
 
 	it.effect("is true when the server answers its status route", () =>
-		withServer(200, (port) =>
-			Effect.gen(function* () {
-				expect(yield* readinessProbe(port)).toBe(true);
-			}),
-		),
+		Effect.gen(function* () {
+			expect((yield* probeAgainst({ status: 200 })).answer).toBe(true);
+		}),
 	);
 
 	it.effect("is false when the server is listening but not serving", () =>
-		withServer(503, (port) =>
-			Effect.gen(function* () {
-				// A server that answers unhappily is not ready either — turbo would
-				// get the same answer for its own requests.
-				expect(yield* readinessProbe(port)).toBe(false);
-			}),
-		),
+		Effect.gen(function* () {
+			// A server that answers unhappily is not ready either — turbo would get
+			// the same answer for its own requests.
+			expect((yield* probeAgainst({ status: 503 })).answer).toBe(false);
+		}),
 	);
 
 	it.effect("is false rather than failed when the connection is refused", () =>
 		Effect.gen(function* () {
-			// Ruling 63: `awaitReady` propagates probe *failures*, so a child that
-			// has not finished binding has to arrive as `false` — otherwise the very
-			// first poll aborts the wait it exists to perform.
-			const port = yield* withServer(200, (bound) => Effect.succeed(bound));
-			const exit = yield* Effect.exit(readinessProbe(port));
-			expect(exit._tag).toBe("Success");
-			expect(yield* readinessProbe(port)).toBe(false);
+			// Ruling 63, now the kit's guarantee and pinned here because this step's
+			// degradation depends on it: `awaitReady` propagates probe *failures*, so
+			// a child that has not finished binding has to arrive as `false` —
+			// otherwise the very first poll aborts the wait it exists to perform.
+			const { answer } = yield* probeAgainst({ refused: true });
+			expect(answer).toBe(false);
 		}),
 	);
 });
@@ -485,66 +549,35 @@ describe("startTurboCache: embedded", () => {
 		}),
 	);
 
-	it.effect("waits on a probe aimed at the port it spawned the server on", () =>
+	it.effect("waits on a probe aimed at the same address it exports", () =>
 		Effect.gen(function* () {
-			// Running a *captured* probe against a server the test controls is what
-			// separates "a probe was passed" from "the right probe was passed". A
-			// probe aimed at the wrong port, the wrong host or the wrong route answers
-			// `false` against this server exactly as it would against no server, and
-			// the exported `TURBO_API` would then name an address readiness never
-			// actually checked.
+			// What this separates: "a probe was passed" from "the *right* probe was
+			// passed". A probe aimed at the wrong port, host or route would answer
+			// `false` identically to no server at all, and the exported `TURBO_API`
+			// would then name an address readiness never actually checked. So the
+			// probe's URL and the exported one are asserted against each other.
 			//
-			// The server binds port 0 *first* and the step is pointed at whatever
-			// the OS handed out (the `port` seam). Binding the default 41230 is
-			// not an option in this repository's own CI: the job that runs this
-			// suite is set up by this very action, so a real cache server already
-			// holds that port for the length of the job.
-			const answered = yield* Effect.acquireUseRelease(
-				Effect.callback<{
-					readonly hits: Array<string>;
-					readonly port: number;
-					readonly close: () => Promise<void>;
-				}>((resume) => {
-					const hits: Array<string> = [];
-					const server = createServer((request, response) => {
-						hits.push(request.url ?? "");
-						response.writeHead(request.url?.startsWith("/v8/artifacts/status") === true ? 200 : 404);
-						response.end();
-					});
-					server.on("error", (cause) => resume(Effect.die(cause)));
-					server.listen(0, "127.0.0.1", () => {
-						const address = server.address();
-						if (address === null || typeof address === "string") {
-							resume(Effect.die(new Error("server bound no port")));
-							return;
-						}
-						resume(
-							Effect.succeed({
-								hits,
-								port: address.port,
-								close: () => new Promise<void>((done) => server.close(() => done())),
-							}),
-						);
-					});
-				}),
-				(serving) =>
-					Effect.gen(function* () {
-						const { started, recorded } = yield* run({ port: serving.port });
-						expect(Option.getOrThrow(started.port)).toBe(serving.port);
-						const probe = recorded.probes[0] as Effect.Effect<boolean>;
-						expect(recorded.probes).toHaveLength(1);
-						const up = yield* probe;
-						return { up, hits: serving.hits, port: serving.port, probe, recorded };
-					}),
-				(serving) => Effect.promise(() => serving.close()),
+			// This used to bind a real loopback server on port 0 and run the captured
+			// probe against it — necessary when the probe called `fetch` directly and
+			// offered no seam, and awkward in this repository's own CI, where the job
+			// running this suite is set up by this very action and a real cache server
+			// already holds the default port. `httpProbe` goes through `HttpClient`,
+			// so the stub does the same job without a listener (effected#240).
+			const probed: Probed = { urls: [] };
+			const { started, recorded } = yield* run({ port: 41777 });
+
+			expect(Option.getOrThrow(started.port)).toBe(41777);
+			expect(recorded.probes).toHaveLength(1);
+			const up = yield* (recorded.probes[0] as Effect.Effect<boolean, never, HttpClient.HttpClient>).pipe(
+				Effect.provide(httpClientStub(probed, { status: 200 })),
 			);
 
-			expect(answered.up).toBe(true);
-			expect(answered.hits).toEqual(["/v8/artifacts/status"]);
-			// And it is genuinely bound to that address rather than answering true
-			// unconditionally: with the server gone, the same probe is false.
-			expect(yield* answered.probe).toBe(false);
-			expect(exported(answered.recorded, "TURBO_API")).toBe(`http://127.0.0.1:${answered.port}`);
+			expect(up).toBe(true);
+			const api = exported(recorded, "TURBO_API");
+			expect(api).toBe("http://127.0.0.1:41777");
+			// The probe's own URL is that address plus the status route — not a
+			// coincidence of two independently-correct constants.
+			expect(probed.urls).toEqual([`${api}/v8/artifacts/status`]);
 		}),
 	);
 });
@@ -697,10 +730,10 @@ describe("startTurboCache: degraded", () => {
 			const started = yield* startTurboCache({
 				inputs: inputs(),
 				turbo: { enabled: true },
-				detached: {
+				detached: DetachedProcess.makeTestOps({
 					spawn: () => Effect.die(new Error("openSync EACCES")),
 					awaitReady: (() => Effect.void) as DetachedProcessOps["awaitReady"],
-				},
+				}),
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
 
@@ -716,10 +749,10 @@ describe("startTurboCache: degraded", () => {
 			const started = yield* startTurboCache({
 				inputs: inputs(),
 				turbo: { enabled: true },
-				detached: {
+				detached: DetachedProcess.makeTestOps({
 					spawn: () => Effect.die("boom"),
 					awaitReady: (() => Effect.void) as DetachedProcessOps["awaitReady"],
-				},
+				}),
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
 
@@ -782,6 +815,7 @@ describe("the state startTurboCache saves", () => {
 						}),
 						realState({ GITHUB_STATE: file }),
 						Logger.layer([Logger.make(() => {})]),
+						httpClientUnused,
 					),
 				),
 			);

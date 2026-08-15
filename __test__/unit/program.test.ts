@@ -15,6 +15,7 @@ import {
 	ToolInstallerError,
 } from "@effected/github-actions";
 import { Cause, Effect, Exit, FileSystem, Layer, Logger, Option, Path, PlatformError, Sink, Stream } from "effect";
+import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
 
 import { program, turboCacheOutputs } from "../../src/program.js";
@@ -125,6 +126,24 @@ const packageManagerInstallerTest = PackageManagerInstaller.layerTest({
 
 /** No inputs supplied, so every `action.yml` default applies. */
 const actionInputTest = ActionInput.layer({});
+
+/**
+ * An `HttpClient` that dies if anything reaches it.
+ *
+ * @remarks
+ * `HttpClient` entered the program's `R` with `DetachedProcess.httpProbe`
+ * (effected#240): the turbo step's readiness probe is the only thing in the
+ * pipeline that speaks HTTP. None of these cases start a cache server — no
+ * fixture writes a `turbo.json` — so no request should ever be issued, and the
+ * honest stub is one that says so rather than one that answers politely.
+ *
+ * The same reasoning as `childProcessSpawnerTest`'s derived members and the
+ * `FileSystem` double: a call arriving here is a regression, not a missing stub.
+ */
+const httpClientTest = Layer.succeed(
+	HttpClient.HttpClient,
+	HttpClient.make(() => Effect.die(new Error("HttpClient was not stubbed: no program test should issue a request"))),
+);
 
 /**
  * The primary key a restore was asked for, whether it came as a typed
@@ -299,6 +318,7 @@ const makeLayer = (
 	| FileSystem.FileSystem
 	| Path.Path
 	| ChildProcessSpawnerNS.ChildProcessSpawner
+	| HttpClient.HttpClient
 > =>
 	Layer.mergeAll(
 		// The cache restore is real, and by default nothing matches: a miss leaves
@@ -318,6 +338,7 @@ const makeLayer = (
 		environment,
 		childProcessSpawnerTest(options.spawns),
 		options.inputs ?? actionInputTest,
+		httpClientTest,
 	);
 
 /** The four variables the program quiets its own install steps with (oracle 43). */

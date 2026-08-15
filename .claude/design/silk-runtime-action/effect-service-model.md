@@ -187,16 +187,16 @@ Reading inputs against the `ConfigProvider` keeps defaults co-located with the r
 
 `DetachedProcess.spawn`, `awaitReady` and `reap` are statics on a class, which is the right shape for the kit — a detached child has no scope to hang a service off. It leaves this action with three operations a unit test must not perform for real: `spawn` starts a process that outlives the test run, `awaitReady` polls for six seconds, and `reap` sends a real `SIGTERM` to whatever process owns the pid a fixture made up.
 
-A repository-local service wrapper would have leaked into every consumer's layer composition and into `PostLive`, to make three functions overridable. Instead:
+A repository-local service wrapper would have leaked into every consumer's layer composition and into `PostLive`, to make three functions overridable. So the seam is parameter injection — and as of `@effected/github-actions` 0.7.0 it is **the kit's own seam** rather than two hand-rolled ones (effected#240):
 
 ```ts
-export interface DetachedProcessOps {
-  readonly spawn: typeof DetachedProcess.spawn;
-  readonly awaitReady: typeof DetachedProcess.awaitReady;
-}
-// StartTurboCacheArgs.detached?: DetachedProcessOps
-export const makePost = (reap: Reap = DetachedProcess.reap) => /* … */;
+// StartTurboCacheArgs.detached?: DetachedProcessOps   — defaults to DetachedProcess.ops
+export const makePost = (ops: DetachedProcessOps = DetachedProcess.ops) => /* … */;
 ```
+
+This replaced a local two-member `DetachedProcessOps` in `turbo-cache.ts` and a separate `Reap` function type in `post.ts`, split that way because the two phases call different operations. The kit's interface carries all three, and the split stops mattering for the reason that matters most: a test builds its double with `DetachedProcess.makeTestOps({ … })`, and **members it does not stub die naming themselves**.
+
+That inverts the hazard. The local interfaces had to be satisfied in full, so the only way to leave an operation out was to hand over the real static — silently, and most dangerously for `reap`, which signals a pid that has been through a text file. Now omission is an assertion: `post`'s doubles stub `reap` alone, and the suite fails if that phase ever starts spawning.
 
 `R` is unchanged, production runs the kit's statics, and no caller passes one. The same pattern covers the three `process` reads that would otherwise be untestable: `installRuntimes(config, host = currentHost())`, `installBiome(version, host = currentHost())` and `installDependencies(pm, enabled, prepends, platform = process.platform)`.
 
