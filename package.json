@@ -33,7 +33,7 @@
 		"@effect/platform-node": "catalog:effect",
 		"@effected/commands": "^0.4.0",
 		"@effected/git": "^0.8.0",
-		"@effected/github": "^0.4.2",
+		"@effected/github": "^0.4.3",
 		"@effected/github-actions": "^0.7.0",
 		"@effected/glob": "^0.3.0",
 		"@effected/jsonc": "^0.6.0",
@@ -51,7 +51,7 @@
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",
 		"@savvy-web/github-action-builder": "^2.2.5",
-		"@savvy-web/silk": "^3.7.5",
+		"@savvy-web/silk": "^3.7.6",
 		"@vitest-agent/plugin": "^2.2.2"
 	},
 	"packageManager": "pnpm@11.22.0+sha512.1ff870c4c6133dfd88fb2afc46dd13d47f09c9794b438c6fdb47ca98caf3bc16381ee0be93a091b8e3824cf01f889f46d7d9e20910fb0be1ab0fb5baa80dd621",
