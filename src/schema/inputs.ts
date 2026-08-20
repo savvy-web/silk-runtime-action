@@ -2,8 +2,10 @@ import { ActionInput } from "@effected/github-actions";
 import type { Redacted } from "effect";
 import { Config, Option } from "effect";
 
+import type { ToolMode } from "./domain.js";
+
 /**
- * The 16 `action.yml` input names, verbatim, as a const tuple.
+ * The 18 `action.yml` input names, verbatim, as a const tuple.
  *
  * @remarks
  * The counterpart to `OUTPUT_NAMES`. It is what makes "the code and
@@ -25,6 +27,8 @@ export const INPUT_NAMES = [
 	"turbo-s3-session-token",
 	"turbo-s3-prefix",
 	"install-deps",
+	"bats",
+	"kcov",
 	"cache-bust",
 	"additional-lockfiles",
 	"additional-cache-paths",
@@ -42,7 +46,7 @@ export type InputName = (typeof INPUT_NAMES)[number];
 export type TurboCacheMode = "auto" | "off";
 
 /**
- * The fully decoded, typed shape of all 16 `action.yml` inputs.
+ * The fully decoded, typed shape of all 18 `action.yml` inputs.
  */
 export interface Inputs {
 	readonly biomeVersion: Option.Option<string>;
@@ -58,13 +62,15 @@ export interface Inputs {
 	readonly turboS3SessionToken: Option.Option<Redacted.Redacted<string>>;
 	readonly turboS3Prefix: Option.Option<string>;
 	readonly installDeps: boolean;
+	readonly bats: ToolMode;
+	readonly kcov: ToolMode;
 	readonly cacheBust: Option.Option<string>;
 	readonly additionalLockfiles: ReadonlyArray<string>;
 	readonly additionalCachePaths: ReadonlyArray<string>;
 }
 
 /**
- * Decodes all 16 `action.yml` inputs into a typed {@link Inputs} value, via
+ * Decodes all 18 `action.yml` inputs into a typed {@link Inputs} value, via
  * `ActionInput` accessors so `INPUT_` mangling and empty-string-is-absent
  * semantics stay owned by `@effected/github-actions`, not reimplemented here.
  */
@@ -82,6 +88,8 @@ export const loadInputs: Config.Config<Inputs> = Config.all({
 	turboS3SessionToken: Config.option(ActionInput.redacted("turbo-s3-session-token")),
 	turboS3Prefix: Config.option(ActionInput.string("turbo-s3-prefix")),
 	installDeps: ActionInput.boolean("install-deps").pipe(Config.withDefault(true)),
+	bats: ActionInput.string("bats").pipe(Config.withDefault("auto")),
+	kcov: ActionInput.string("kcov").pipe(Config.withDefault("auto")),
 	cacheBust: Config.option(ActionInput.string("cache-bust")),
 	additionalLockfiles: ActionInput.lines("additional-lockfiles").pipe(Config.withDefault([])),
 	additionalCachePaths: ActionInput.lines("additional-cache-paths").pipe(Config.withDefault([])),
@@ -89,6 +97,20 @@ export const loadInputs: Config.Config<Inputs> = Config.all({
 	Config.map((raw) => ({
 		...raw,
 		turboCache: raw.turboCache === "off" ? ("off" as const) : ("auto" as const),
+		bats: toolMode(raw.bats),
+		kcov: toolMode(raw.kcov),
 		cacheBust: Option.filter(raw.cacheBust, (v) => v !== "false" && v !== ""),
 	})),
 );
+
+/**
+ * Normalizes a three-state tool input.
+ *
+ * @remarks
+ * `"true"` and `"false"` are the only recognized literals; everything else —
+ * including absence, `"auto"`, and a typo — is `"auto"`. This mirrors
+ * `turbo-cache`'s "any value other than the literal `off` is `auto`" rule, and
+ * for the same reason: the safe reading of an input nobody spelled correctly is
+ * the auto-detecting one, never a silent force-on or force-off.
+ */
+const toolMode = (raw: string): ToolMode => (raw === "true" ? "on" : raw === "false" ? "off" : "auto");

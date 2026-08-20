@@ -3,7 +3,7 @@ import { ActionOutputs } from "@effected/github-actions";
 import { Effect } from "effect";
 
 /**
- * The 16 `action.yml` output names, verbatim, as a const tuple.
+ * The 22 `action.yml` output names, verbatim, as a const tuple.
  */
 export const OUTPUT_NAMES = [
 	"node-version",
@@ -16,6 +16,12 @@ export const OUTPUT_NAMES = [
 	"package-manager-version",
 	"biome-version",
 	"biome-enabled",
+	"bats-enabled",
+	"bats-version",
+	"bats-lib-path",
+	"kcov-enabled",
+	"kcov-version",
+	"kcov-cache-hit",
 	"turbo-enabled",
 	"turbo-cache-backend",
 	"turbo-cache-port",
@@ -30,7 +36,7 @@ export const OUTPUT_NAMES = [
 export type OutputName = (typeof OUTPUT_NAMES)[number];
 
 /**
- * The fully-typed shape of all 16 `action.yml` outputs.
+ * The fully-typed shape of all 22 `action.yml` outputs.
  */
 export interface OutputsModel {
 	readonly nodeVersion: string;
@@ -43,6 +49,12 @@ export interface OutputsModel {
 	readonly packageManagerVersion: string;
 	readonly biomeVersion: string;
 	readonly biomeEnabled: boolean;
+	readonly batsEnabled: boolean;
+	readonly batsVersion: string;
+	readonly batsLibPath: string;
+	readonly kcovEnabled: boolean;
+	readonly kcovVersion: string;
+	readonly kcovCacheHit: boolean;
 	readonly turboEnabled: boolean;
 	readonly turboCacheBackend: "github" | "s3" | "remote" | "none";
 	readonly turboCachePort: string;
@@ -67,6 +79,12 @@ export const initialOutputs: OutputsModel = {
 	packageManagerVersion: "",
 	biomeVersion: "",
 	biomeEnabled: false,
+	batsEnabled: false,
+	batsVersion: "",
+	batsLibPath: "",
+	kcovEnabled: false,
+	kcovVersion: "",
+	kcovCacheHit: false,
 	turboEnabled: false,
 	turboCacheBackend: "none",
 	turboCachePort: "",
@@ -93,6 +111,12 @@ export const emitOutputs = (model: OutputsModel): Effect.Effect<void, ActionOutp
 		yield* outputs.set("package-manager-version", model.packageManagerVersion);
 		yield* outputs.set("biome-version", model.biomeVersion);
 		yield* outputs.set("biome-enabled", String(model.biomeEnabled));
+		yield* outputs.set("bats-enabled", String(model.batsEnabled));
+		yield* outputs.set("bats-version", model.batsVersion);
+		yield* outputs.set("bats-lib-path", model.batsLibPath);
+		yield* outputs.set("kcov-enabled", String(model.kcovEnabled));
+		yield* outputs.set("kcov-version", model.kcovVersion);
+		yield* outputs.set("kcov-cache-hit", String(model.kcovCacheHit));
 		yield* outputs.set("turbo-enabled", String(model.turboEnabled));
 		yield* outputs.set("turbo-cache-backend", model.turboCacheBackend);
 		yield* outputs.set("turbo-cache-port", model.turboCachePort);
