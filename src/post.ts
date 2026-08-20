@@ -20,7 +20,7 @@ import { Action, ActionCache, ActionState, DetachedProcess } from "@effected/git
 import { Effect, Option } from "effect";
 
 import { PostLive } from "./layers/app.js";
-import { CacheState, STATE_KEYS, TurboServerState, isExactHit } from "./state.js";
+import { CacheState, KcovCacheState, STATE_KEYS, TurboServerState, isExactHit } from "./state.js";
 import { CacheError } from "./steps/restore-cache.js";
 
 /**
@@ -72,6 +72,61 @@ const saveDependencyCache = (saved: CacheState) =>
 			),
 		);
 	});
+
+/**
+ * Archives the kcov tree this run built.
+ *
+ * @remarks
+ * A separate branch from {@link saveDependencyCache} rather than a generalized
+ * one: the two entries are keyed on entirely different things, and only the
+ * dependency cache has a partial-restore concept worth generalizing over. The
+ * comparison here is a plain `===` rather than a shared `isExactHit` — that
+ * helper is typed on `CacheState` and encodes its three-way exact/partial/miss
+ * distinction on purpose; kcov's cache has only two outcomes, "some restored
+ * key equals the primary" or not, so reusing it would mean contorting a
+ * two-way decision through a three-way shape instead of writing the two-way
+ * comparison directly.
+ *
+ * That comparison is **not** `Option.isNone` — the restore-key ladder Task 6
+ * added means `restoredKey` is `some` on two different outcomes: an exact hit
+ * on the primary (skip), and a prefix-rung hit that matched an *older* key
+ * (still save, under the new primary). Only `some(primaryKey)` skips. Treating
+ * every `some` as "skip" would silently disable the ladder's self-healing —
+ * the whole reason a prefix-rung hit exists is so a rebuild after an image
+ * bump lands under a fresh key instead of leaving one abandoned.
+ *
+ * Contained in its own `catch` for the same reason `reapCacheServer` is: three
+ * independent jobs, three independent failures, and none of them may be the
+ * thing that costs another its work.
+ */
+const saveKcovCache = (saved: KcovCacheState) =>
+	Effect.gen(function* () {
+		if (Option.isSome(saved.restoredKey) && saved.restoredKey.value === saved.primaryKey) {
+			yield* Effect.logInfo("kcov was an exact hit — skipping save");
+			return;
+		}
+		if (saved.paths.length === 0) {
+			yield* Effect.logInfo("No kcov cache paths — skipping save");
+			return;
+		}
+
+		const cache = yield* ActionCache;
+		yield* Effect.logInfo(`Saving kcov cache: key=${saved.primaryKey}, paths (${saved.paths.length})`);
+		yield* cache.save(saved.paths, saved.primaryKey).pipe(
+			Effect.tap(() => Effect.logInfo(`kcov cache saved: ${saved.primaryKey}`)),
+			Effect.catch((cause) =>
+				Effect.logWarning(`Failed to save kcov cache with key ${saved.primaryKey}: ${cause.message}`),
+			),
+		);
+	}).pipe(
+		// The typed `ActionCacheError` channel is already closed by the inner
+		// `Effect.catch` above, so only a defect remains to guard against here —
+		// unlike `saveDependencyCache`, which lets its typed failure escape to
+		// this level.
+		Effect.catchDefect((defect) =>
+			Effect.logWarning(`kcov cache save failed: ${defect instanceof Error ? defect.message : String(defect)}`),
+		),
+	);
 
 /**
  * Stops the detached cache server `main` started.
@@ -169,6 +224,12 @@ export const makePost = (ops: DetachedProcessOps = DetachedProcess.ops) =>
 		yield* Option.match(cache, {
 			onNone: () => Effect.logDebug("No dependency cache state was saved by main; nothing to save"),
 			onSome: saveDependencyCache,
+		});
+
+		const kcovCache = yield* state.getOptional(STATE_KEYS.kcovCache, KcovCacheState);
+		yield* Option.match(kcovCache, {
+			onNone: () => Effect.logDebug("No kcov cache state was saved by main; nothing to save"),
+			onSome: saveKcovCache,
 		});
 	}).pipe(
 		Effect.catch((error) =>
