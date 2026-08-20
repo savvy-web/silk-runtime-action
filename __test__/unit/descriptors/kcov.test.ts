@@ -31,11 +31,29 @@ describe("kcov.plan", () => {
 });
 
 describe("kcovCacheKey", () => {
-	it("embeds version, image os and arch", () => {
-		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.none())).toBe("kcov-43-ubuntu24-X64");
+	it("embeds version, image os and arch in both rungs", () => {
+		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.none(), Option.some("20260801.1"))).toEqual({
+			primary: "kcov-43-ubuntu24-X64-20260801.1",
+			restorePrefix: "kcov-43-ubuntu24-X64",
+		});
 	});
 
-	it("appends a cache-bust segment when one is present", () => {
-		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-7"))).toBe("kcov-43-ubuntu24-X64-run-7");
+	// A self-hosted runner sets no `ImageVersion`; the ladder must degrade to the
+	// previous single-key behavior rather than mint a key nothing can match.
+	it("collapses the primary onto the prefix when there is no image version", () => {
+		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.none())).toEqual({
+			primary: "kcov-43-ubuntu24-X64",
+			restorePrefix: "kcov-43-ubuntu24-X64",
+		});
+	});
+
+	// `cache-bust` is documented to force a miss. On the end of the primary it
+	// would leave the fallback rung matching every un-busted entry, so the forced
+	// miss would silently restore anyway — it belongs in the prefix.
+	it("busts both rungs, not just the primary", () => {
+		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-7"), Option.some("20260801.1"))).toEqual({
+			primary: "kcov-43-ubuntu24-X64-run-7-20260801.1",
+			restorePrefix: "kcov-43-ubuntu24-X64-run-7",
+		});
 	});
 });

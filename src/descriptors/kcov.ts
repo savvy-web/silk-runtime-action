@@ -81,18 +81,63 @@ export const kcov = {
 	},
 };
 
+/** The two-part Actions cache key the built kcov tree is stored under. */
+export interface KcovCacheKey {
+	/** The key a save writes and an exact restore matches. */
+	readonly primary: string;
+	/**
+	 * The fallback rung, handed to `ActionCache.restore` as its restore-key
+	 * ladder: any entry whose key starts with this prefix will do.
+	 */
+	readonly restorePrefix: string;
+}
+
 /**
- * The Actions cache key the built kcov tree is stored under.
+ * The Actions cache key the built kcov tree is stored under, as a primary key
+ * and the prefix a restore falls back to.
  *
  * @remarks
- * `imageOs` is `ImageOS` (`ubuntu24`, `macos15`) and **not** `ImageVersion`.
- * `ImageVersion` bumps roughly weekly, which would reduce this cache to near
- * -uselessness; `ImageOS` is stable across an image generation. The residual
- * risk — system libraries moving *within* one generation, leaving a key valid
- * and its binary unloadable — is what the install step's verify probe exists to
- * catch. The key narrows the window; the probe closes it.
+ * The prefix is `ImageOS` (`ubuntu24`, `macos15`) and the primary appends
+ * `ImageVersion`. That is **not** a reversal of the earlier
+ * ImageOS-over-ImageVersion decision — that decision assumed `ImageVersion` as
+ * the *sole* key, where a roughly weekly bump means a cold cache and a
+ * multi-minute rebuild for nothing. It was incomplete rather than wrong: with
+ * an `ImageOS` prefix underneath it, a bump misses the primary, restores warm
+ * from the prefix, and re-saves under the new primary. The cache stays warm
+ * across a bump *and* gains what a single key can never have.
+ *
+ * What it gains is **self-healing**. Cache entries are immutable and a save to
+ * an existing key is a success, so under a single key a tree whose system
+ * libraries have moved is poisoned permanently: every run restores it, fails
+ * the verify probe, rebuilds, saves to the same taken key, and throws the good
+ * tree away — correct every time and permanently slow, for the ~2 years an LTS
+ * `ImageOS` lives. With the ladder, the rebuild lands on a *new* primary, and
+ * the next run exact-hits a binary that works.
+ *
+ * `imageVersion` is an **argument** and `Option.none()` is a first-class case:
+ * a self-hosted runner sets no such variable, and the primary then collapses to
+ * the prefix, degrading exactly to the previous single-key behavior rather than
+ * minting a `…-undefined` key nothing will ever match.
+ *
+ * `bust` sits in the **prefix**, not on the end of the primary, so that
+ * `cache-bust` still does what it is documented to do. Appended after
+ * `imageVersion` it would namespace the primary while leaving the fallback rung
+ * matching every un-busted entry — a forced miss that silently restores anyway.
  */
-export const kcovCacheKey = (version: string, imageOs: string, arch: string, bust: Option.Option<string>): string => {
+export const kcovCacheKey = (
+	version: string,
+	imageOs: string,
+	arch: string,
+	bust: Option.Option<string>,
+	imageVersion: Option.Option<string> = Option.none(),
+): KcovCacheKey => {
 	const base = `kcov-${version}-${imageOs}-${arch}`;
-	return Option.match(bust, { onNone: () => base, onSome: (value) => `${base}-${value}` });
+	const restorePrefix = Option.match(bust, { onNone: () => base, onSome: (value) => `${base}-${value}` });
+	return {
+		primary: Option.match(imageVersion, {
+			onNone: () => restorePrefix,
+			onSome: (value) => `${restorePrefix}-${value}`,
+		}),
+		restorePrefix,
+	};
 };

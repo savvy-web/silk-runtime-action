@@ -188,6 +188,32 @@ const build = (
 	});
 
 /**
+ * Hands `post` what it needs to write the tree back to the cache.
+ *
+ * @remarks
+ * Best-effort by design: a run whose kcov works but whose successor rebuilds it
+ * is a slower run, not a broken one, and failing the install over a state write
+ * would make it one. The failure is logged rather than swallowed so a degraded
+ * `GITHUB_STATE` is visible in the workflow log instead of showing up a week
+ * later as an unexplained cold cache.
+ */
+const stash = (
+	prefix: string,
+	primaryKey: string,
+	restoredKey: Option.Option<string>,
+): Effect.Effect<void, never, ActionState | ActionLogger> =>
+	Effect.gen(function* () {
+		const state = yield* ActionState;
+		yield* state
+			.save(STATE_KEYS.kcovCache, new KcovCacheState({ paths: [prefix], primaryKey, restoredKey }), KcovCacheState)
+			.pipe(
+				Effect.catch((cause) =>
+					Effect.logWarning(`kcov cache state could not be saved — the next run will rebuild: ${cause.message}`),
+				),
+			);
+	});
+
+/**
  * Provisions kcov, when this run decided to.
  *
  * @remarks
@@ -215,6 +241,7 @@ export const installKcov = (
 	options: {
 		readonly host?: Host;
 		readonly imageOs?: string;
+		readonly imageVersion?: Option.Option<string>;
 		readonly bust?: Option.Option<string>;
 		readonly toolRoot?: string;
 	} = {},
@@ -235,6 +262,11 @@ export const installKcov = (
 
 		const host = options.host ?? currentHost();
 		const imageOs = options.imageOs ?? process.env.ImageOS ?? `${host.platform}-unknown`;
+		// Read beside `ImageOS` and treated identically: an unset or empty variable
+		// (every self-hosted runner) is `none`, which collapses the primary key onto
+		// the prefix rather than minting one nothing will match.
+		const imageVersion =
+			options.imageVersion ?? Option.filter(Option.fromNullishOr(process.env.ImageVersion), (v) => v !== "");
 		const toolRoot = options.toolRoot ?? process.env.RUNNER_TOOL_CACHE ?? "/opt/hostedtoolcache";
 		const bust = options.bust ?? Option.none<string>();
 
@@ -248,13 +280,13 @@ export const installKcov = (
 		const prefix = path.join(toolRoot, "kcov", plan.version, host.arch);
 		const binDir = path.join(prefix, "bin");
 		const binary = path.join(binDir, plan.binary);
-		const key = kcovCacheKey(plan.version, imageOs, host.arch, bust);
+		const key = kcovCacheKey(plan.version, imageOs, host.arch, bust, imageVersion);
 
 		const cache = yield* ActionCache;
 		// A cache that cannot be reached is a miss: the build below is the whole
 		// fallback, and failing here would turn a degraded cache into a failed job.
 		const restored = yield* cache
-			.restore([prefix], key)
+			.restore([prefix], key.primary, [key.restorePrefix])
 			.pipe(
 				Effect.catch((cause) =>
 					Effect.logWarning(`kcov cache could not be read: ${cause.message}`).pipe(Effect.as(Option.none<string>())),
@@ -263,8 +295,20 @@ export const installKcov = (
 
 		if (Option.isSome(restored)) {
 			if (yield* probe(binary)) {
+				if (restored.value === key.primary) {
+					// An exact hit is already in the cache under the key a save would
+					// use, so there is nothing for `post` to do and no state to write.
+					yield* Effect.logInfo(`kcov ${plan.version} (cached)`);
+				} else {
+					// The fallback rung matched — the weekly `ImageVersion` bump. The
+					// tree is good and warm, but it lives under the *old* primary, so
+					// state is stashed and `post` re-saves it under the new one. Skipping
+					// this save is the mistake that leaves the ladder permanently one
+					// image behind.
+					yield* stash(prefix, key.primary, restored);
+					yield* Effect.logInfo(`kcov ${plan.version} (restored from ${restored.value}, re-saving as ${key.primary})`);
+				}
 				yield* publish(binDir, binary, plan.version);
-				yield* Effect.logInfo(`kcov ${plan.version} (cached)`);
 				return Option.some({ version: plan.version, binDir, cacheHit: true });
 			}
 			yield* Effect.logWarning(`Restored kcov ${plan.version} could not be executed — rebuilding from source`);
@@ -278,18 +322,12 @@ export const installKcov = (
 			});
 		}
 
-		const state = yield* ActionState;
-		yield* state
-			.save(
-				STATE_KEYS.kcovCache,
-				new KcovCacheState({ paths: [prefix], primaryKey: key, restoredKey: Option.none() }),
-				KcovCacheState,
-			)
-			.pipe(
-				Effect.catch((cause) =>
-					Effect.logWarning(`kcov cache state could not be saved — the next run will rebuild: ${cause.message}`),
-				),
-			);
+		// `restoredKey` is `none` on this path whatever the restore did: the tree on
+		// disk was just built and nothing about the entry that was restored
+		// describes it, so `post` must always attempt the save. That is what makes a
+		// failed probe self-healing — the rebuild lands under a fresh primary rather
+		// than being discarded against the taken key it came from.
+		yield* stash(prefix, key.primary, Option.none());
 
 		yield* publish(binDir, binary, plan.version);
 		yield* Effect.logInfo(`kcov ${plan.version} (built)`);

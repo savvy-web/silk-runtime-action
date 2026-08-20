@@ -16,10 +16,19 @@ import { Effect, FileSystem, Layer, Logger, Option, Path, PlatformError, Referen
 import { installKcov } from "../../../src/steps/install-kcov.js";
 
 const HOST = { platform: "linux", arch: "x64" };
-const OPTS = { host: HOST, imageOs: "ubuntu24", bust: Option.none<string>(), toolRoot: "/opt/hostedtoolcache" };
+const OPTS = {
+	host: HOST,
+	imageOs: "ubuntu24",
+	imageVersion: Option.some("20260801.1"),
+	bust: Option.none<string>(),
+	toolRoot: "/opt/hostedtoolcache",
+};
+const PRIMARY = "kcov-43-ubuntu24-x64-20260801.1";
+const PREFIX = "kcov-43-ubuntu24-x64";
 
 interface Recorded {
 	readonly restored: Array<string>;
+	readonly ladders: Array<ReadonlyArray<string>>;
 	readonly ran: Array<string>;
 	readonly paths: Array<string>;
 	readonly env: Array<readonly [string, string]>;
@@ -27,10 +36,16 @@ interface Recorded {
 	readonly logs: Array<string>;
 }
 
-const recorder = (): Recorded => ({ restored: [], ran: [], paths: [], env: [], saved: [], logs: [] });
+const recorder = (): Recorded => ({ restored: [], ladders: [], ran: [], paths: [], env: [], saved: [], logs: [] });
+
+/**
+ * What the cache answers: nothing, the primary key exactly, or the fallback
+ * prefix rung — the weekly `ImageVersion` bump.
+ */
+type Restore = "miss" | "primary" | "prefix";
 
 interface LayerOptions {
-	readonly restoreHit: boolean;
+	readonly restore: Restore;
 	/**
 	 * The exit code the **first** `kcov --version` answers with. `0` is a healthy
 	 * binary; anything else is the restored-but-unloadable case the probe exists
@@ -63,12 +78,15 @@ const makeLayer = (r: Recorded, options: LayerOptions) => {
 	return Layer.mergeAll(
 		spawner.layer,
 		ActionCache.layerTest({
-			restore: (_paths, key) =>
+			restore: (_paths, key, restoreKeys) =>
 				options.restoreFails === true
 					? Effect.fail(new ActionCacheError({ reason: "unreachable" }))
 					: Effect.sync(() => {
 							r.restored.push(String(key));
-							return options.restoreHit ? Option.some(String(key)) : Option.none<string>();
+							r.ladders.push(restoreKeys ?? []);
+							if (options.restore === "primary") return Option.some(String(key));
+							if (options.restore === "prefix") return Option.fromNullishOr(restoreKeys?.[0]);
+							return Option.none<string>();
 						}),
 		}),
 		ActionState.layerTest({
@@ -117,21 +135,24 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const result = yield* installKcov(false, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0 })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
 			expect(Option.isNone(result)).toBe(true);
 			expect(r.restored).toEqual([]);
 		}),
 	);
 
-	it.effect("restores from cache and skips the build when the probe passes", () =>
+	it.effect("exact-hits the primary, skips the build, and leaves post nothing to do", () =>
 		Effect.gen(function* () {
 			const r = recorder();
 			const result = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: true, probeExit: 0 })),
+				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 0 })),
 			);
-			expect(r.restored).toEqual(["kcov-43-ubuntu24-x64"]);
+			expect(r.restored).toEqual([PRIMARY]);
+			expect(r.ladders).toEqual([[PREFIX]]);
 			expect(Option.isSome(result) && result.value.cacheHit).toBe(true);
+			// The entry already lives under the key a save would use, so there is no
+			// state to stash.
 			expect(r.saved).toEqual([]);
 			// The one thing a hit is worth: no apt, no cmake, no make.
 			expect(r.ran).toEqual(["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
@@ -143,13 +164,48 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const result = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: true, probeExit: 127 })),
+				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 127 })),
 			);
 			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
 			expect(r.saved).toHaveLength(1);
 			expect(r.logs.some((l) => l.includes("rebuilding"))).toBe(true);
 			expect(r.ran.filter((c) => c.endsWith("kcov --version"))).toHaveLength(2);
 			expect(r.ran).toContain("make install");
+			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.none() });
+		}),
+	);
+
+	// The weekly `ImageVersion` bump: the primary misses, the prefix rung matches
+	// a still-good tree. Skipping the save here is the mistake that leaves the
+	// ladder permanently one image behind.
+	it.effect("restores from the prefix rung and re-saves under the new primary", () =>
+		Effect.gen(function* () {
+			const r = recorder();
+			const result = yield* installKcov(true, OPTS).pipe(
+				Effect.provide(makeLayer(r, { restore: "prefix", probeExit: 0 })),
+			);
+			expect(Option.isSome(result) && result.value.cacheHit).toBe(true);
+			// Warm: restored, probed, published — never built.
+			expect(r.ran).toEqual(["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
+			expect(r.saved).toHaveLength(1);
+			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.some(PREFIX) });
+		}),
+	);
+
+	// The self-healing assertion. A poisoned entry restored off the prefix rung is
+	// rebuilt and saved under the NEW primary — not the key it came from — so the
+	// next run exact-hits a binary that actually runs.
+	it.effect("saves a rebuild under the new primary, not the key it restored", () =>
+		Effect.gen(function* () {
+			const r = recorder();
+			const result = yield* installKcov(true, OPTS).pipe(
+				Effect.provide(makeLayer(r, { restore: "prefix", probeExit: 127 })),
+			);
+			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
+			expect(r.ran).toContain("make install");
+			expect(r.saved).toHaveLength(1);
+			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY });
+			expect((r.saved[0] as { primaryKey: string }).primaryKey).not.toBe(PREFIX);
 		}),
 	);
 
@@ -157,7 +213,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const result = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0 })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
 			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
 			expect(r.saved).toHaveLength(1);
@@ -178,9 +234,10 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			yield* installKcov(true, { ...OPTS, host: { platform: "darwin", arch: "arm64" }, imageOs: "macos15" }).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0 })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
-			expect(r.restored).toEqual(["kcov-43-macos15-arm64"]);
+			expect(r.restored).toEqual(["kcov-43-macos15-arm64-20260801.1"]);
+			expect(r.ladders).toEqual([["kcov-43-macos15-arm64"]]);
 			expect(r.ran[0]).toBe("brew install dwarfutils openssl@3");
 		}),
 	);
@@ -189,11 +246,12 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, { ...OPTS, host: { platform: "win32", arch: "x64" } }).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0 })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("detect");
 			expect(r.restored).toEqual([]);
+			expect(r.ladders).toEqual([]);
 			expect(r.ran).toEqual([]);
 		}),
 	);
@@ -202,7 +260,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0, buildExit: 2 })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, buildExit: 2 })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("build");
@@ -216,7 +274,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 127 })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 127 })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("verify");
@@ -228,7 +286,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const result = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0, restoreFails: true })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, restoreFails: true })),
 			);
 			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
 			expect(r.logs.some((l) => l.includes("cache could not be read"))).toBe(true);
@@ -239,7 +297,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const result = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0, saveFails: true })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, saveFails: true })),
 			);
 			expect(Option.isSome(result)).toBe(true);
 			expect(r.logs.some((l) => l.includes("the next run will rebuild"))).toBe(true);
@@ -251,7 +309,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: true, probeExit: 0, publishFails: true })),
+				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 0, publishFails: true })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("publish");
@@ -262,7 +320,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0, downloadFails: true })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, downloadFails: true })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("download");
@@ -273,7 +331,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0, makeDirectoryFails: true })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, makeDirectoryFails: true })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("build");
@@ -285,7 +343,7 @@ describe("installKcov", () => {
 		Effect.gen(function* () {
 			const r = recorder();
 			const error = yield* installKcov(true, OPTS).pipe(
-				Effect.provide(makeLayer(r, { restoreHit: false, probeExit: 0, spawnFails: true })),
+				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, spawnFails: true })),
 				Effect.flip,
 			);
 			expect(error.reason).toBe("build");
