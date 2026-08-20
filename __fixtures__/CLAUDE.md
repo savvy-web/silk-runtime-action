@@ -24,6 +24,7 @@ scenario is about. Installed `node_modules` are never committed.
 | `bun-bun` | bun as **both** runtime and package manager, `bun.lock` |
 | `biome-enabled` | `biome.jsonc` — version auto-detected from the `$schema` |
 | `turbo-enabled` | `turbo.json` + a seeded `.turbo/cache/` — detection plus an explicit `biome-version` input |
+| `bats-kcov` | `hello.sh` + `test/hello.bats` — the `*.bats` glob detection signal, and `bats_load_library` resolving against the exported `BATS_LIB_PATH` |
 | `additional-inputs` | `custom.lock` / `vendor.lock` and `build/` / `dist/` for the `additional-lockfiles` and `additional-cache-paths` inputs |
 | `turbo-monorepo` | a real pnpm + turbo workspace with a buildable package — used only by the turbo remote-cache e2e |
 
@@ -33,7 +34,9 @@ scenario is about. Installed `node_modules` are never committed.
 pushes to `main` and PRs touching `src/`, `dist/`, `action.yml`, `__fixtures__/` or the
 test actions. Four matrix jobs plus an aggregating `summary`:
 
-* `test-node-create-cache` — npm/pnpm/yarn/multi/bun × ubuntu/macos/windows, cache miss
+* `test-node-create-cache` — npm/pnpm/yarn/multi/bun × ubuntu/macos/windows, cache miss,
+  plus `bats` (the `bats-kcov` fixture) on ubuntu/macos only — windows is excluded because
+  kcov refuses `win32` and the bats install path is POSIX-shaped and unvalidated there
 * `test-node-restore-cache` — the same minus bun, `needs:` the create job, expects a hit
 * `test-feature-detection` — `biome-enabled` and `turbo-enabled` × 3 OS, `install-deps: false`
 * `test-additional-inputs` — ubuntu only; **newline-separated** multiline inputs are the

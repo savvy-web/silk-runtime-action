@@ -209,7 +209,7 @@ remote already matches; prerelease, build-metadata and sub-`1.0.0` tags no-op.
 │   ├── steps/                 # one contract module per pipeline step, in order
 │   ├── summary/format.ts      # pure log/panel formatters
 │   ├── turbo-cache/           # activation, handler, meta, server-config
-│   └── descriptors/           # descriptor.ts + node / bun / deno / biome
+│   └── descriptors/           # descriptor.ts + node / bun / deno / biome / bats / kcov
 ├── __test__/unit/             # Vitest suites, mirroring src/ (never co-located)
 ├── __fixtures__/              # workflow integration test fixtures
 ├── dist/                      # main.js / post.js / turbo-server.js / package.json
@@ -219,9 +219,10 @@ remote already matches; prerelease, build-metadata and sub-`1.0.0` tags no-op.
 └── package.json
 ```
 
-Step order: `load-config` → `detect-biome` → `detect-turbo` → `restore-cache` →
-`install-runtimes` → `setup-package-manager` → `install-dependencies` → `install-biome` →
-`turbo-cache` → `summary`; `cache-config` supplies the key/path derivation.
+Step order: `load-config` → `detect-biome` → `detect-turbo` → `detect-bats` →
+`restore-cache` → `install-runtimes` → `setup-package-manager` → `install-dependencies` →
+`install-biome` → `install-bats` → `install-kcov` → `turbo-cache` → `summary`;
+`cache-config` supplies the key/path derivation.
 
 ## Action Inputs
 
@@ -232,6 +233,8 @@ versions come only from `devEngines` — there are no version inputs.
 | --- | --- | --- |
 | `biome-version` | `""` | Override; empty auto-detects from the `$schema`, or skips |
 | `install-deps` | `"true"` | Install dependencies |
+| `bats` | `"auto"` | `auto` \| `true` \| `false`. `auto` installs bats-core, bats-support, bats-assert, bats-file and bats-mock when a `*.bats` file or a `vitest-bats` dependency is present |
+| `kcov` | `"auto"` | `auto` \| `true` \| `false`. `auto` follows the bats decision; built from source and cached, never installed when bats is off |
 | `turbo-cache` | `"auto"` | `auto` \| `off`. `auto` starts the embedded server when `turbo.json` exists and no Vercel creds are set |
 | `turbo-cache-prefix` | `""` | Key namespace for embedded cache artifacts |
 | `turbo-token` / `turbo-team` | `""` | Both together select Vercel passthrough and disable the embedded server |
@@ -253,6 +256,10 @@ versions come only from `devEngines` — there are no version inputs.
 | `node-enabled` / `bun-enabled` / `deno-enabled` | `"true"` \| `"false"` |
 | `package-manager` / `package-manager-version` | e.g. `pnpm` / `"10.20.0"` |
 | `biome-version` / `biome-enabled` | Installed version (empty if not) / `"true"` \| `"false"` |
+| `bats-version` / `bats-enabled` | Installed bats-core version (empty if not) / `"true"` \| `"false"` |
+| `bats-lib-path` | Exported `BATS_LIB_PATH`, or empty when bats was not installed |
+| `kcov-version` / `kcov-enabled` | Installed kcov version (empty if not) / `"true"` \| `"false"` |
+| `kcov-cache-hit` | Whether kcov was restored from the Actions cache rather than built |
 | `turbo-enabled` | Whether `turbo.json` was detected |
 | `turbo-cache-backend` | `"github"` (embedded Actions cache) \| `"s3"` (embedded S3) \| `"remote"` (Vercel passthrough) \| `"none"` |
 | `turbo-cache-port` | Port the embedded server bound to; empty when not started |

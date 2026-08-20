@@ -10,6 +10,12 @@ inputs:
   biome-version:
     description: Biome version to install
     required: false
+  bats:
+    description: Whether to provision the BATS toolchain (auto | true | false)
+    required: false
+  kcov:
+    description: Whether to provision kcov (auto | true | false)
+    required: false
   install-deps:
     description: Whether to install dependencies
     required: false
@@ -59,6 +65,12 @@ inputs:
     required: false
   expected-biome-enabled:
     description: Expected biome-enabled value (true/false)
+    required: false
+  expected-bats-enabled:
+    description: Expected bats-enabled value (true/false)
+    required: false
+  expected-kcov-enabled:
+    description: Expected kcov-enabled value (true/false)
     required: false
   expected-turbo-enabled:
     description: Expected turbo-enabled value (true/false)
@@ -119,6 +131,12 @@ outputs:
   biome-enabled:
     description: Whether Biome was installed
     value: ${{ steps.setup.outputs.biome-enabled || steps.setup1.outputs.biome-enabled }}
+  bats-enabled:
+    description: Whether the BATS toolchain was installed
+    value: ${{ steps.setup.outputs.bats-enabled || steps.setup1.outputs.bats-enabled }}
+  kcov-enabled:
+    description: Whether kcov was installed
+    value: ${{ steps.setup.outputs.kcov-enabled || steps.setup1.outputs.kcov-enabled }}
   turbo-enabled:
     description: Whether Turbo was detected
     value: ${{ steps.setup.outputs.turbo-enabled || steps.setup1.outputs.turbo-enabled }}
@@ -269,6 +287,8 @@ runs:
       uses: ./.github/actions/local
       with:
         biome-version: ${{ inputs.biome-version }}
+        bats: ${{ inputs.bats }}
+        kcov: ${{ inputs.kcov }}
         install-deps: ${{ inputs.install-deps }}
         turbo-token: ${{ inputs.turbo-token }}
         turbo-team: ${{ inputs.turbo-team }}
@@ -281,6 +301,8 @@ runs:
       uses: ./.github/actions/local
       with:
         biome-version: ${{ inputs.biome-version }}
+        bats: ${{ inputs.bats }}
+        kcov: ${{ inputs.kcov }}
         install-deps: ${{ inputs.install-deps }}
         turbo-token: ${{ inputs.turbo-token }}
         turbo-team: ${{ inputs.turbo-team }}
@@ -324,6 +346,8 @@ runs:
       uses: ./.github/actions/local
       with:
         biome-version: ${{ inputs.biome-version }}
+        bats: ${{ inputs.bats }}
+        kcov: ${{ inputs.kcov }}
         install-deps: ${{ inputs.install-deps }}
         turbo-token: ${{ inputs.turbo-token }}
         turbo-team: ${{ inputs.turbo-team }}
@@ -515,6 +539,8 @@ runs:
                 check_value("package-manager-version", "${{ steps.setup1.outputs.package-manager-version }}", "${{ inputs.expected-package-manager-version }}")
                 check_value("biome-version", "${{ steps.setup1.outputs.biome-version }}", "${{ inputs.expected-biome-version }}")
                 check_value("biome-enabled", "${{ steps.setup1.outputs.biome-enabled }}", "${{ inputs.expected-biome-enabled }}")
+                check_value("bats-enabled", "${{ steps.setup1.outputs.bats-enabled }}", "${{ inputs.expected-bats-enabled }}")
+                check_value("kcov-enabled", "${{ steps.setup1.outputs.kcov-enabled }}", "${{ inputs.expected-kcov-enabled }}")
                 check_value("turbo-enabled", "${{ steps.setup1.outputs.turbo-enabled }}", "${{ inputs.expected-turbo-enabled }}")
                 check_contains("lockfiles", r"${{ steps.setup1.outputs.lockfiles }}", "${{ inputs.expected-lockfiles }}")
                 check_contains("cache-paths", r"${{ steps.setup1.outputs.cache-paths }}", "${{ inputs.expected-cache-paths }}")
@@ -536,6 +562,8 @@ runs:
                 check_value("package-manager-version", "${{ steps.setup.outputs.package-manager-version }}", "${{ inputs.expected-package-manager-version }}")
                 check_value("biome-version", "${{ steps.setup.outputs.biome-version }}", "${{ inputs.expected-biome-version }}")
                 check_value("biome-enabled", "${{ steps.setup.outputs.biome-enabled }}", "${{ inputs.expected-biome-enabled }}")
+                check_value("bats-enabled", "${{ steps.setup.outputs.bats-enabled }}", "${{ inputs.expected-bats-enabled }}")
+                check_value("kcov-enabled", "${{ steps.setup.outputs.kcov-enabled }}", "${{ inputs.expected-kcov-enabled }}")
                 check_value("turbo-enabled", "${{ steps.setup.outputs.turbo-enabled }}", "${{ inputs.expected-turbo-enabled }}")
                 check_value("cache-hit", "${{ steps.setup.outputs.cache-hit }}", "${{ inputs.expected-cache-hit }}")
                 check_contains("lockfiles", r"${{ steps.setup.outputs.lockfiles }}", "${{ inputs.expected-lockfiles }}")

@@ -45,6 +45,10 @@ jobs:
           - yarn
           - multi
           - bun
+          - bats
+        exclude:
+          - os: windows-latest
+            pm: bats
         include:
           - pm: npm
             fixture: node-npm
@@ -118,6 +122,21 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: bun --version
             title: 📦 Bun (Create Cache)
+          - pm: bats
+            fixture: bats-kcov
+            install-deps: "false"
+            expected-cache-hit: "false"
+            expected-node-enabled: "true"
+            expected-node-version: 24.11.0
+            expected-package-manager: pnpm
+            expected-package-manager-version: 10.20.0
+            expected-deno-enabled: "false"
+            expected-bun-enabled: "false"
+            expected-biome-enabled: "false"
+            expected-turbo-enabled: "false"
+            expected-bats-enabled: "true"
+            test-command: bats --version && bats test/
+            title: 🦇 BATS (Create Cache)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -139,6 +158,8 @@ jobs:
           expected-package-manager: ${{ matrix.expected-package-manager || '' }}
           expected-package-manager-version: ${{ matrix.expected-package-manager-version || '' }}
           expected-biome-enabled: ${{ matrix.expected-biome-enabled || '' }}
+          expected-bats-enabled: ${{ matrix.expected-bats-enabled || '' }}
+          expected-kcov-enabled: ${{ matrix.expected-kcov-enabled || '' }}
           expected-turbo-enabled: ${{ matrix.expected-turbo-enabled || '' }}
           expected-cache-hit: ${{ matrix.expected-cache-hit || '' }}
       - name: Test runtime
