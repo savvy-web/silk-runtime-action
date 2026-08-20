@@ -9,6 +9,7 @@ import { Option, Schema } from "effect";
 export const STATE_KEYS = {
 	cache: "silk-runtime-cache",
 	turboServer: "silk-runtime-turbo-server",
+	kcovCache: "silk-runtime-kcov",
 } as const;
 
 /**
@@ -64,4 +65,31 @@ export class TurboServerState extends Schema.Class<TurboServerState>("TurboServe
 	port: Schema.Number,
 	backend: Schema.Literals(["github", "s3"]),
 	logFile: Schema.String,
+}) {}
+
+/**
+ * kcov cache state persisted from `main` to `post`.
+ *
+ * @remarks
+ * Deliberately **not** folded into {@link CacheState}, and given its own
+ * {@link STATE_KEYS} entry, because the two are keyed on entirely different
+ * things: the dependency cache on lockfile hashes, this one on a pinned tool
+ * version plus the runner's `ImageOS` and architecture. Sharing one entry
+ * would tie a multi-minute kcov build to the lockfiles and discard it on every
+ * dependency bump — and, in the other direction, would keep a stale kcov tree
+ * alive across an image change that a dependency bump happens not to notice.
+ *
+ * `restoredKey` is `Schema.OptionFromNullOr` for exactly the reason spelled
+ * out on {@link CacheState}: state crosses the phase boundary as JSON, and
+ * `Schema.Option` encodes to a form that does not decode back. `OptionFromNullOr`
+ * encodes to `string | null`.
+ *
+ * `main` writes this only when it actually built kcov — a restored-and-probed
+ * tree is already in the cache under this key, so there is nothing for `post`
+ * to save.
+ */
+export class KcovCacheState extends Schema.Class<KcovCacheState>("KcovCacheState")({
+	paths: Schema.Array(Schema.String),
+	primaryKey: Schema.String,
+	restoredKey: Schema.OptionFromNullOr(Schema.String),
 }) {}
