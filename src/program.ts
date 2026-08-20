@@ -23,10 +23,15 @@ import type { OutputsModel } from "./schema/outputs.js";
 import { emitOutputs, initialOutputs } from "./schema/outputs.js";
 import type { CacheState } from "./state.js";
 import { isExactHit } from "./state.js";
+import { detectBats } from "./steps/detect-bats.js";
 import { detectBiome } from "./steps/detect-biome.js";
 import { detectTurbo } from "./steps/detect-turbo.js";
+import type { InstalledBats } from "./steps/install-bats.js";
+import { installBats } from "./steps/install-bats.js";
 import { installBiome } from "./steps/install-biome.js";
 import { installDependencies } from "./steps/install-dependencies.js";
+import type { InstalledKcov } from "./steps/install-kcov.js";
+import { installKcov } from "./steps/install-kcov.js";
 import type { InstalledRuntime } from "./steps/install-runtimes.js";
 import { installRuntimes } from "./steps/install-runtimes.js";
 import { loadConfig } from "./steps/load-config.js";
@@ -193,10 +198,11 @@ export const program = Effect.gen(function* () {
 	// ordering (`legacy-v1/program.ts:382-411`).
 	const biomeVersion = yield* logger.group("Detect Biome", detectBiome(inputs.biomeVersion));
 	const turbo = yield* logger.group("Detect Turbo", detectTurbo);
-	// The headline a reader skims instead of expanding the three groups above
+	const batsDecision = yield* logger.group("Detect BATS", detectBats({ bats: inputs.bats, kcov: inputs.kcov }));
+	// The headline a reader skims instead of expanding the detection groups above
 	// (oracle 29). v1 emitted it as the canonical success line of a single
-	// "Detect configuration" group; detection is three groups here, so the line
-	// is assembled once all three have answered and gets a group of its own —
+	// "Detect configuration" group; detection is four groups here, so the line
+	// is assembled once all four have answered and gets a group of its own —
 	// a structural deviation, and the only placement that can carry every fact.
 	yield* logger.group(
 		"Detected configuration",
@@ -206,6 +212,7 @@ export const program = Effect.gen(function* () {
 				packageManager: config.packageManager,
 				biome: biomeVersion,
 				turbo: turbo.enabled,
+				bats: batsDecision.installBats,
 			}),
 		),
 	);
@@ -249,6 +256,28 @@ export const program = Effect.gen(function* () {
 			),
 		),
 	);
+	// Optional, exactly as Biome is: a toolchain a later step may or may not
+	// invoke is not worth failing a job over, and the outputs fold from the
+	// install result rather than from detection so a run that could not fetch it
+	// reports disabled (oracle 30).
+	const bats = yield* logger.group(
+		"Install BATS",
+		installBats(batsDecision.installBats).pipe(
+			Effect.catch((error) =>
+				Effect.logWarning(`BATS installation failed: ${error.message}`).pipe(Effect.as(Option.none<InstalledBats>())),
+			),
+		),
+	);
+	// kcov is gated on bats having actually landed, not merely on the decision: a
+	// coverage tool for a toolchain that failed to install has nothing to cover.
+	const kcov = yield* logger.group(
+		"Install kcov",
+		installKcov(batsDecision.installKcov && Option.isSome(bats), { bust: inputs.cacheBust }).pipe(
+			Effect.catch((error) =>
+				Effect.logWarning(`kcov installation failed: ${error.message}`).pipe(Effect.as(Option.none<InstalledKcov>())),
+			),
+		),
+	);
 	// Last in the pipeline deliberately: nothing above consumes the turbo
 	// environment, and a later start shortens the window in which a detached
 	// child holds the runner's short-lived `ACTIONS_RUNTIME_TOKEN`.
@@ -269,6 +298,12 @@ export const program = Effect.gen(function* () {
 		packageManagerVersion: packageManager.version,
 		biomeVersion: Option.match(biome, { onNone: () => "", onSome: (installed) => installed.version }),
 		biomeEnabled: Option.isSome(biome),
+		batsVersion: Option.match(bats, { onNone: () => "", onSome: (installed) => installed.version }),
+		batsEnabled: Option.isSome(bats),
+		batsLibPath: Option.match(bats, { onNone: () => "", onSome: (installed) => installed.libPath }),
+		kcovVersion: Option.match(kcov, { onNone: () => "", onSome: (installed) => installed.version }),
+		kcovEnabled: Option.isSome(kcov),
+		kcovCacheHit: Option.match(kcov, { onNone: () => false, onSome: (installed) => installed.cacheHit }),
 		turboEnabled: turbo.enabled,
 		...turboCacheOutputs(turboCache),
 		cacheHit: cacheHit(cache),
@@ -288,6 +323,11 @@ export const program = Effect.gen(function* () {
 		// tell "nobody asked for Biome" apart from "we could not fetch the one
 		// you pinned" — two situations the install result alone renders as one.
 		biomeDetected: biomeVersion,
+		bats,
+		kcov,
+		// Requested-but-failed is what the panel's `unavailable` cell reports, and
+		// the decision is the only thing that can tell it apart from never asked.
+		kcovRequested: batsDecision.installKcov,
 		cache,
 		turboCache,
 		dependenciesInstalled: dependencies.ran,

@@ -71,6 +71,37 @@ const emitted = (model: OutputsModel) =>
 		return { seen: Object.fromEntries(seen), calls };
 	});
 
+describe("bats and kcov outputs", () => {
+	it("defaults to all-disabled", () => {
+		expect(initialOutputs.batsEnabled).toBe(false);
+		expect(initialOutputs.batsVersion).toBe("");
+		expect(initialOutputs.batsLibPath).toBe("");
+		expect(initialOutputs.kcovEnabled).toBe(false);
+		expect(initialOutputs.kcovVersion).toBe("");
+		expect(initialOutputs.kcovCacheHit).toBe(false);
+	});
+
+	it.effect("publishes all six", () =>
+		Effect.gen(function* () {
+			const { seen } = yield* emitted({
+				...initialOutputs,
+				batsEnabled: true,
+				batsVersion: "1.14.0",
+				batsLibPath: "/home/runner/.local/share",
+				kcovEnabled: true,
+				kcovVersion: "43",
+				kcovCacheHit: true,
+			});
+			expect(seen["bats-enabled"]).toBe("true");
+			expect(seen["bats-version"]).toBe("1.14.0");
+			expect(seen["bats-lib-path"]).toBe("/home/runner/.local/share");
+			expect(seen["kcov-enabled"]).toBe("true");
+			expect(seen["kcov-version"]).toBe("43");
+			expect(seen["kcov-cache-hit"]).toBe("true");
+		}),
+	);
+});
+
 describe("emitOutputs", () => {
 	it.effect("writes every action.yml output exactly once", () =>
 		Effect.gen(function* () {
@@ -84,7 +115,7 @@ describe("emitOutputs", () => {
 	it.effect("publishes each field under its own name, not merely under some name", () =>
 		Effect.gen(function* () {
 			// The name-set assertion above is blind to the thing most likely to go
-			// wrong in a 16-line block of near-identical `set` calls: a field wired
+			// wrong in a 22-line block of near-identical `set` calls: a field wired
 			// to its neighbour's name. Swap `bunVersion` and `denoVersion` in
 			// `emitOutputs` and every name is still written exactly once. Distinct
 			// sentinels per field are what make that swap show up as a diff.
@@ -99,6 +130,12 @@ describe("emitOutputs", () => {
 				packageManagerVersion: "sentinel-5",
 				biomeVersion: "sentinel-6",
 				biomeEnabled: false,
+				batsEnabled: true,
+				batsVersion: "sentinel-10",
+				batsLibPath: "sentinel-11",
+				kcovEnabled: false,
+				kcovVersion: "sentinel-12",
+				kcovCacheHit: true,
 				turboEnabled: true,
 				// The two enum fields cannot take a sentinel, so they take values
 				// distinct from each other and from every default.
@@ -120,6 +157,12 @@ describe("emitOutputs", () => {
 				"package-manager-version": "sentinel-5",
 				"biome-version": "sentinel-6",
 				"biome-enabled": "false",
+				"bats-enabled": "true",
+				"bats-version": "sentinel-10",
+				"bats-lib-path": "sentinel-11",
+				"kcov-enabled": "false",
+				"kcov-version": "sentinel-12",
+				"kcov-cache-hit": "true",
 				"turbo-enabled": "true",
 				"turbo-cache-backend": "s3",
 				"turbo-cache-port": "sentinel-7",

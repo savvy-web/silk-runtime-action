@@ -45,6 +45,10 @@ jobs:
           - yarn
           - multi
           - bun
+          - bats
+        exclude:
+          - os: windows-latest
+            pm: bats
         include:
           - pm: npm
             fixture: node-npm
@@ -118,6 +122,36 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: bun --version
             title: 📦 Bun (Create Cache)
+          - pm: bats
+            fixture: bats-kcov
+            install-deps: "false"
+            # kcov stays off here: its `auto` default would follow the bats
+            # decision and build from source on every PR — this matrix's
+            # cache-bust is scoped to `github.run_id`, so that build can never
+            # be restored, and kcov failures degrade to warnings, so a broken
+            # build here wouldn't even go red. kcov's end-to-end validation
+            # (build, cache, restore) lives on a downstream consumer's CI,
+            # where it is actually used and the warm-cache path is observable
+            # — this fixture only proves bats detection and BATS_LIB_PATH.
+            kcov: "false"
+            # Pinned now that kcov is uniformly off for this row. It was left
+            # unset while kcov followed `auto`, because the expected value
+            # differed per OS and no single literal could hold across the
+            # matrix; disabling kcov removed that split, so the fixture can and
+            # should assert the output rather than merely not build it.
+            expected-kcov-enabled: "false"
+            expected-cache-hit: "false"
+            expected-node-enabled: "true"
+            expected-node-version: 24.11.0
+            expected-package-manager: pnpm
+            expected-package-manager-version: 10.20.0
+            expected-deno-enabled: "false"
+            expected-bun-enabled: "false"
+            expected-biome-enabled: "false"
+            expected-turbo-enabled: "false"
+            expected-bats-enabled: "true"
+            test-command: bats --version && bats test/
+            title: 🦇 BATS (Create Cache)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -129,6 +163,7 @@ jobs:
           fixture: ${{ matrix.fixture }}
           title: ${{ matrix.title }}
           install-deps: ${{ matrix.install-deps }}
+          kcov: ${{ matrix.kcov || '' }}
           cache-bust: ${{ matrix.pm }}-${{ matrix.os }}-${{ github.run_id }}
           expected-node-version: ${{ matrix.expected-node-version || '' }}
           expected-node-enabled: ${{ matrix.expected-node-enabled || '' }}
@@ -139,6 +174,8 @@ jobs:
           expected-package-manager: ${{ matrix.expected-package-manager || '' }}
           expected-package-manager-version: ${{ matrix.expected-package-manager-version || '' }}
           expected-biome-enabled: ${{ matrix.expected-biome-enabled || '' }}
+          expected-bats-enabled: ${{ matrix.expected-bats-enabled || '' }}
+          expected-kcov-enabled: ${{ matrix.expected-kcov-enabled || '' }}
           expected-turbo-enabled: ${{ matrix.expected-turbo-enabled || '' }}
           expected-cache-hit: ${{ matrix.expected-cache-hit || '' }}
       - name: Test runtime

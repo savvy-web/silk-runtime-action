@@ -47,6 +47,19 @@ export type AbsoluteVersion = typeof AbsoluteVersion.Type;
 const OnFail = Schema.Literals(["warn", "error", "ignore"]);
 
 /**
+ * The normalized three-state form of an optional tool input: `auto` detects
+ * the tool from the repository, `on` forces the install, `off` skips it.
+ *
+ * @remarks
+ * Backs the `bats` and `kcov` inputs. Declared here rather than alongside
+ * `detectBats` because `schema/inputs.ts` also consumes it — `schema/` is the
+ * lower layer in this repo, so the type lives where both `steps/` and
+ * `schema/` can import it without inverting that layering.
+ */
+export const ToolMode = Schema.Literals(["auto", "on", "off"]);
+export type ToolMode = typeof ToolMode.Type;
+
+/**
  * A single `devEngines.runtime` entry: a runtime name paired with an absolute version.
  */
 export class RuntimeSpec extends Schema.Class<RuntimeSpec>("RuntimeSpec")({

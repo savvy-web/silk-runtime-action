@@ -4,6 +4,8 @@ import { Data, Effect, Option } from "effect";
 import type { OutputsModel } from "../schema/outputs.js";
 import type { CacheState } from "../state.js";
 import { buildRuntimeSummary } from "../summary/format.js";
+import type { InstalledBats } from "./install-bats.js";
+import type { InstalledKcov } from "./install-kcov.js";
 import type { InstalledRuntime } from "./install-runtimes.js";
 import type { StartedTurboCache } from "./turbo-cache.js";
 
@@ -85,6 +87,21 @@ export interface SummaryFacts {
 	readonly turboCache: StartedTurboCache;
 	/** Whether an install command actually ran and succeeded. */
 	readonly dependenciesInstalled: boolean;
+	/** What `installBats` installed, if anything. */
+	readonly bats: Option.Option<InstalledBats>;
+	/** What `installKcov` installed, if anything. */
+	readonly kcov: Option.Option<InstalledKcov>;
+	/**
+	 * Whether kcov was asked for.
+	 *
+	 * @remarks
+	 * Carried beside the install result for the same reason `biomeDetected` is,
+	 * and consumed in the opposite direction: the panel's `⚠️ unavailable` cell is
+	 * the one row that reports a *failed* request out loud, and the install
+	 * result alone renders "never asked for" and "asked for and could not be
+	 * built" as the same `None`.
+	 */
+	readonly kcovRequested: boolean;
 }
 
 /**
@@ -173,6 +190,19 @@ export const writeSummary = (facts: SummaryFacts): Effect.Effect<void, SummaryEr
 			turbo: { backend: facts.turboCache.backend, port: facts.turboCache.port },
 			cache: facts.cache,
 			dependenciesInstalled: facts.dependenciesInstalled,
+			bats: Option.map(facts.bats, (installed) => ({
+				version: installed.version,
+				libraries: installed.libraries,
+			})),
+			kcov: Option.isSome(facts.kcov)
+				? Option.some({
+						_tag: "installed" as const,
+						version: facts.kcov.value.version,
+						cacheHit: facts.kcov.value.cacheHit,
+					})
+				: facts.kcovRequested
+					? Option.some({ _tag: "unavailable" as const })
+					: Option.none(),
 		});
 
 		yield* outputs.summary(panel).pipe(

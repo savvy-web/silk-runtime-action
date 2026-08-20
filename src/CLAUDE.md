@@ -27,11 +27,13 @@ turbo-cache/             # activation (the backend-selection table), meta
                          # (routes/auth/keys), server-config (TURBOGHA_* env →
                          # backend layer)
 descriptors/             # descriptor.ts (RuntimePlan/RuntimeDescriptor) + node, bun,
-                         # deno, biome — pure per-host URL/archive/subpath resolution
+                         # deno, biome, bats, kcov — pure per-host URL/archive/subpath
+                         # resolution
 steps/                   # one contract module per pipeline step, in runner order:
-                         # load-config, detect-biome, detect-turbo, cache-config,
-                         # restore-cache, install-runtimes, setup-package-manager,
-                         # install-dependencies, install-biome, turbo-cache, summary
+                         # load-config, detect-biome, detect-turbo, detect-bats,
+                         # cache-config, restore-cache, install-runtimes,
+                         # setup-package-manager, install-dependencies, install-biome,
+                         # install-bats, install-kcov, turbo-cache, summary
 ```
 
 Detection precedes the cache restore, and the restore precedes every install —
@@ -70,7 +72,7 @@ step's; `MainLive` supplies only what `ActionServices` lacks.
 - **`ProcessId.make`, never `makeUnsafe`** — `makeUnsafe` typechecks through test doubles
   then dies at runtime where `catchDefect` goes blind.
 - **API authority:** `docs/superpowers/reference/effected-api-dossier.md`, then the
-  installed `.d.ts`, then `.repos/effect` (read-only, pinned to beta.101).
+  installed `.d.ts`, then `.repos/effect` (read-only, pinned to rc.109).
 - **Design:** `docs/superpowers/specs/2026-07-28-effected-rebuild-design.md`.
 - **Legacy oracle:** `docs/superpowers/reference/legacy-v1/` — cite it for behavior
   questions; **never import from it**.

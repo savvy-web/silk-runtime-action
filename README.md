@@ -79,9 +79,18 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `turbo-s3-session-token` | S3 session token, for temporary credentials. | `""` |
 | `turbo-s3-prefix` | Key prefix within the S3 bucket. | `""` |
 | `install-deps` | Whether to install dependencies (`true` \| `false`). | `"true"` |
+| `bats` | Provision the BATS toolchain — bats-core, bats-support, bats-assert, bats-file, bats-mock (`auto` \| `true` \| `false`). `auto` installs when a `*.bats` file or a `vitest-bats` dependency is present. | `"auto"` |
+| `kcov` | Provision kcov for shell-script coverage (`auto` \| `true` \| `false`). `auto` follows the bats decision. Built from source and cached; never installed when bats is off. | `"auto"` |
 | `cache-bust` | String appended to the cache key to force a miss. `false` or empty disables it; any other value busts. **Testing only.** | `"false"` |
 | `additional-lockfiles` | Extra lockfile glob patterns to fold into the cache key. One pattern per line. | `""` |
 | `additional-cache-paths` | Extra paths to cache and restore. One glob pattern per line. | `""` |
+
+**Windows is not supported for either tool.** `kcov` is refused outright — it has no
+Windows build — so `kcov-enabled` is always `false` there. `bats` is not blocked, because
+bats-core is a bash program that may well work under Git Bash, but its install path here
+(`$HOME/.local/share`, `BATS_LIB_PATH`) has never been exercised on Windows and the fixture
+matrix excludes it: treat a `bats-enabled=true` on a Windows runner as unverified. Both
+tools are installed and validated on Linux and macOS.
 
 ## Outputs
 
@@ -97,6 +106,12 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `package-manager-version` | The package manager version |
 | `biome-version` | The Biome version that was installed, or empty |
 | `biome-enabled` | Whether Biome was installed (`true` \| `false`) |
+| `bats-enabled` | Whether the BATS toolchain was installed (`true` \| `false`) |
+| `bats-version` | The bats-core version that was installed, or empty |
+| `bats-lib-path` | The `BATS_LIB_PATH` value that was exported, or empty when bats was not installed |
+| `kcov-enabled` | Whether kcov was installed (`true` \| `false`) |
+| `kcov-version` | The kcov version that was installed, or empty |
+| `kcov-cache-hit` | Whether kcov was restored from the Actions cache rather than built (`true` \| `false`) |
 | `turbo-enabled` | Whether `turbo.json` was detected (`true` \| `false`) |
 | `turbo-cache-backend` | Active turbo cache backend (`github` \| `s3` \| `remote` \| `none`) |
 | `turbo-cache-port` | Local port the embedded turbo cache server bound to, or empty when it did not start |

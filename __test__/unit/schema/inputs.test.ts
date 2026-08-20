@@ -112,6 +112,31 @@ describe("loadInputs", () => {
 	);
 });
 
+describe("bats and kcov inputs", () => {
+	it.effect("defaults both to auto when unset", () =>
+		Effect.gen(function* () {
+			const inputs = yield* loadInputs;
+			expect(inputs.bats).toBe("auto");
+			expect(inputs.kcov).toBe("auto");
+		}).pipe(Effect.provide(ActionInput.layer({}))),
+	);
+
+	it.effect("normalizes true to on and false to off", () =>
+		Effect.gen(function* () {
+			const inputs = yield* loadInputs;
+			expect(inputs.bats).toBe("on");
+			expect(inputs.kcov).toBe("off");
+		}).pipe(Effect.provide(ActionInput.layer({ bats: "true", kcov: "false" }))),
+	);
+
+	it.effect("normalizes any unrecognized value to auto", () =>
+		Effect.gen(function* () {
+			const inputs = yield* loadInputs;
+			expect(inputs.bats).toBe("auto");
+		}).pipe(Effect.provide(ActionInput.layer({ bats: "yes-please" }))),
+	);
+});
+
 describe("INPUT_NAMES", () => {
 	it("matches the inputs action.yml declares", () => {
 		expect([...INPUT_NAMES].sort()).toEqual([...declaredInputNames()].sort());

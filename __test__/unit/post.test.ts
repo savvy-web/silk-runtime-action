@@ -13,7 +13,7 @@ import {
 import { Effect, Layer, Logger, Option, References } from "effect";
 
 import { makePost, post } from "../../src/post.js";
-import { CacheState, STATE_KEYS, TurboServerState } from "../../src/state.js";
+import { CacheState, KcovCacheState, STATE_KEYS, TurboServerState } from "../../src/state.js";
 
 /**
  * `makePost` over a seam that stubs `reap` and nothing else.
@@ -81,6 +81,22 @@ const stateWith = (cache: Option.Option<CacheState>): Layer.Layer<ActionState> =
 			Effect.succeed(key === STATE_KEYS.cache ? cache : Option.none())) as ActionState["Service"]["getOptional"],
 	});
 
+/**
+ * An `ActionState` serving `kcov` under the kcov-cache key and, optionally,
+ * `cache` under the dependency-cache key — for the tests that need both
+ * present at once (a failing kcov save must not cost the dependency save).
+ */
+const stateWithKcov = (
+	kcov: Option.Option<KcovCacheState>,
+	cache: Option.Option<CacheState> = Option.none(),
+): Layer.Layer<ActionState> =>
+	ActionState.layerTest({
+		getOptional: ((key: string) =>
+			Effect.succeed(
+				key === STATE_KEYS.kcovCache ? kcov : key === STATE_KEYS.cache ? cache : Option.none(),
+			)) as ActionState["Service"]["getOptional"],
+	});
+
 /** Runs `post` over `state` and `cache`, capturing every log line it emits. */
 const runPost = (options: {
 	readonly state: Layer.Layer<ActionState>;
@@ -122,14 +138,21 @@ const missed = CacheState.make({
 	lockfiles: ["/home/runner/work/repo/repo/pnpm-lock.yaml"],
 });
 
+/** What `main` saves after a kcov build, on a miss (no restore-key hit at all). */
+const missedKcov = KcovCacheState.make({
+	paths: ["/opt/hostedtoolcache/kcov/43/x64"],
+	primaryKey: "kcov-43-ubuntu24-x64-aaaaaaaa-20260715.1",
+	restoredKey: Option.none(),
+});
+
 describe("post", () => {
-	it.effect("reads both cross-phase state keys, the server first", () =>
+	it.effect("reads all three cross-phase state keys, the server first", () =>
 		Effect.gen(function* () {
 			const read: Array<string> = [];
 			yield* post.pipe(Effect.provide(makeLayer(read)));
 			// Teardown precedes every branch that can return early (oracle 35): a
 			// detached child outliving the job is worse than an unsaved cache.
-			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache]);
+			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.kcovCache]);
 		}),
 	);
 
@@ -226,7 +249,7 @@ describe("post", () => {
 			);
 
 			expect(exit._tag).toBe("Success");
-			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache]);
+			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.kcovCache]);
 		}),
 	);
 
@@ -457,6 +480,117 @@ describe("post", () => {
 				Effect.exit,
 			);
 			expect(exit._tag).toBe("Success");
+		}),
+	);
+});
+
+describe("kcov cache save", () => {
+	it.effect("saves the built kcov tree under its primary key on a miss", () =>
+		Effect.gen(function* () {
+			const saved: Array<Saved> = [];
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
+				Effect.provide(
+					Layer.mergeAll(stateWithKcov(Option.some(missedKcov)), cacheTest(saved), ActionLogger.layerSilent),
+				),
+				Effect.exit,
+			);
+			expect(exit._tag).toBe("Success");
+			expect(saved).toEqual([{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
+		}),
+	);
+
+	it.effect("skips the save when kcov came from an exact hit", () =>
+		Effect.gen(function* () {
+			const saved: Array<Saved> = [];
+			const exact = KcovCacheState.make({ ...missedKcov, restoredKey: Option.some(missedKcov.primaryKey) });
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
+				Effect.provide(
+					// `cacheTest(saved)` rather than a bare `layerTest({})`: the bare double
+					// records nothing, so `saved` stays empty whether or not `save` ran and
+					// the assertion below passes against a broken skip-guard.
+					Layer.mergeAll(stateWithKcov(Option.some(exact)), cacheTest(saved), ActionLogger.layerSilent),
+				),
+				Effect.exit,
+			);
+			expect(exit._tag).toBe("Success");
+			expect(saved).toEqual([]);
+		}),
+	);
+
+	it.effect("still saves under the new primary on a prefix-rung hit, not just a miss", () =>
+		Effect.gen(function* () {
+			// The stale brief predates the restore-key ladder and would have this
+			// case skip: `restoredKey` is `some`, but of an *older* key, not the
+			// primary this run resolved. A prefix-rung hit is exactly the case the
+			// ladder exists to re-home under a fresh key — skipping it here would
+			// silently disable that self-healing.
+			const saved: Array<Saved> = [];
+			const olderKey = "kcov-43-ubuntu24-x64-aaaaaaaa-20260708.3";
+			const rungHit = KcovCacheState.make({ ...missedKcov, restoredKey: Option.some(olderKey) });
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
+				Effect.provide(Layer.mergeAll(stateWithKcov(Option.some(rungHit)), cacheTest(saved), ActionLogger.layerSilent)),
+				Effect.exit,
+			);
+			expect(exit._tag).toBe("Success");
+			expect(saved).toEqual([{ paths: rungHit.paths, key: rungHit.primaryKey }]);
+		}),
+	);
+
+	it.effect("a failing kcov save does not prevent the dependency-cache save", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const kcovCache: Layer.Layer<ActionCache> = ActionCache.layerTest({
+				save: (paths, key) => {
+					const savedKey = typeof key === "string" ? key : key.key;
+					if (savedKey === missedKcov.primaryKey) {
+						return Effect.fail(new ActionCacheError({ reason: "refused", key: savedKey }));
+					}
+					saves.push({ paths, key: savedKey });
+					return Effect.void;
+				},
+			});
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						stateWithKcov(Option.some(missedKcov), Option.some(missed)),
+						kcovCache,
+						ActionLogger.layerSilent,
+					),
+				),
+				Effect.exit,
+			);
+			expect(exit._tag).toBe("Success");
+			expect(saves).toContainEqual({ paths: missed.paths, key: missed.primaryKey });
+		}),
+	);
+
+	it.effect("still saves kcov when the dependency-cache state is malformed", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const logs: Array<string> = [];
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						ActionState.layerTest({
+							getOptional: ((key: string) =>
+								key === STATE_KEYS.kcovCache
+									? Effect.succeed(Option.some(missedKcov))
+									: Effect.fail(
+											new ActionStateError({ reason: "malformed", key }),
+										)) as ActionState["Service"]["getOptional"],
+						}),
+						cacheTest(saves),
+						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
+					),
+				),
+				Effect.exit,
+			);
+			// A `main` that died mid-write leaves the dependency-cache state
+			// malformed too — precisely the turbo read's own "main died mid-write"
+			// case. That must not cost the kcov save its turn.
+			expect(exit._tag).toBe("Success");
+			expect(saves).toEqual([{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
+			expect(logs.join("\n")).toContain("Dependency cache state could not be read (malformed)");
 		}),
 	);
 });
