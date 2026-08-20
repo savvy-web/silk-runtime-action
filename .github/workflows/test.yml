@@ -4,27 +4,11 @@ permissions:
   actions: write
 on:
   workflow_dispatch: null
-  push:
+  pull_request:
     branches:
       - main
-      - changeset-release/main
-    paths:
-      - src/**
-      - dist/**
-      - action.yml
-      - __fixtures__/**
-      - .github/actions/local/**
-      - .github/actions/test-fixture/**
-      - .github/workflows/test.yml
-  pull_request:
-    paths:
-      - src/**
-      - dist/**
-      - action.yml
-      - __fixtures__/**
-      - .github/actions/local/**
-      - .github/actions/test-fixture/**
-      - .github/workflows/test.yml
+      - dev
+      - changesets-release/main
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
