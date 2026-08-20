@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-08-02
-last-synced: 2026-08-02
+updated: 2026-08-20
+last-synced: 2026-08-20
 completeness: 95
 related:
   - ./architecture.md
@@ -15,16 +15,17 @@ dependencies: []
 
 # Runtime installation
 
-Descriptors, the tool-cache layout, `PATH` publication, package-manager provisioning, dependency installation and the Biome binary.
+Descriptors, the tool-cache layout, `PATH` publication, package-manager provisioning, dependency installation, the Biome binary, and the BATS/kcov toolchain.
 
 ## Table of contents
 
 1. [Overview](#overview)
 2. [Current state](#current-state)
-3. [The PATH problem](#the-path-problem)
-4. [Rationale](#rationale)
-5. [Implementation details](#implementation-details)
-6. [Related documentation](#related-documentation)
+3. [The BATS toolchain and kcov](#the-bats-toolchain-and-kcov)
+4. [The PATH problem](#the-path-problem)
+5. [Rationale](#rationale)
+6. [Implementation details](#implementation-details)
+7. [Related documentation](#related-documentation)
 
 ---
 
@@ -40,12 +41,15 @@ Installing tools is the action's core work: Node.js, Bun and Deno from official 
 - `PackageManagerInstaller` provisions npm/pnpm/yarn/bun — no corepack, no sudo, no shim cleanup.
 - Biome is one `ToolInstaller.provisionFile` call over a bare-executable descriptor.
 - The dependency install prepends every directory this run put a binary in to the child's `PATH`.
+- bats-core goes into the tool cache; its four helper libraries go to `$HOME/.local/share`, which is the one location that satisfies both consumers.
+- kcov is compiled from source on every platform, because no usable prebuilt exists.
 
 **When to load this doc:**
 
 - Adding a runtime or changing a download URL or archive layout.
 - Debugging "command not found" during an install or a lifecycle script.
 - Touching package-manager provisioning or the Windows launch path.
+- Changing where the BATS libraries land, or anything about how kcov is built.
 
 ---
 
@@ -148,6 +152,84 @@ The provisioner owns the cache lookup, the download, the executable bit and the 
 `version` is the **resolved** version from `detectBiome`, not the raw input. `Option.none()` is a no-op that touches neither the tool cache nor `PATH`.
 
 ---
+
+## The BATS toolchain and kcov
+
+Two optional steps (`install-bats`, `install-kcov`) provision the shell-testing toolchain: bats-core plus `bats-support`, `bats-assert`, `bats-file` and `bats-mock`, and kcov for shell coverage. Versions are **pinned constants in the descriptors**, bumped by changeset — there are no version inputs and no `devEngines` block, because the action's rule is absolute versions only and a constant is absolute by construction.
+
+| Tool | Version | Source |
+| --- | --- | --- |
+| bats-core | `1.14.0` | `bats-core/bats-core` |
+| bats-support | `0.3.0` | `bats-core/bats-support` |
+| bats-assert | `2.2.4` | `bats-core/bats-assert` |
+| bats-file | `0.4.0` | `bats-core/bats-file` |
+| bats-mock | `1.2.5` | `jasonkarns/bats-mock` |
+| kcov | `43` | `SimonKagstrom/kcov` |
+
+The action **provisions and exports; it never runs bats or kcov.** That mirrors the Biome and Turbo posture: the consumer's own workflow steps invoke the tooling.
+
+### `descriptors/bats.ts` takes no host, and that asymmetry is deliberate
+
+Every other descriptor here — `node`, `bun`, `deno`, `biome`, `kcov` — takes the host as an argument and answers with a per-platform asset. `bats.ts` takes nothing. bats-core and all four helper libraries are **shell scripts**, published as one platform-independent source tarball each: there is no asset table because there are no assets to choose between. A `host` parameter would be a parameter no branch reads, and a reviewer looking for the "missing" platform matrix should stop here rather than add one.
+
+`bats-mock` is spelled out in the table rather than derived from its name. It comes from `jasonkarns/bats-mock`, not the `bats-core` org, so deriving its URL uniformly would point at a `bats-core/bats-mock` that does not exist.
+
+### bats-core needs no install step
+
+In the release tarball `bats-core-<v>/bin/bats` is a regular 755 file — **not** a symlink into `libexec` — that locates its own `libexec/bats-core` relative to `$0` via `readlink -f`, with a `greadlink` fallback. Extracting the tarball and putting `<root>/bin` on `PATH` is the entire install. That is why this action needs neither `install.sh`, nor git, nor the `apt-get install git` the equivalent devcontainer feature script begins with.
+
+The flow is the runtime pattern: `download` → `extractTar` → strip the `bats-core-<version>/` wrapper → `cacheDir` under tool `bats` → `addPath(<root>/bin)`. The wrapper strip matters for the same reason it does for the runtimes: the tool cache is shared, and a cached root that nests the real tree inside a version-stamped directory is readable only by the code that wrote it — including, critically, not by this action's own cache-hit path.
+
+### The helper libraries go to `$HOME/.local/share`, and only that location works
+
+Not the tool cache, and not the `/usr/lib` (`bats-core/bats-action`) or `/usr/local/lib` (the devcontainer script) that the obvious prior art uses. The location is dictated by having **two consumers that discover libraries differently**:
+
+- `bats_load_library <name>` resolves `<entry>/<name>/load.bash` for each entry in `BATS_LIB_PATH`.
+- `vitest-bats` **never reads `BATS_LIB_PATH`.** Its `detectBatsLibraryPath` scans a fixed directory list in order: `$XDG_CONFIG_HOME/<lib>`, `~/.config/<lib>`, `$XDG_DATA_HOME/<lib>`, `~/.local/share/<lib>`, `/opt/homebrew/lib/…`, `/usr/local/lib/…`, `/usr/lib/…`.
+
+`$HOME/.local/share/<lib>/` is the single location on both lists: the scan finds it, and exporting `BATS_LIB_PATH=$HOME/.local/share` makes `bats_load_library` find it too. It is also under `$HOME`, so nothing needs `sudo` — which is what lets the whole bats install work on a self-hosted runner where kcov's cannot.
+
+`bats-mock` ships a flat layout (`stub.bash`, `binstub`, and *sometimes* `load.bash`). When `load.bash` is absent one is synthesized: a one-line `source` of the sibling `stub.bash`, carried over from the devcontainer script, without which `bats_load_library bats-mock` does not work at all. That one-line string is the subject of a standing build constraint — see [build and distribution](./build-and-distribution.md#a-string-that-survives-tsc-is-not-a-string-that-reaches-disk). `binstub` keeps its executable bit; it is spawned, not sourced.
+
+`home` is a parameter for the same reason the install steps take a `Host`: it is what lets a test exercise the layout without an `$HOME` on the machine running the suite.
+
+`jq` is **probed and warned about, never installed**. It is preinstalled on GitHub-hosted runners, and `vitest-bats` needs it to record a mock; a self-hosted runner missing it fails loudly in the log now instead of mysteriously later.
+
+### kcov is built from source because nothing else works
+
+This is a conclusion, not a preference, and both halves cost a probe to establish:
+
+- **The prebuilt Linux binary is unusable on current runners.** kcov v42 is the last release publishing a binary asset; v43 and later publish source only. Parsing `DT_NEEDED` out of the v42 ELF yields `libbfd-2.38-system.so` and `libopcodes-2.38-system.so` — binutils 2.38, i.e. Ubuntu 22.04. `ubuntu-latest` is 24.04 with binutils 2.42, so those sonames do not resolve. Downloading kcov is not an option.
+- **Homebrew is not a fast macOS path either.** kcov 43 publishes exactly one bottle, `arm64_tahoe` (macOS 26). GitHub's `macos-latest` is macOS 15 (`arm64_sequoia`), where `brew install kcov` compiles inside Homebrew anyway — slow, and opaque to any cache this action controls.
+
+So the build happens here, into a prefix this action owns and caches: `$RUNNER_TOOL_CACHE/kcov/43/<arch>`, tool-cache-shaped, with `<prefix>/bin` on `PATH`. That prefix is the single unit of Actions caching; see [caching strategy](./caching-strategy.md#the-kcov-cache) for the key, the ladder and the verify probe.
+
+Build dependencies are installed **only on a cache miss** — the whole point of the cache is that a warm run needs neither apt nor Homebrew:
+
+| Platform | Command |
+| --- | --- |
+| Linux | `sudo apt-get update`, then `sudo apt-get install -y --no-install-recommends cmake g++ libdw-dev binutils-dev libcurl4-openssl-dev zlib1g-dev pkg-config` |
+| macOS | `brew install dwarfutils openssl@3` — `cmake` is deliberately absent, being preinstalled on the runner images |
+
+This is the one place the action shells out to a **system** package manager, and the only place `sudo` matters. On a runner without it the dependency install fails, the step fails typed with `build`, and the caller degrades to a warning: bats without coverage, not a red build. cmake refuses an in-source build, so the object tree is a sibling of the unpacked source rather than a directory inside it.
+
+`descriptors/kcov.ts` **refuses `win32` as a `Result` failure** rather than skipping silently. kcov has no Windows build at all, and the caller renders the refusal message as the warning that explains why `kcov-enabled` is `false`. The failure comes before the cache is consulted: there is no key that could be right, and a restore attempt would spend a round trip to say so.
+
+### Known limitation: kcov collects nothing on macOS today
+
+SIP blocks `ptrace`, so kcov produces no coverage on a macOS runner — `vitest-bats` states this in its README and marks kcov `required: !onMacOS`. **kcov is installed on macOS regardless**, deliberately and forward-lookingly: the binary being present and on `PATH` means that if a future macOS image lifts the restriction, consuming repositories start collecting coverage with no change to this action. The cost is bounded by the cache — a cold macOS cache pays one build, and every run after that pays a restore.
+
+### Exported environment
+
+| Variable | Value |
+| --- | --- |
+| `BATS_LIB_PATH` | `$HOME/.local/share` |
+| `BATS_PATH` | Absolute path to the `bats` executable |
+| `KCOV_PATH` | Absolute path to the `kcov` executable |
+
+`BATS_LIB_PATH` is the load-bearing one: it is what makes `bats_load_library bats-support` work in a plain `.bats` file. `BATS_PATH` and `KCOV_PATH` are conveniences for `vitest-bats`, which otherwise shells out to `command -v` for each — a `PATH` entry alone leaves a consumer that spawns the binary directly re-deriving the tool-cache layout.
+
+`bats-enabled` and `kcov-enabled` report a **successful install, not a successful detection**, following the `biome-enabled` precedent exactly.
 
 ## The PATH problem
 
@@ -258,6 +340,6 @@ The Windows layout fix, the `shell: true` fix and the lifecycle-`PATH` fix are a
 
 **Source files:**
 
-- `src/descriptors/` — `descriptor.ts` plus `node`, `bun`, `deno`, `biome`.
-- `src/steps/install-runtimes.ts`, `setup-package-manager.ts`, `install-dependencies.ts`, `install-biome.ts`.
+- `src/descriptors/` — `descriptor.ts` plus `node`, `bun`, `deno`, `biome`, `bats`, `kcov`.
+- `src/steps/install-runtimes.ts`, `setup-package-manager.ts`, `install-dependencies.ts`, `install-biome.ts`, `install-bats.ts`, `install-kcov.ts`.
 - `src/program.ts` — `onInstallPath`, `installPathPrepends`.

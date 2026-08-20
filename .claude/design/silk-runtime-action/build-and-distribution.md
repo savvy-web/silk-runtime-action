@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: integration
 created: 2026-03-21
-updated: 2026-08-02
-last-synced: 2026-08-02
+updated: 2026-08-20
+last-synced: 2026-08-20
 completeness: 92
 related:
   - ./architecture.md
@@ -15,22 +15,23 @@ dependencies: []
 
 # Build and distribution
 
-Build pipeline, bundle configuration, the committed `dist/`, the dependency topology, and the dogfood loop's verification rule.
+Build pipeline, bundle configuration, the committed `dist/`, the dependency topology, the dogfood loop's verification rule, and what the minifier can do to a string.
 
 ## Table of contents
 
 1. [Overview](#overview)
 2. [Current state](#current-state)
 3. [Dependency topology](#dependency-topology)
-4. [Rationale](#rationale)
-5. [Implementation details](#implementation-details)
-6. [Related documentation](#related-documentation)
+4. [Verification means the built artifact](#verification-means-the-built-artifact)
+5. [Rationale](#rationale)
+6. [Implementation details](#implementation-details)
+7. [Related documentation](#related-documentation)
 
 ---
 
 ## Overview
 
-The action is built with `@savvy-web/github-action-builder` (rsbuild-based, `^2.1.1`) and produces compiled JavaScript bundles that are **committed to git**. GitHub Actions loads the action from the checked-out ref with no build step in the runtime, so the compiled output must be present in the repository.
+The action is built with `@savvy-web/github-action-builder` (rsbuild-based, `^2.2.7`) and produces compiled JavaScript bundles that are **committed to git**. GitHub Actions loads the action from the checked-out ref with no build step in the runtime, so the compiled output must be present in the repository.
 
 **Key features:**
 
@@ -45,6 +46,7 @@ The action is built with `@savvy-web/github-action-builder` (rsbuild-based, `^2.
 - Modifying build configuration or adding an entry point.
 - Debugging a bundle issue in CI.
 - Linking, unlinking or bumping a first-party dependency.
+- Writing any string literal that has to reach disk verbatim — see [verification means the built artifact](#verification-means-the-built-artifact).
 
 ---
 
@@ -114,18 +116,21 @@ runs:
 
 | Package | Role |
 | --- | --- |
-| `effect` (`catalog:effect` → `4.0.0-beta.107`) | The framework. In v4 the former `@effect/platform` is dissolved into core `effect` |
+| `effect` (`catalog:effect` → `4.0.0-rc.109`) | The framework. In v4 the former `@effect/platform` is dissolved into core `effect` |
 | `@effect/platform-node` | Node platform layers (`NodeFileSystem`, `NodeHttpClient.layerUndici`) |
-| `@effected/github-actions` (`^0.3.0`) | Every GitHub Actions runtime interaction |
+| `@effected/github-actions` (`^0.9.2`) | Every GitHub Actions runtime interaction |
 | `@effected/npm` (`^0.7.0`) | `PackageManagerPin` |
-| `@effected/semver` (`^0.3.0`) | `SemVer.ExactVersionString`, which backs `AbsoluteVersion` |
+| `@effected/semver` (`^0.5.0`) | `SemVer.ExactVersionString`, which backs `AbsoluteVersion` |
 | `@effected/jsonc` (`^0.5.1`) | `Jsonc.parse` for `biome.jsonc` |
+| `@effected/commands` (`^0.5.0`) | `Run.succeeds` / `Run.collect` — the `jq` and `kcov --version` probes, and kcov's build commands |
 
-Other `@effected/*` entries are declared in `package.json` but **not imported by `src/` today**: `commands`, `git`, `github`, `glob`, `lockfiles`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`. Notably `@effected/glob` left the code path when lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`. Nothing is bundled that is not imported, so an unused declaration costs install time rather than bundle size.
+`@effected/commands` was a declared-but-unimported entry until the BATS/kcov work; `install-bats` and `install-kcov` are its first importers, and kcov's source build is the first time this action spawns a build subprocess at all.
+
+Other `@effected/*` entries are declared in `package.json` but **not imported by `src/` today**: `git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`. Notably `@effected/glob` left the code path when lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`. Nothing is bundled that is not imported, so an unused declaration costs install time rather than bundle size.
 
 ### Dev (not bundled)
 
-- `@savvy-web/github-action-builder` (`^2.1.1`) — the build tool.
+- `@savvy-web/github-action-builder` (`^2.2.7`) — the build tool.
 - `@savvy-web/silk` (`^3.2.11`) — the Biome preset and the `savvy` CLI used by `ci:version`.
 - `@vitest-agent/plugin` — test tooling and coverage levels.
 - `@effect/vitest` — Effect-aware test harness (declared as a runtime dependency, used only by tests).
@@ -161,7 +166,50 @@ Two related hazards from the same loop, worth carrying:
 - **Never push while linked.** Unlink, pin the published range, `pnpm install`, then push.
 - **A branch's built artifacts can be older than the registry.** During round 8 an upstream branch's sibling `dist/prod` outputs were behind published versions and would have violated that branch's own dependency ranges. Verify versions with `npm view`, not with a pipeline's own report.
 
-Because the action is a **bundled** artifact, a linked library's change is only real here after `pnpm build`: the integration runs the committed `dist`, not `node_modules`.
+Because the action is a **bundled** artifact, a linked library's change is only real here after `pnpm build`: the integration runs the committed `dist`, not `node_modules`. That is the same fact, in its dependency-shaped form, as [verification means the built artifact](#verification-means-the-built-artifact) — where it bites source this repository owns.
+
+---
+
+## Verification means the built artifact
+
+> **Rule: this action is bundled and minified, and CI runs the committed `dist`. A string that survives `tsc`, Biome and the unit tests has not thereby been verified. Anything that must reach disk *verbatim* has to be checked against the built bundle.**
+
+This is not a caution. It shipped a production crash that failed **before the action did anything at all**, and it was reviewed clean twice on the way in.
+
+### A string that survives `tsc` is not a string that reaches disk
+
+`install-bats` synthesizes a `load.bash` for `bats-mock` when the tarball ships none. Its content must be exactly:
+
+```bash
+source "$(dirname "${BASH_SOURCE[0]}")/stub.bash"
+```
+
+Here `${BASH_SOURCE[0]}` is **bash** interpolation, evaluated by the installed script at its own load time. It is not a placeholder for JavaScript to fill in, and it must land on disk unevaluated.
+
+It was originally written as a template literal spelled `` `…$${"{BASH_SOURCE[0]}"}…` `` — an escaped `$` followed by a substitution producing the literal brace text. That construction **evaluates correctly in source**: it was verified by hand, verified independently by a reviewer, and passed the unit suite, which exercises the synthesis path directly. The minifier then **constant-folded the substitution back into a live template substitution**, so `dist/main.js` carried a real `${BASH_SOURCE[0]}` inside a template literal. Every run of the built action died at module load with:
+
+```text
+ReferenceError: BASH_SOURCE is not defined
+```
+
+Before input parsing. Before the first log group. A green source-level review, a green typecheck and a green test run, and a completely dead action.
+
+The fix is a **plain single-quoted string literal**, inside which `${…}` is inert text that no JavaScript stage can evaluate:
+
+```ts
+// biome-ignore lint/suspicious/noTemplateCurlyInString: shell interpolation for the installed script, not a JS template
+const BATS_MOCK_LOADER = 'source "$(dirname "${BASH_SOURCE[0]}")/stub.bash"\n';
+```
+
+Biome's `noTemplateCurlyInString` exists to catch a `${…}` that *was* meant to be a template. This one was not, and the rule cannot tell the difference — so it is **suppressed rather than worked around, because the workaround is what broke**. Concatenating `"$" + "{BASH_SOURCE[0]}"` invites exactly the same folding and is not an escape either.
+
+Three things generalize out of it, and they are the reason this lives in a design doc rather than only in a code comment:
+
+1. **The minifier is part of the semantics of any literal that must reach disk.** Source-level equivalence is not output-level equivalence. Anything clever enough to need reasoning about is exactly what a folder will reason about too.
+2. **A unit test proves the source, not the bundle.** The synthesis test passed the whole time. Only a check against `dist/*.js` — or a fixture running the built action — could have caught this.
+3. **Review cannot substitute.** Two people read the escaped form and both concluded, correctly, that it evaluated to the right string *in source*. The wrongness was downstream of what they were reading.
+
+The practical check is one grep against the built bundle after `pnpm build`, for any literal that has to survive verbatim. The `bats-kcov` fixture is the standing structural version of it: it runs the built action, and a loader synthesized wrong takes `bats_load_library` down with it.
 
 ---
 

@@ -3,7 +3,7 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-08-02
+updated: 2026-08-20
 last-synced: 2026-08-02
 completeness: 95
 related:
@@ -34,7 +34,7 @@ Every side effect — file I/O, process execution, caching, outputs, logging, to
 
 **Key features:**
 
-- All GitHub Actions integration through `@effected/github-actions` (`^0.3.0`); zero `@actions/*`.
+- All GitHub Actions integration through `@effected/github-actions` (`^0.9.2`); zero `@actions/*`.
 - Inputs decoded once through `ActionInput.*` combinators composed with `Config.all`.
 - Errors are per-step `Data.TaggedError` classes with a `reason` literal union and a **stored** `message` field — no central union, no computed getters.
 - Log structure through `ActionLogger.group` and `ActionLogger.withBuffer`.

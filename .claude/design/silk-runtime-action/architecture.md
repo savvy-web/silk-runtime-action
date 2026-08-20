@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-08-02
-last-synced: 2026-08-02
+updated: 2026-08-20
+last-synced: 2026-08-20
 completeness: 95
 related:
   - ./effect-service-model.md
@@ -34,16 +34,16 @@ Top-level architecture of the Effect-based GitHub Action that sets up JavaScript
 
 ## Overview
 
-The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
+The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, an optional BATS shell-testing toolchain with kcov coverage, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
 
-Built on Effect v4 (`effect@4.0.0-beta.107` via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `@effected/npm`, `@effected/semver` and `@effected/jsonc`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
+Built on Effect v4 (`effect@4.0.0-rc.109` via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `@effected/npm`, `@effected/semver` and `@effected/jsonc`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
 
 **Design principles:**
 
 - `package.json` `devEngines` is the only source of truth for runtime and PM versions. Absolute versions only.
 - Every side effect flows through a kit service, for typed errors, injection and testability.
 - One module per pipeline step, each with a frozen four-part contract (result type, tagged error, explicit `R`, no inferred requirements). See [effect service model](./effect-service-model.md).
-- Optional work — cache restore, Biome install, turbo cache, the job summary, the whole post phase — degrades to a warning rather than failing the workflow.
+- Optional work — cache restore, Biome install, the BATS toolchain, kcov, turbo cache, the job summary, the whole post phase — degrades to a warning rather than failing the workflow.
 - `main.ts` is a one-call entry. The pipeline lives in `program.ts` and layer composition in `layers/app.ts`, so tests can import `program` without triggering `Action.run`.
 
 **When to load this doc:**
@@ -61,7 +61,7 @@ Built on Effect v4 (`effect@4.0.0-beta.107` via `catalog:effect`) over the `@eff
 | Entry | Source | Output | Purpose |
 | --- | --- | --- | --- |
 | `main` | `src/main.ts` | `dist/main.js` | One call: `Action.run(program, { layer: MainLive })` |
-| `post` | `src/post.ts` | `dist/post.js` | Reap the turbo server, then save the dependency cache; never fails the workflow |
+| `post` | `src/post.ts` | `dist/post.js` | Reap the turbo server, then save the dependency cache, then save the kcov cache; never fails the workflow |
 | `turbo-server` | `src/turbo-server.ts` | `dist/turbo-server.js` | Detached embedded turbo remote-cache server (a `workers` bundle) |
 
 `turbo-server.js` is **not** a lifecycle hook — `action.yml` names only `main` and `post`. Main spawns it as a detached child. See [turbo remote cache](./turbo-remote-cache.md).
@@ -74,15 +74,15 @@ Built on Effect v4 (`effect@4.0.0-beta.107` via `catalog:effect`) over the `@eff
 | --- | --- | --- |
 | Entry | `src/main.ts` | `Action.run(program, { layer: MainLive })` |
 | Program | `src/program.ts` | Step composition, the two PATH joins, the outputs fold |
-| Post | `src/post.ts` | `makePost` / `post`: reap the server, then save the cache; double catch |
+| Post | `src/post.ts` | `makePost` / `post`: reap the server, then save the two caches; three independent branches, double catch |
 | Turbo server | `src/turbo-server.ts` | Detached server entry — HTTP plumbing only |
 | Layers | `src/layers/app.ts` | `MainLive` and `PostLive` |
-| State | `src/state.ts` | `STATE_KEYS`, `CacheState`, `TurboServerState`, `isExactHit` |
-| Schemas | `src/schema/{domain,inputs,outputs}.ts` | `devEngines` domain, the 16 inputs, the 16 outputs |
+| State | `src/state.ts` | `STATE_KEYS`, `CacheState`, `TurboServerState`, `KcovCacheState`, `isExactHit` |
+| Schemas | `src/schema/{domain,inputs,outputs}.ts` | `devEngines` domain, the 18 inputs, the 22 outputs |
 | Steps | `src/steps/*.ts` | One contract module per pipeline step, plus `cache-config.ts` (pure) |
 | Turbo cache | `src/turbo-cache/{activation,meta,handler,server-config}.ts` | Everything the embedded cache decides |
 | Formatters | `src/summary/format.ts` | Pure, verbatim log lines and the job-summary panel |
-| Descriptors | `src/descriptors/{descriptor,node,bun,deno,biome}.ts` | Pure per-tool download plans |
+| Descriptors | `src/descriptors/{descriptor,node,bun,deno,biome,bats,kcov}.ts` | Pure per-tool download plans (and, for kcov, its build recipe and cache key) |
 | Build config | `action.config.ts` | Three entries (incl. `workers`), minify, `ignore` list |
 
 There is no `services/` directory and no `errors/errors.ts`: services come from the kit, and each step owns its own error type.
@@ -103,13 +103,16 @@ action.yml (node24 runtime)
     |       |     +-- steps/load-config.ts -----> schema/domain.ts
     |       |     +-- steps/detect-biome.ts ----> Jsonc
     |       |     +-- steps/detect-turbo.ts
+    |       |     +-- steps/detect-bats.ts -----> FileSystem (bounded walk + manifest probe)
     |       |     +-- steps/restore-cache.ts ---> steps/cache-config.ts, CacheKey, ActionCache
     |       |     +-- steps/install-runtimes.ts -> descriptors/{node,bun,deno}.ts, ToolInstaller
     |       |     +-- steps/setup-package-manager.ts -> PackageManagerPin, PackageManagerInstaller
     |       |     +-- steps/install-dependencies.ts -> ChildProcessSpawner (PATH prepends)
     |       |     +-- steps/install-biome.ts ---> descriptors/biome.ts, ToolInstaller.provisionFile
+    |       |     +-- steps/install-bats.ts ----> descriptors/bats.ts, ToolInstaller, FileSystem
+    |       |     +-- steps/install-kcov.ts ----> descriptors/kcov.ts, ActionCache, Run (build)
     |       |     +-- steps/turbo-cache.ts -----> turbo-cache/*, DetachedProcess (spawn)
-    |       |     +-- schema/outputs.ts --------> ActionOutputs.set x16
+    |       |     +-- schema/outputs.ts --------> ActionOutputs.set x22
     |       |     +-- steps/summary.ts ---------> summary/format.ts, ActionOutputs.summary
     |       |
     |       +-- src/layers/app.ts   (MainLive)
@@ -125,7 +128,8 @@ action.yml (node24 runtime)
             v
         src/post.ts
             +-- DetachedProcess.reap(pid from TurboServerState)   [first, unconditional]
-            +-- ActionCache.save(paths, primaryKey) unless exact hit
+            +-- ActionCache.save(paths, primaryKey) unless exact hit          [dependency cache]
+            +-- ActionCache.save(prefix, primaryKey) from KcovCacheState      [kcov, independent]
             +-- Effect.catch + Effect.catchDefect (post never fails the workflow)
 ```
 
@@ -154,19 +158,23 @@ Sequential, inside one `Effect.gen`, each wrapped in `ActionLogger.group`:
 | 1 | `Load configuration` | `loadConfig` | Yes |
 | 2 | `Detect Biome` | `detectBiome(inputs.biomeVersion)` | No (always resolves) |
 | 3 | `Detect Turbo` | `detectTurbo` | No (always resolves) |
-| 4 | `Detected configuration` | `formatDetectLine(…)` — the one-line headline | No |
-| 5 | `Restore dependency cache` | `restoreCache({ inputs, config, biomeVersion, turbo })` | No (absorbs) |
-| 6 | `Install runtimes` | `installRuntimes(config)` | Yes |
-| 7 | `Install <pm>` | `setupPackageManager(config.packageManager)` | Yes |
-| 8 | `Install dependencies` | `installDependencies(activated, installDeps, prepends)` | Yes |
-| 9 | `Install Biome` | `installBiome(biomeVersion)`, caught at the call site | No |
-| 10 | `Start turbo remote cache` | `startTurboCache({ inputs, turbo })` | No (self-catching) |
-| 11 | — | `emitOutputs(outputs)` | Yes |
-| 12 | `Runtime Setup Complete` | `writeSummary(facts)` — panel first, closing group after | No (self-catching) |
+| 4 | `Detect BATS` | `detectBats({ bats, kcov })` | No (always resolves) |
+| 5 | `Detected configuration` | `formatDetectLine(…)` — the one-line headline | No |
+| 6 | `Restore dependency cache` | `restoreCache({ inputs, config, biomeVersion, turbo })` | No (absorbs) |
+| 7 | `Install runtimes` | `installRuntimes(config)` | Yes |
+| 8 | `Install <pm>` | `setupPackageManager(config.packageManager)` | Yes |
+| 9 | `Install dependencies` | `installDependencies(activated, installDeps, prepends)` | Yes |
+| 10 | `Install Biome` | `installBiome(biomeVersion)`, caught at the call site | No |
+| 11 | `Install BATS` | `installBats(decision.installBats)`, caught at the call site | No |
+| 12 | `Install kcov` | `installKcov(decision.installKcov && bats landed, { bust })`, caught at the call site | No |
+| 13 | `Start turbo remote cache` | `startTurboCache({ inputs, turbo })` | No (self-catching) |
+| 14 | — | `emitOutputs(outputs)` | Yes |
+| 15 | `Runtime Setup Complete` | `writeSummary(facts)` — panel first, closing group after | No (self-catching) |
 
-Two orderings are load-bearing and were ruled during the rebuild:
+Three orderings are load-bearing and were ruled deliberately:
 
-- **Detection precedes the restore**, because the resolved Biome version and turbo's presence both feed the cache key and the archived path set. This is the legacy ordering (`legacy-v1/program.ts:382-411`).
+- **Detection precedes the restore**, because the resolved Biome version and turbo's presence both feed the cache key and the archived path set. This is the legacy ordering (`legacy-v1/program.ts:382-411`). `detectBats` joins that block rather than sitting beside its install even though it feeds *neither* the key nor the path set — the detect line is assembled from all four detections at once, and splitting the group off would move a fact out from under the headline that reports it.
+- **kcov is gated on bats having actually landed**, not on the decision that asked for it: `installKcov(decision.installKcov && Option.isSome(bats))`. A coverage tool for a toolchain that failed to install has nothing to cover, and paying a multi-minute source build for it would be the worst possible response to an install that already went wrong.
 - **The turbo cache starts last** — a deliberate deviation from v1, which started it before the restore. Nothing in the pipeline consumes the turbo environment, and a later start shortens the window in which a detached child holds the runner's short-lived `ACTIONS_RUNTIME_TOKEN`. Ruled neutral-to-better; do not "fix" it back.
 
 Before step 1 the program sets four variables **on this process only** — `NPM_CONFIG_UPDATE_NOTIFIER`, `NPM_CONFIG_FUND`, `HUSKY`, `COREPACK_ENABLE_DOWNLOAD_PROMPT` — to quiet tool chatter its own installs provoke. They are never `exportVariable`d, so none of it leaks into the consumer's later steps.
@@ -189,15 +197,20 @@ There is **no central `ActionError` union and no `errors/` module**. Each step e
 | `ConfigError` | `schema/domain.ts`, raised by `load-config` | `missing-package-json`, `malformed-json`, `invalid-dev-engines` |
 | `BiomeDetectError` | `detect-biome` | `read`, `parse` (declared, never raised) |
 | `TurboDetectError` | `detect-turbo` | `read` (declared, never raised) |
+| `BatsDetectError` | `detect-bats` | `read` (declared, never raised) |
 | `CacheError` | `restore-cache` (also used by `post`) | `key`, `restore`, `state`, `save` |
 | `RuntimeInstallError` | `install-runtimes` | `download`, `extract`, `cache`, `unsupported-platform`, `verify` |
 | `PackageManagerError` | `setup-package-manager` | `install`, `activate`, `verify` |
 | `InstallError` | `install-dependencies` | `spawn`, `exit-code` |
 | `BiomeInstallError` | `install-biome` | `detect`, `download`, `cache` |
+| `BatsInstallError` | `install-bats` | `download`, `extract`, `install`, `publish` |
+| `KcovInstallError` | `install-kcov` | `detect`, `download`, `build`, `verify`, `publish` |
 | `TurboCacheError` | `turbo-cache` | `spawn`, `readiness` |
 | `SummaryError` | `summary` | `write` |
 
 Several of these are declared on a signature and never raised. That is deliberate: the error type is the shape a failure is *logged as*, and keeping it on the contract leaves room for a genuinely unexpected case without making today's tolerance a lie.
+
+Two of the newer unions carry a distinction the older ones do not need. `BatsInstallError.install` is this step's own — copying an extracted library into `$HOME/.local/share`, or synthesizing bats-mock's `load.bash` — and has no counterpart in the provisioner's reasons. `KcovInstallError` splits `build` from `verify` because "did not compile" and "compiled and then would not run" are different problems with different remedies, and the warning a consumer reads should say which one happened.
 
 `main` deliberately has **no** `catchDefect` — a defect is a bug in this action, and failing the job is the correct response. `post` and `startTurboCache` both keep one as defence in depth.
 
@@ -219,7 +232,7 @@ One declarative source of truth in `package.json` (per Corepack and pnpm). There
 
 ### Inputs decoded once, outputs folded once
 
-`loadInputs` (`schema/inputs.ts`) decodes all 16 inputs into a typed `Inputs` record at the top of the pipeline through `ActionInput.*` combinators, so `INPUT_` mangling and empty-string-is-absent semantics stay the kit's business. Outputs run the same way in reverse: the fold starts from `initialOutputs` (all-disabled defaults) and each step's result maps over it, so a feature that did not run reports its default rather than a value nobody computed. `INPUT_NAMES` and `OUTPUT_NAMES` are const tuples checked against `action.yml` by tests — both halves of the parity contract are guarded.
+`loadInputs` (`schema/inputs.ts`) decodes all 18 inputs into a typed `Inputs` record at the top of the pipeline through `ActionInput.*` combinators, so `INPUT_` mangling and empty-string-is-absent semantics stay the kit's business. Outputs run the same way in reverse: the fold starts from `initialOutputs` (all-disabled defaults) and each step's result maps over it, so a feature that did not run reports its default rather than a value nobody computed. `INPUT_NAMES` and `OUTPUT_NAMES` are const tuples checked against `action.yml` by tests — both halves of the parity contract are guarded.
 
 ### Split entry / program / layer
 
@@ -237,7 +250,9 @@ The one recorded cost: `program.test.ts` cannot reach the embedded turbo path (t
 
 ### Non-fatal demotion
 
-Cache restore absorbs every failure internally; Biome install is caught at its call site in `program.ts`; `startTurboCache` and `writeSummary` catch their own; the whole post phase catches typed failures *and* defects. An optional operation never fails the job.
+Cache restore absorbs every failure internally; the Biome, BATS and kcov installs are each caught at their call site in `program.ts`; `startTurboCache` and `writeSummary` catch their own; the whole post phase catches typed failures *and* defects. An optional operation never fails the job.
+
+For BATS and kcov the reason is sharper than "optional". Both are **auto-detected**, so a repository that never asked for them by name can still end up installing them — one stray `.bats` fixture is enough. A repository that did not opt in explicitly must not be able to lose a build to a kcov compile failing on an unusual runner image, or to a helper library's tarball 404ing. The consuming workflow's own test step is what should go red if the tooling it genuinely needs is absent, and `vitest-bats` already reports missing dependencies clearly. The cost of a bad detection is therefore time, never a red build.
 
 ### Cross-phase state via `ActionState`
 
@@ -281,7 +296,19 @@ RuntimeConfig { packageManager: PackageManagerSpec, runtimes: NonEmptyArray<Runt
     |
     +--> detectBiome  (input override -> biome.jsonc -> biome.json -> $schema regex) : Option<string>
     +--> detectTurbo  (fs.access("turbo.json"))                                      : { enabled }
+    +--> detectBats   (vitest-bats in the manifest OR a *.bats file within 4 levels) : { installBats, installKcov }
 ```
+
+### The two BATS detection signals are not interchangeable
+
+`bats: auto` looks for **two** signals — `vitest-bats` in any dependency set of the root `package.json`, or a `*.bats` file — and both are load-bearing. They are not a primary and a fallback, and the code must not be "simplified" into one:
+
+- `vitest-bats` **generates its `.bats` files at run time and commits none**, so for the action's own reference consumer the glob signal never fires. The manifest probe is the only one that can see it.
+- A repository with committed `.bats` files and no `vitest-bats` dependency — plain bats-core usage, which is the common case — is the exact mirror. The manifest probe sees nothing there.
+
+The glob walk is depth-bounded (four levels) and skips `node_modules`, `.git`, `dist`, `coverage`, `.turbo` and dotted directories, because it runs on every job in every consuming repository and the signal it looks for lives near the top of a repository that has it. A vendored `.bats` fixture inside a dependency is not this repository's intent to run bats. Each candidate is also `stat`ed rather than matched on name alone: `readDirectory` reports directories too, and a directory named `example.bats` would otherwise provision the whole toolchain for a repository containing no test file at all.
+
+`kcov: auto` follows the bats decision, and an explicit `kcov: on` still yields nothing when bats is off. Coverage for a toolchain that runs no tests is never what the consumer meant. The input exists separately so a repository can take bats *without* paying kcov's source build — which is what this repository's own fixture row does.
 
 Duplicates survive normalization, declaration order is preserved, names are case-sensitive and no field is defaulted. `runtime: []` is a decode failure, which keeps `runtimes` non-empty by construction.
 
@@ -303,18 +330,25 @@ main                                            post
   startTurboCache()                                 |     None            -> return
     |                                               |     exact hit       -> skip save
     +-- ActionState.save(                           |     no paths        -> skip save
-          STATE_KEYS.turboServer,                   |     otherwise       -> ActionCache.save(paths, primaryKey)
-          TurboServerState { pid, port,             |
-                             backend, logFile })    +-- catch + catchDefect
+    |     STATE_KEYS.turboServer,                   |     otherwise       -> ActionCache.save(paths, primaryKey)
+    |     TurboServerState { pid, port,             |
+    |                        backend, logFile })    +-- getOptional(kcovCache, KcovCacheState)
+    |                                               |     None            -> nothing was built; return
+  installKcov()  [only when it built,               |     exact hit       -> skip save
+    |             or restored off a rung]           |     otherwise       -> ActionCache.save(prefix, primaryKey)
+    +-- ActionState.save(                           |
+          STATE_KEYS.kcovCache,                     +-- catch + catchDefect
+          KcovCacheState { paths, primaryKey,
+                           restoredKey })
 ```
 
-The reap runs first and unconditionally, ahead of every branch that can return early: a leaked cache server outlives the job, and whether this run's dependencies are worth archiving has nothing to do with it. Each half also catches its own failures, so a refused signal cannot cost the run its archive.
+The reap runs first and unconditionally, ahead of every branch that can return early: a leaked cache server outlives the job, and whether this run's dependencies are worth archiving has nothing to do with it. Each branch also catches its own failures — three independent jobs, three independent failure modes, and none of them may cost another its work. An unreadable dependency-cache state says nothing about whether the kcov tree is worth archiving, and the reverse holds too.
 
 `post` saves under the **primary** key, not whichever key matched: a partial restore left the archive short of what this run installed, so the key this run asked for is the one that has to end up populated.
 
 ### Outputs and the summary
 
-`emitOutputs` publishes all 16 outputs in a fixed order, rendering booleans with `String(v)`. `writeSummary` then takes a `SummaryFacts` params object rather than the outputs alone, because three of the panel's facts are not outputs at all: the installed runtime list in declaration order, the cache key and resolved lockfile list, the typed turbo port, and `dependenciesInstalled` — the *truthful* `ran` flag, where v1 echoed the raw input and reported deno's skipped install as done.
+`emitOutputs` publishes all 22 outputs in a fixed order, rendering booleans with `String(v)`. `writeSummary` then takes a `SummaryFacts` params object rather than the outputs alone, because three of the panel's facts are not outputs at all: the installed runtime list in declaration order, the cache key and resolved lockfile list, the typed turbo port, and `dependenciesInstalled` — the *truthful* `ran` flag, where v1 echoed the raw input and reported deno's skipped install as done.
 
 ---
 
@@ -340,7 +374,7 @@ The reap runs first and unconditionally, ahead of every branch that can return e
 | `ActionEnvironment` | Runner context and raw variables | `program.ts`, `restore-cache.ts`, worker |
 | `ActionCache` + `CacheKey` | Typed key, restore, save | `restore-cache.ts`, `post.ts` |
 | `ActionState` + `ProcessId` | Cross-phase persistence | `restore-cache.ts`, `turbo-cache.ts`, `post.ts`, `state.ts` |
-| `ToolInstaller` | `find`/`download`/`extract*`/`cacheDir`/`provisionFile` | `install-runtimes.ts`, `install-biome.ts` |
+| `ToolInstaller` | `find`/`download`/`extract*`/`cacheDir`/`provisionFile` | `install-runtimes.ts`, `install-biome.ts`, `install-bats.ts`, `install-kcov.ts` |
 | `PackageManagerInstaller` | Manager provisioning and shims | `setup-package-manager.ts` |
 | `DetachedProcess` | `spawn`, `awaitReady`, `reap` | `turbo-cache.ts`, `post.ts` |
 | `BlobStore` / `GitHubCacheBlobStore` | Backend for the embedded cache | `turbo-cache/handler.ts`, `server-config.ts` |
@@ -349,8 +383,11 @@ The reap runs first and unconditionally, ahead of every branch that can return e
 | `PackageManagerPin` (`@effected/npm`) | `<name>@<version>[+<integrity>]` grammar | `setup-package-manager.ts` |
 | `SemVer.ExactVersionString` (`@effected/semver`) | Backs `AbsoluteVersion` | `schema/domain.ts` |
 | `Jsonc` (`@effected/jsonc`) | `biome.jsonc` parsing | `detect-biome.ts` |
+| `Run` (`@effected/commands`) | `Run.succeeds` for the `jq` and `kcov --version` probes, `Run.collect` for each build command | `install-bats.ts`, `install-kcov.ts` |
 
-Several `@effected/*` packages are declared in `package.json` but not imported by `src/` today (`commands`, `git`, `github`, `glob`, `lockfiles`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`). Notably, lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`, so `@effected/glob` is no longer a code dependency of the cache path.
+`@effected/commands` is the newest arrival and the only place this action shells out to a **system** package manager (apt or Homebrew, on kcov's cache-miss path). `Run.collect` rather than `Run.text` for the build steps is deliberate: a non-zero exit is a *result* on `collect`, so the failing command's `stderr` reaches the warning, where `text` would fail the effect and leave a reader with "the build failed" and no cmake or apt diagnostic.
+
+Several `@effected/*` packages are declared in `package.json` but not imported by `src/` today (`git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`). Notably, lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`, so `@effected/glob` is no longer a code dependency of the cache path.
 
 ### Core `effect` platform services
 

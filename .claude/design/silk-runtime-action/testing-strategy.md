@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: testing
 created: 2026-03-21
-updated: 2026-08-02
-last-synced: 2026-08-02
+updated: 2026-08-20
+last-synced: 2026-08-20
 completeness: 95
 related:
   - ./architecture.md
@@ -36,12 +36,12 @@ Unit tests run in Vitest through `@effect/vitest`, over service doubles provided
 
 **Key features:**
 
-- **448 unit tests** in `__test__/unit/`, mirroring `src/` — never co-located.
+- **530 unit tests** in `__test__/unit/`, mirroring `src/` — never co-located.
 - Kit-provided `X.layerTest({ … })` doubles with partial overrides; unstubbed members die on use, deliberately.
 - Cross-phase state schemas are tested against the **real** `ActionState` layer, not a double.
 - `action.yml` ↔ code parity is a test, for both inputs and outputs.
 - Formatter prose is pinned **codepoint-verbatim**.
-- Two e2e matrices: 35 fixture jobs across ubuntu/macos/windows, and 5 turbo-cache jobs including real S3.
+- Two e2e matrices: 39 fixture jobs across ubuntu/macos/windows, and 5 turbo-cache jobs including real S3.
 
 **When to load this doc:**
 
@@ -59,12 +59,13 @@ Unit tests run in Vitest through `@effect/vitest`, over service doubles provided
 __test__/unit/
   layers.test.ts            post.test.ts            program.test.ts       state.test.ts
   schema/{domain,inputs,outputs}.test.ts
-  steps/{cache-config,detect-biome,detect-turbo,install-biome,install-dependencies,
-         install-runtimes,load-config,restore-cache,setup-package-manager,steps,
-         summary,turbo-cache}.test.ts
+  steps/{cache-config,detect-bats,detect-biome,detect-turbo,install-bats,install-biome,
+         install-dependencies,install-kcov,install-runtimes,load-config,restore-cache,
+         setup-package-manager,steps,summary,turbo-cache}.test.ts
   summary/format.test.ts
   turbo-cache/{activation,handler,meta,server-config}.test.ts
   descriptors.test.ts
+  descriptors/{bats,kcov}.test.ts
 ```
 
 Tests are **never co-located** with source. The tree mirrors `src/` so the mapping is mechanical.
@@ -96,6 +97,18 @@ Inputs are keyed by **input name** (`"biome-version"`), never by a runner variab
 
 A hand-written override on the same `layerTest` call is how a specific failure is injected — a `restore` that fails with a typed `CacheError`, a `ToolInstaller.download` that 404s, a `provisionFile` that reports `cacheFailed`. There is no separate mock idiom: the partial-override shape already covers it, and the resulting layer is still type-checked against the real service shape.
 
+### Discriminating cases
+
+Some suites have one case that is the reason the code is shaped the way it is. Those are worth naming, because deleting them leaves a green suite over a design nothing checks:
+
+| Suite | The case that carries the design |
+| --- | --- |
+| `steps/install-kcov.test.ts` | **cache hit → probe fails → rebuild.** The whole reason the verify probe exists; a probe that detected without rebuilding would be worse than none. |
+| `steps/detect-bats.test.ts` | `.bats` present with no dependency, and `vitest-bats` present with no `.bats` file. Either alone would pass a suite that treated the other as a fallback. |
+| `steps/install-bats.test.ts` | bats-mock's `load.bash` synthesis when the tarball ships none, and `binstub` keeping its executable bit. |
+| `post.test.ts` | A kcov save *failing* without preventing the dependency-cache save. Three independent branches is a claim, and this is where it is checked. |
+| `summary/format.test.ts` | The `⚠️ unavailable` kcov row — the one place BATS/kcov and Biome are deliberately unharmonized, pinned so it is not "fixed" later. |
+
 ### Seams a unit test must not exercise for real
 
 Three defaulted parameters exist so a test never performs an untestable operation:
@@ -126,22 +139,33 @@ coverage: { enabled: true, provider: "v8", include: ["src/**/*.ts"], exclude: []
 
 ### Fixtures and e2e
 
-`__fixtures__/` holds one directory per supported configuration: `node-npm`, `node-pnpm`, `node-yarn`, `node-multi`, `bun-bun`, `biome-enabled`, `turbo-enabled`, `additional-inputs`, `turbo-monorepo`. Each carries a `package.json` with valid `devEngines`.
+`__fixtures__/` holds one directory per supported configuration: `node-npm`, `node-pnpm`, `node-yarn`, `node-multi`, `bun-bun`, `biome-enabled`, `turbo-enabled`, `bats-kcov`, `additional-inputs`, `turbo-monorepo`. Each carries a `package.json` with valid `devEngines`.
 
 | Workflow | Jobs | Covers |
 | --- | --- | --- |
-| `test.yml` | 35 across ubuntu/macos/windows | create-cache (5 fixtures × 3 OS), restore-cache (4 × 3), feature detection (2 × 3), additional inputs |
+| `test.yml` | 37 across ubuntu/macos/windows | create-cache (5 fixtures × 3 OS, plus `bats-kcov` on ubuntu/macos), restore-cache (4 × 3), feature detection (2 × 3), additional inputs |
 | `test-turbo-cache.yml` | 5 | within-job double build, cross-job hit via `needs:`, MinIO-backed S3, a real-S3 gate and a real-S3 double build |
 
 Both matrices use `fail-fast: false` so a single run surfaces every failure. Both run `.github/actions/local` — the **built** action — not the source.
 
 Cache fixtures run as a dependent pair: a create job installs everything and saves, then a restore job asserts `cache-hit`. Turbo fixtures use a double-build pattern: run `turbo run` twice and assert the second build is a remote cache hit.
 
+### What the `bats-kcov` fixture is for
+
+The fixture holds `hello.sh` and `test/hello.bats`, and its `test-command` is `bats --version && bats test/`. The second half is the whole point: it proves **`bats_load_library` resolving through the exported `BATS_LIB_PATH`**, end to end, on a real runner.
+
+No unit test can reach that. The unit suite proves that `install-bats` writes the libraries to `$HOME/.local/share` and exports the variable; it cannot prove that bats's own library resolver, running in a later workflow step, finds them there — a claim that spans a process boundary, a runner-published `GITHUB_ENV`, and a third-party shell builtin. It is also the standing check on the synthesized `bats-mock` loader reaching disk verbatim, since the fixture runs the **built** action (see [build and distribution](./build-and-distribution.md#verification-means-the-built-artifact)).
+
+Two deliberate scoping decisions on that row:
+
+- **Windows is excluded from the matrix.** kcov refuses `win32` outright, and the bats install path is POSIX-shaped and unvalidated there. An excluded row is honest; a row asserting `false` everywhere would look like coverage.
+- **`kcov: "false"`, even though `auto` would follow the bats decision.** The matrix scopes its `cache-bust` to `github.run_id`, so a kcov build here could never be restored — every PR would pay a multi-minute source build for a result nothing reuses. Worse, kcov failures degrade to warnings, so a broken build would not even turn the job red: the row would cost minutes and prove nothing. kcov's end-to-end validation (build, cache, restore) belongs on a downstream consumer's CI, where it is actually used and the warm-cache path is observable. With kcov uniformly off, `expected-kcov-enabled: "false"` can be asserted as a literal — while it followed `auto` the expected value differed per OS and no single literal held across the matrix.
+
 ---
 
 ## What a test double cannot tell you
 
-Two lessons from production bugs that green unit suites did not catch. Both reduce to the same thing: **an in-memory double is strictly more permissive than the runner.**
+Lessons from production bugs that green unit suites did not catch. The first two reduce to the same thing — **an in-memory double is strictly more permissive than the runner** — and the last to a sharper version of it: the thing under test in a unit suite is the source, and the thing CI runs is the bundle.
 
 ### Cross-phase state must round-trip through text
 
@@ -166,6 +190,12 @@ A full trip saves through a service pointed at a scoped temp state file, **repub
 
 `makeUnsafe` typechecks through a test double and then dies at runtime in exactly the place `catchDefect` goes blind. Every construction uses `ProcessId.make`. `TurboServerState.pid` is `ProcessId` rather than a number for the same class of reason: a truncated state file, an absent key or `Number("")` all decode to `0`, and the brand refuses that value before it reaches `DetachedProcess.reap`.
 
+### A passing unit test proves the source, not the bundle
+
+`install-bats` synthesizes a `load.bash` for `bats-mock`, and the unit suite covers that synthesis directly — the case exists, it asserts the file's exact contents, and it was green throughout. The bundled `dist/main.js` nonetheless carried a live `${BASH_SOURCE[0]}` template substitution, because the minifier constant-folded the escaped source form back into one, and every run of the built action died at module load with `ReferenceError: BASH_SOURCE is not defined`.
+
+The full account, and the rule it generalizes to, live in [build and distribution](./build-and-distribution.md#verification-means-the-built-artifact). What it means *here*: for any literal that must reach disk verbatim, the unit test is necessary and not sufficient. The e2e tier is the only tier that runs the artifact CI runs, which is one more reason the fixture matrices are not optional garnish.
+
 ### The e2e harness must fail on an empty answer
 
 The fixture harness's `check_value` and `check_contains` both used to *return early* on an empty actual, so a fixture that asserted `lockfiles` and got back an empty output recorded a pass. Both now fail when the actual is empty and the expected is not — an empty string cannot equal a non-empty expected, and an empty item list makes every expected item missing by definition. An empty **expected** is still a deliberate skip, because most `expected-*` inputs default to empty.
@@ -186,7 +216,7 @@ The third set comes from a `Proxy` over the environment that records every looku
 
 ### Outputs
 
-`__test__/unit/schema/outputs.test.ts` runs the same `action.yml` cross-check against `OUTPUT_NAMES`, and additionally pins the **mapping**: a fixture with 16 distinct values proves that swapping any two model fields fails, so `emitOutputs` cannot quietly publish `bun-version` under `deno-version`.
+`__test__/unit/schema/outputs.test.ts` runs the same `action.yml` cross-check against `OUTPUT_NAMES`, and additionally pins the **mapping**: a fixture whose 22 values are distinct from each other and from every default proves that swapping any two model fields fails, so `emitOutputs` cannot quietly publish `bun-version` under `deno-version` — or `bats-version` under `kcov-version`, in a block of near-identical `set` calls that grew by six with the BATS work.
 
 ### Prose
 
@@ -215,8 +245,9 @@ Unit tests catch logic fast and are the only place a failure path is cheap to ex
 - The Windows tool-cache layout and the `.cmd` shell launch.
 - The lifecycle-script `PATH` (`deno: not found` from a `postinstall`).
 - The cache round trip, including the restore ladder against the real service.
+- `bats_load_library` resolving through the exported `BATS_LIB_PATH` in a later workflow step — and, with it, whether a synthesized loader survived minification into `dist`.
 
-The matrices are the pin for all three.
+The matrices are the pin for all four.
 
 ---
 
