@@ -173,6 +173,9 @@ export const writeSummary = (facts: SummaryFacts): Effect.Effect<void, SummaryEr
 			turbo: { backend: facts.turboCache.backend, port: facts.turboCache.port },
 			cache: facts.cache,
 			dependenciesInstalled: facts.dependenciesInstalled,
+			// TODO(task 9): SummaryFacts does not carry bats/kcov results yet.
+			bats: Option.none(),
+			kcov: Option.none(),
 		});
 
 		yield* outputs.summary(panel).pipe(

@@ -206,6 +206,8 @@ export const program = Effect.gen(function* () {
 				packageManager: config.packageManager,
 				biome: biomeVersion,
 				turbo: turbo.enabled,
+				// TODO(task 9): program.ts does not detect bats yet.
+				bats: false,
 			}),
 		),
 	);

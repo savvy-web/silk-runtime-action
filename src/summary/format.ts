@@ -42,6 +42,14 @@ export interface DetectFacts {
 	readonly biome: Option.Option<string>;
 	/** Whether a `turbo.json` was found. */
 	readonly turbo: boolean;
+	/**
+	 * Whether `bats-core` was detected.
+	 *
+	 * @remarks
+	 * A bare word in the detect line, like `turbo` — detection learns *that*
+	 * bash testing is present, not a version.
+	 */
+	readonly bats: boolean;
 }
 
 /** What the job-summary panel renders. */
@@ -63,7 +71,41 @@ export interface RuntimeSummaryFacts {
 	 */
 	readonly cache: CacheState;
 	readonly dependenciesInstalled: boolean;
+	/** What the BATS row reports, when `bats-core` was requested. */
+	readonly bats: Option.Option<BatsSummary>;
+	/** What the kcov row reports, when kcov was requested. */
+	readonly kcov: Option.Option<KcovSummary>;
 }
+
+/** What the BATS panel row reports. */
+export interface BatsSummary {
+	readonly version: string;
+	readonly libraries: ReadonlyArray<{ readonly name: string; readonly version: string }>;
+}
+
+/**
+ * What the kcov panel row reports.
+ *
+ * @remarks
+ * `unavailable` exists because kcov's failure is *silent* where Biome's is
+ * not. A failed Biome install surfaces immediately as a failing lint step, so
+ * its row can afford to be omitted (see `buildRuntimeSummary`). A failed kcov
+ * install does not: the consumer's tests still pass, coverage is simply
+ * absent, and the only other signal is a warning inside a collapsed log
+ * group. The panel is the one place that has to say it out loud. This is the
+ * single place BATS/kcov and Biome are treated differently, and it is
+ * deliberate — the two new rows still follow Biome's omit-when-not-requested
+ * rule, they just don't stay silent about a request that failed.
+ *
+ * `bats` stays lowercase in the detect line, `BATS` is the panel row label,
+ * and `kcov` is lowercase in both — following ruling 55's `biome`/`Biome`
+ * split for the same reason: BATS is an acronym conventionally capitalized in
+ * prose, kcov is a project name that spells itself lowercase everywhere. Do
+ * not harmonize these with each other.
+ */
+export type KcovSummary =
+	| { readonly _tag: "installed"; readonly version: string; readonly cacheHit: boolean }
+	| { readonly _tag: "unavailable" };
 
 /** The separator both joined lines use — a middle dot, U+00B7, not a hyphen or a bullet. */
 const DOT = " · ";
@@ -103,6 +145,7 @@ export const formatDetectLine = (facts: DetectFacts): string => {
 	];
 	if (Option.isSome(facts.biome)) parts.push(`biome ${facts.biome.value}`);
 	if (facts.turbo) parts.push("turbo");
+	if (facts.bats) parts.push("bats");
 	return parts.join(DOT);
 };
 
@@ -120,6 +163,32 @@ export const cacheCell = (cache: CacheState): string => {
 };
 
 /**
+ * kcov's outcome as a panel cell.
+ *
+ * @remarks
+ * Its own helper, not a reuse of {@link cacheCell} — that one is typed on
+ * `CacheState` and encodes a three-way exact/partial/miss distinction that
+ * kcov's single-entry cache does not have.
+ */
+export const kcovCell = (summary: KcovSummary): string =>
+	summary._tag === "unavailable"
+		? "⚠️ unavailable"
+		: `${summary.version}${DOT}${summary.cacheHit ? "✅ cached" : "⬜ built"}`;
+
+/**
+ * The BATS row's value: the core version, then each helper library
+ * short-named (its `bats-` prefix stripped) and versioned, all inline on the
+ * module's existing separator.
+ *
+ * @remarks
+ * The libraries do not get their own rows, and they do not go in the
+ * `Cache details` block — that block is about the dependency cache and would
+ * be the wrong home for a version list.
+ */
+const batsCell = (summary: BatsSummary): string =>
+	[summary.version, ...summary.libraries.map((lib) => `${lib.name.replace(/^bats-/, "")} ${lib.version}`)].join(DOT);
+
+/**
  * The job-summary panel: a heading, a table of what was set up, and a
  * collapsed block naming the cache key and the lockfiles it was hashed from.
  *
@@ -132,6 +201,11 @@ export const cacheCell = (cache: CacheState): string => {
  * The Biome row is **omitted** when nothing was installed rather than rendered
  * empty: a table row saying nothing costs a reader a glance, and the
  * `Dependencies` row already covers "this run did less than you expected".
+ * The BATS and kcov rows follow the same omit-when-not-requested rule (both
+ * are `Option.none()` when the tool was never asked for), with one exception:
+ * a kcov that was requested and failed still renders, as `⚠️ unavailable`
+ * rather than a missing row — see {@link KcovSummary} for why that one case
+ * cannot afford to stay silent.
  * The lockfiles detail item is the opposite case and is unconditional — a miss
  * with no lockfiles at all is a different problem from a miss with three, so
  * `Lockfiles: none` has to be said out loud.
@@ -142,6 +216,8 @@ export const buildRuntimeSummary = (facts: RuntimeSummaryFacts): string => {
 		["Package manager", `${facts.packageManager.name} ${facts.packageManager.version}`],
 	];
 	if (Option.isSome(facts.biome)) rows.push(["Biome", facts.biome.value]);
+	if (Option.isSome(facts.bats)) rows.push(["BATS", batsCell(facts.bats.value)]);
+	if (Option.isSome(facts.kcov)) rows.push(["kcov", kcovCell(facts.kcov.value)]);
 	rows.push(["Turbo cache", formatTurboLine(facts.turbo.backend, facts.turbo.port)]);
 	rows.push(["Dependency cache", cacheCell(facts.cache)]);
 	rows.push(["Dependencies", facts.dependenciesInstalled ? "installed" : "skipped"]);
