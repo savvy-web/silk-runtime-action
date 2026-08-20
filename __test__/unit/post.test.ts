@@ -560,4 +560,34 @@ describe("kcov cache save", () => {
 			expect(saves).toContainEqual({ paths: missed.paths, key: missed.primaryKey });
 		}),
 	);
+
+	it.effect("still saves kcov when the dependency-cache state is malformed", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const logs: Array<string> = [];
+			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						ActionState.layerTest({
+							getOptional: ((key: string) =>
+								key === STATE_KEYS.kcovCache
+									? Effect.succeed(Option.some(missedKcov))
+									: Effect.fail(
+											new ActionStateError({ reason: "malformed", key }),
+										)) as ActionState["Service"]["getOptional"],
+						}),
+						cacheTest(saves),
+						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
+					),
+				),
+				Effect.exit,
+			);
+			// A `main` that died mid-write leaves the dependency-cache state
+			// malformed too — precisely the turbo read's own "main died mid-write"
+			// case. That must not cost the kcov save its turn.
+			expect(exit._tag).toBe("Success");
+			expect(saves).toEqual([{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
+			expect(logs.join("\n")).toContain("Dependency cache state could not be read (malformed)");
+		}),
+	);
 });

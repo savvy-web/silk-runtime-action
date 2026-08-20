@@ -1,9 +1,10 @@
 /**
  * Post-action entry point.
  *
- * Runs after `main`, even when `main` failed. It reads the two pieces of
- * cross-phase state `main` may have saved — the dependency cache state and the
- * embedded turbo cache server state — and acts on each only when present.
+ * Runs after `main`, even when `main` failed. It reads the three pieces of
+ * cross-phase state `main` may have saved — the dependency cache state, the
+ * kcov cache state, and the embedded turbo cache server state — and acts on
+ * each only when present.
  *
  * The detached-server reap runs **first and unconditionally**, ahead of every
  * cache branch that can return early (oracle 35): a leaked cache server outlives
@@ -220,22 +221,41 @@ export const makePost = (ops: DetachedProcessOps = DetachedProcess.ops) =>
 			onSome: (saved) => reapCacheServer(saved, ops.reap),
 		});
 
-		const cache = yield* state.getOptional(STATE_KEYS.cache, CacheState);
+		// Absorbed the same way the turbo-server read above is: state written by a
+		// `main` that died mid-write decodes as `malformed`, and that says nothing
+		// about whether *this* branch's cache is worth saving — an unreadable
+		// dependency-cache state must not cost the kcov save its turn, and vice versa.
+		const cache = yield* state
+			.getOptional(STATE_KEYS.cache, CacheState)
+			.pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(`Dependency cache state could not be read (${error.reason}); nothing to save`).pipe(
+						Effect.as(Option.none<CacheState>()),
+					),
+				),
+			);
 		yield* Option.match(cache, {
 			onNone: () => Effect.logDebug("No dependency cache state was saved by main; nothing to save"),
 			onSome: saveDependencyCache,
 		});
 
-		const kcovCache = yield* state.getOptional(STATE_KEYS.kcovCache, KcovCacheState);
+		const kcovCache = yield* state
+			.getOptional(STATE_KEYS.kcovCache, KcovCacheState)
+			.pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(`kcov cache state could not be read (${error.reason}); nothing to save`).pipe(
+						Effect.as(Option.none<KcovCacheState>()),
+					),
+				),
+			);
 		yield* Option.match(kcovCache, {
 			onNone: () => Effect.logDebug("No kcov cache state was saved by main; nothing to save"),
 			onSome: saveKcovCache,
 		});
 	}).pipe(
-		Effect.catch((error) =>
-			Effect.logWarning(`Post-action warning: ${error instanceof Error ? error.message : String(error)}`),
-		),
-		// Defense-in-depth: post-action failures must never fail the workflow.
+		// The typed channel is fully absorbed above — every read and every save
+		// branch catches its own — so only a defect can still reach here. Kept as
+		// defense-in-depth: post-action failures must never fail the workflow.
 		Effect.catchDefect((defect) =>
 			Effect.logWarning(`Post-action warning: ${defect instanceof Error ? defect.message : String(defect)}`),
 		),

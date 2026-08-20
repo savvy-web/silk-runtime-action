@@ -283,6 +283,10 @@ const fileSystemTest = (
 	extra: Parameters<typeof FileSystem.layerNoop>[0] = {},
 ): Layer.Layer<FileSystem.FileSystem> =>
 	FileSystem.layerNoop({
+		// Spread first, not last: `provisioningFileSystem`'s members are disjoint
+		// from the base read members below, and a later caller must not be able
+		// to silently override the reads the die-loudly discipline rests on.
+		...extra,
 		// The detectors probe working-directory-relative paths; anything absent
 		// fails here exactly as it would on a real filesystem.
 		access: (path) => {
@@ -326,9 +330,6 @@ const fileSystemTest = (
 			path === join(WORKSPACE, LOCKFILE)
 				? Effect.succeed(new TextEncoder().encode("lockfileVersion: '9.0'"))
 				: Effect.die(new Error(`unexpected FileSystem.readFile(${path})`)),
-		// Whatever a case that provisions BATS or kcov needs on top — the writes
-		// those installs make, which no other case should be reaching.
-		...extra,
 	});
 
 /**

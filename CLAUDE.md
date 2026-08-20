@@ -58,11 +58,11 @@ Consuming repositories **MUST** have a root `package.json` with:
 * **Other first-party imports:** `@effected/npm` (`PackageManagerPin`,
   `PackageManagerCache.defaultDirectory` — the cited default-cache-directory table),
   `@effected/lockfiles` (`filenamesFor`), `@effected/semver` (`SemVer.ExactVersionString`,
-  backs `AbsoluteVersion`), `@effected/jsonc` (`Jsonc.parse`). Remaining `@effected/*`
-  entries (`commands`, `git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`,
-  `sbom`, `workspaces`, `yaml`) are declared but not imported by `src/` — `devEngines` is
-  decoded locally in `steps/load-config.ts`. Every range is a published caret; no overrides,
-  links or patches.
+  backs `AbsoluteVersion`), `@effected/jsonc` (`Jsonc.parse`), `@effected/commands` (`Run`,
+  used by the `install-bats` and `install-kcov` steps). Remaining `@effected/*` entries
+  (`git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`,
+  `yaml`) are declared but not imported by `src/` — `devEngines` is decoded locally in
+  `steps/load-config.ts`. Every range is a published caret; no overrides, links or patches.
 * **Build:** `@savvy-web/github-action-builder` (rsbuild) via `action.config.ts`.
 * **Cross-phase state:** `src/state.ts` — `CacheState`, `TurboServerState` (`Schema.Class`),
   `STATE_KEYS`; `main` writes, `post` reads.

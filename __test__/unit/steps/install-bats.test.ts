@@ -68,6 +68,9 @@ describe("installBats", () => {
 			expect(r.downloaded).toHaveLength(5);
 			expect(r.downloaded[0]).toContain("bats-core/archive/refs/tags/v1.14.0");
 			expect(r.downloaded.some((u) => u.includes("jasonkarns/bats-mock"))).toBe(true);
+			// access() succeeds under this layer's default, so every library's
+			// load.bash is reported present and no loader should be synthesized.
+			expect(r.written).toEqual([]);
 		}),
 	);
 

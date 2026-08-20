@@ -85,6 +85,8 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `additional-lockfiles` | Extra lockfile glob patterns to fold into the cache key. One pattern per line. | `""` |
 | `additional-cache-paths` | Extra paths to cache and restore. One glob pattern per line. | `""` |
 
+The `bats` toolchain is installed and validated on Linux and macOS; Windows is untested.
+
 ## Outputs
 
 | Output | Description |
