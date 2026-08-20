@@ -193,8 +193,21 @@ const reapCacheServer = (saved: TurboServerState, reap: DetachedProcessOps["reap
  * in full — so an unstubbed operation fell through to the real static silently.
  * This phase only ever calls `reap`, but the guarantee now covers the other two
  * for free.
+ *
+ * **The return type is annotated, and the `never` in it is the point.** This
+ * module's whole contract is that a post-action failure never fails the
+ * workflow, and since every branch absorbs its own typed channel, the only net
+ * left at the bottom is `catchDefect` — which by construction cannot catch a
+ * *typed* failure. So "nothing typed escapes" is what makes the remaining net
+ * sufficient, and inference alone proved it only for today's dependency
+ * versions: a kit upgrade that widened any member's error channel would give
+ * this function a typed channel, `Action.run` would render it as a failed job,
+ * and nothing would have complained at compile time. Annotating turns that
+ * silent behavioural regression into a build error at this line.
  */
-export const makePost = (ops: DetachedProcessOps = DetachedProcess.ops) =>
+export const makePost = (
+	ops: DetachedProcessOps = DetachedProcess.ops,
+): Effect.Effect<void, never, ActionCache | ActionState> =>
 	Effect.gen(function* () {
 		const state = yield* ActionState;
 		yield* Effect.logDebug("Running post-action script");
