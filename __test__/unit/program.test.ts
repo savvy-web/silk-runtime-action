@@ -18,6 +18,8 @@ import { Cause, Effect, Exit, FileSystem, Layer, Logger, Option, Path, PlatformE
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
 
+import { BATS_CORE_VERSION } from "../../src/descriptors/bats.js";
+import { KCOV_VERSION } from "../../src/descriptors/kcov.js";
 import { program, turboCacheOutputs } from "../../src/program.js";
 import { OUTPUT_NAMES } from "../../src/schema/outputs.js";
 import type { StartedTurboCache } from "../../src/steps/turbo-cache.js";
@@ -87,6 +89,45 @@ const toolInstallerTest = ToolInstaller.layerTest({
 	provisionFile: ({ tool, version }) =>
 		Effect.succeed({ directory: `/opt/toolcache/${tool}/${version}`, binDir: `/opt/toolcache/${tool}/${version}` }),
 });
+
+/**
+ * A `ToolInstaller` double that also serves the *provisioning* members — the
+ * download / extract / cache-dir trio only the BATS and kcov installs use.
+ *
+ * @remarks
+ * Separate from {@link toolInstallerTest} rather than folded into it so those
+ * members keep dying for every case that is not about them: a step that starts
+ * downloading shows up as a red test here, which is the same rule the spawner
+ * and filesystem doubles follow.
+ *
+ * `failing` is matched as a substring of the requested url, so one double can
+ * fail bats' tarball while serving kcov's — or the reverse, which is what
+ * separates "bats failed" from "kcov failed" below.
+ */
+const provisioningToolInstallerTest = (
+	options: { readonly failing?: string; readonly downloads?: Array<string> } = {},
+): Layer.Layer<ToolInstaller> =>
+	ToolInstaller.layerTest({
+		find: (tool, version) => Effect.succeed(Option.some(`/opt/toolcache/${tool}/${version}`)),
+		provisionFile: ({ tool, version }) =>
+			Effect.succeed({ directory: `/opt/toolcache/${tool}/${version}`, binDir: `/opt/toolcache/${tool}/${version}` }),
+		download: (url) => {
+			options.downloads?.push(url);
+			return options.failing !== undefined && url.includes(options.failing)
+				? Effect.fail(new ToolInstallerError({ reason: "downloadFailed", status: 404 }))
+				: Effect.succeed(`/tmp/download/${options.downloads?.length ?? 0}.tar.gz`);
+		},
+		extractTar: () => Effect.succeed("/tmp/extracted"),
+		cacheDir: (_directory, tool, version) => Effect.succeed(`/opt/toolcache/${tool}/${version}`),
+	});
+
+/** The writes the BATS and kcov installs make, which no other case reaches. */
+const provisioningFileSystem = {
+	makeDirectory: () => Effect.void,
+	copy: () => Effect.void,
+	writeFileString: () => Effect.void,
+	chmod: () => Effect.void,
+} as const;
 
 /**
  * A `PackageManagerInstaller` double reporting the manifest's manager as already
@@ -227,6 +268,8 @@ interface WorkingDirectory {
 	readonly biome?: string;
 	/** Whether a `turbo.json` is there. Its contents are never read. */
 	readonly turbo?: boolean;
+	/** Whether the working directory holds a `*.bats` file, which is what `detectBats` looks for. */
+	readonly bats?: boolean;
 }
 
 /**
@@ -237,6 +280,7 @@ interface WorkingDirectory {
 const fileSystemTest = (
 	manifest: string = packageJson,
 	directory: WorkingDirectory = {},
+	extra: Parameters<typeof FileSystem.layerNoop>[0] = {},
 ): Layer.Layer<FileSystem.FileSystem> =>
 	FileSystem.layerNoop({
 		// The detectors probe working-directory-relative paths; anything absent
@@ -269,15 +313,22 @@ const fileSystemTest = (
 		// The checkout the cache restore walks, holding the one lockfile its
 		// patterns match. `ActionEnvironment.layerTest` puts the workspace at
 		// `/workspace`.
-		readDirectory: (path) =>
-			path === WORKSPACE
-				? Effect.succeed([LOCKFILE])
-				: Effect.die(new Error(`unexpected FileSystem.readDirectory(${path})`)),
+		readDirectory: (path) => {
+			if (path === WORKSPACE) return Effect.succeed([LOCKFILE]);
+			// The working directory, as `detectBats` walks it: a `*.bats` file is
+			// one of the two signals it looks for, and its absence is what makes
+			// every other case here a bats-free run.
+			if (path === ".") return Effect.succeed(directory.bats === true ? ["setup.bats"] : []);
+			return Effect.die(new Error(`unexpected FileSystem.readDirectory(${path})`));
+		},
 		stat: () => Effect.succeed({ type: "File" } as FileSystem.File.Info),
 		readFile: (path) =>
 			path === join(WORKSPACE, LOCKFILE)
 				? Effect.succeed(new TextEncoder().encode("lockfileVersion: '9.0'"))
 				: Effect.die(new Error(`unexpected FileSystem.readFile(${path})`)),
+		// Whatever a case that provisions BATS or kcov needs on top — the writes
+		// those installs make, which no other case should be reaching.
+		...extra,
 	});
 
 /**
@@ -306,6 +357,8 @@ const makeLayer = (
 		readonly tools?: Layer.Layer<ToolInstaller>;
 		/** Inputs the workflow supplied, as the runner would publish them. */
 		readonly inputs?: Layer.Layer<never>;
+		/** `FileSystem` members beyond the reads every run makes — the BATS and kcov installs' writes. */
+		readonly filesystem?: Parameters<typeof FileSystem.layerNoop>[0];
 	} = {},
 ): Layer.Layer<
 	| ActionCache
@@ -333,7 +386,7 @@ const makeLayer = (
 		ActionState.layerTest({ save: () => Effect.void }),
 		options.tools ?? toolInstallerTest,
 		packageManagerInstallerTest,
-		fileSystemTest(options.manifest, options.directory),
+		fileSystemTest(options.manifest, options.directory, options.filesystem),
 		Path.layer,
 		environment,
 		childProcessSpawnerTest(options.spawns),
@@ -833,6 +886,137 @@ describe("program", () => {
 			// A rung of the ladder matched, so the archive is close but not this
 			// run's — which is what post needs to know to save again.
 			expect(captured.get("cache-hit")).toBe("partial");
+		}),
+	);
+
+	it.effect("leaves bats and kcov disabled when the repository has no shell tests", () =>
+		Effect.gen(function* () {
+			// Neither `detectBats` signal fires here: no `*.bats` file in the working
+			// directory and no `vitest-bats` in the manifest. Nothing is installed,
+			// and the outputs say so rather than reporting a lib path nobody wrote.
+			const captured = yield* runProgram();
+			expect(captured.get("bats-enabled")).toBe("false");
+			expect(captured.get("bats-version")).toBe("");
+			expect(captured.get("bats-lib-path")).toBe("");
+			expect(captured.get("kcov-enabled")).toBe("false");
+			expect(captured.get("kcov-version")).toBe("");
+			expect(captured.get("kcov-cache-hit")).toBe("false");
+		}),
+	);
+
+	it.effect("folds a detected BATS and the kcov beside it into their outputs", () =>
+		Effect.gen(function* () {
+			const captured = new Map<string, string>();
+			const paths: Array<string> = [];
+			const exported: Array<readonly [string, string]> = [];
+			const panels: Array<string> = [];
+			yield* program.pipe(
+				Effect.provide(
+					makeLayer(
+						{
+							set: (name, value) => Effect.sync(() => void captured.set(name, value)),
+							addPath: (path) => Effect.sync(() => void paths.push(path)),
+							exportVariable: (name, value) => Effect.sync(() => void exported.push([name, value])),
+							summary: (content) => Effect.sync(() => void panels.push(content)),
+						},
+						undefined,
+						{
+							directory: { bats: true },
+							tools: provisioningToolInstallerTest(),
+							filesystem: provisioningFileSystem,
+						},
+					),
+				),
+			);
+
+			expect(captured.get("bats-enabled")).toBe("true");
+			expect(captured.get("bats-version")).toBe(BATS_CORE_VERSION);
+			// The library root the install exported, not a per-library directory.
+			expect(captured.get("bats-lib-path")).toBe(exported.find(([name]) => name === "BATS_LIB_PATH")?.[1]);
+			// Enabled is a claim about the runner: the toolchain has to be on the PATH.
+			expect(paths).toContain(`/opt/toolcache/bats/${BATS_CORE_VERSION}/bin`);
+			// kcov followed bats, and nothing restored it, so it reports a build.
+			expect(captured.get("kcov-enabled")).toBe("true");
+			expect(captured.get("kcov-version")).toBe(KCOV_VERSION);
+			expect(captured.get("kcov-cache-hit")).toBe("false");
+			// And the panel carries both rows, from the same install results.
+			expect(panels[0]).toContain(`| BATS | ${BATS_CORE_VERSION} · `);
+			expect(panels[0]).toContain(`| kcov | ${KCOV_VERSION} · ⬜ built |`);
+		}),
+	);
+
+	it.effect("publishes the bats outputs from the install result, not from detection", () =>
+		Effect.gen(function* () {
+			const captured = new Map<string, string>();
+			const logs: Array<string> = [];
+			const downloads: Array<string> = [];
+			yield* program.pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						makeLayer({ set: (name, value) => Effect.sync(() => void captured.set(name, value)) }, undefined, {
+							directory: { bats: true },
+							tools: provisioningToolInstallerTest({ failing: "bats-core", downloads }),
+							filesystem: provisioningFileSystem,
+						}),
+						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
+					),
+				),
+			);
+
+			// Detection said yes and the fetch said no, so the outputs say no
+			// (oracle 30) — the defect v1 shipped for Biome, in the other direction.
+			expect(captured.get("bats-enabled")).toBe("false");
+			expect(captured.get("bats-version")).toBe("");
+			expect(captured.get("bats-lib-path")).toBe("");
+			// And the run carried on: everything else is still published.
+			expect(captured.get("package-manager")).toBe("pnpm");
+			expect(captured.get("node-enabled")).toBe("true");
+			expect(logs.join("\n")).toContain("BATS installation failed: ");
+			// kcov is gated on bats having *landed*: a coverage tool for a toolchain
+			// that never installed has nothing to cover, so it was never fetched.
+			expect(captured.get("kcov-enabled")).toBe("false");
+			expect(downloads.some((url) => url.includes("kcov"))).toBe(false);
+		}),
+	);
+
+	it.effect("keeps a BATS whose kcov failed, and says so in the panel", () =>
+		Effect.gen(function* () {
+			const captured = new Map<string, string>();
+			const logs: Array<string> = [];
+			const panels: Array<string> = [];
+			yield* program.pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						makeLayer(
+							{
+								set: (name, value) => Effect.sync(() => void captured.set(name, value)),
+								addPath: () => Effect.void,
+								exportVariable: () => Effect.void,
+								summary: (content) => Effect.sync(() => void panels.push(content)),
+							},
+							undefined,
+							{
+								directory: { bats: true },
+								tools: provisioningToolInstallerTest({ failing: "SimonKagstrom/kcov" }),
+								filesystem: provisioningFileSystem,
+							},
+						),
+						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
+					),
+				),
+			);
+
+			// Neither install can fail the job, and one failing does not take the
+			// other with it.
+			expect(captured.get("bats-enabled")).toBe("true");
+			expect(captured.get("kcov-enabled")).toBe("false");
+			expect(captured.get("kcov-version")).toBe("");
+			expect(logs.join("\n")).toContain("kcov installation failed: ");
+			// The one row that reports a failure out loud: a kcov nobody asked for is
+			// omitted, and this one was asked for. The outputs cannot tell those
+			// apart, which is why the decision travels to the summary beside the
+			// install result.
+			expect(panels[0]).toContain("| kcov | ⚠️ unavailable |");
 		}),
 	);
 });

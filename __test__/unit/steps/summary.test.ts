@@ -28,6 +28,9 @@ const facts = (overrides: Partial<SummaryFacts> = {}): SummaryFacts => ({
 	}),
 	turboCache: { backend: "github", port: Option.some(41230), state: Option.none() },
 	dependenciesInstalled: true,
+	bats: Option.none(),
+	kcov: Option.none(),
+	kcovRequested: false,
 	...overrides,
 });
 
@@ -145,6 +148,40 @@ describe("writeSummary", () => {
 			// install.
 			yield* writeSummary(facts({ biome: Option.some({ version: "2.4.9", path: "/opt/toolcache/biome/2.4.9" }) }));
 			expect(logs).toContain("Biome: v2.4.9");
+		}).pipe(Effect.provide(layer));
+	});
+
+	it.effect("maps an installed BATS and kcov into their panel rows", () => {
+		const { panels, layer } = harness();
+		return Effect.gen(function* () {
+			yield* writeSummary(
+				facts({
+					bats: Option.some({
+						version: "1.13.0",
+						binDir: "/opt/toolcache/bats/1.13.0/bin",
+						libPath: "/home/runner/.local/share",
+						libraries: [{ name: "bats-support", version: "0.3.0" }],
+					}),
+					kcov: Option.some({ version: "43", binDir: "/opt/hostedtoolcache/kcov/43/x64/bin", cacheHit: true }),
+					kcovRequested: true,
+				}),
+			);
+			expect(panels[0]).toContain("| BATS | 1.13.0 · support 0.3.0 |");
+			expect(panels[0]).toContain("| kcov | 43 · ✅ cached |");
+		}).pipe(Effect.provide(layer));
+	});
+
+	it.effect("tells a kcov that was asked for and failed apart from one nobody asked for", () => {
+		const { panels, layer } = harness();
+		return Effect.gen(function* () {
+			// Both are `Option.none()` in the install result, which is exactly why
+			// the decision travels beside it: a silent failure is the one this panel
+			// has to say out loud.
+			yield* writeSummary(facts({ kcov: Option.none(), kcovRequested: true }));
+			expect(panels[0]).toContain("| kcov | ⚠️ unavailable |");
+
+			yield* writeSummary(facts({ kcov: Option.none(), kcovRequested: false }));
+			expect(panels[1]).not.toContain("| kcov |");
 		}).pipe(Effect.provide(layer));
 	});
 
