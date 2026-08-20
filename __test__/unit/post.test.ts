@@ -505,7 +505,10 @@ describe("kcov cache save", () => {
 			const exact = KcovCacheState.make({ ...missedKcov, restoredKey: Option.some(missedKcov.primaryKey) });
 			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
 				Effect.provide(
-					Layer.mergeAll(stateWithKcov(Option.some(exact)), ActionCache.layerTest({}), ActionLogger.layerSilent),
+					// `cacheTest(saved)` rather than a bare `layerTest({})`: the bare double
+					// records nothing, so `saved` stays empty whether or not `save` ran and
+					// the assertion below passes against a broken skip-guard.
+					Layer.mergeAll(stateWithKcov(Option.some(exact)), cacheTest(saved), ActionLogger.layerSilent),
 				),
 				Effect.exit,
 			);

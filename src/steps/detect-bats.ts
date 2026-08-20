@@ -45,12 +45,24 @@ const MAX_DEPTH = 4;
  * lives near the top of a repository that has it. A vendored `.bats` fixture
  * inside a dependency is not this repository's intent to run bats.
  */
+/** Whether `path` is a regular file, answering `false` for anything unreadable. */
+const isFile = (fs: FileSystem.FileSystem, path: string): Effect.Effect<boolean> =>
+	fs.stat(path).pipe(
+		Effect.map((info) => info.type === "File"),
+		Effect.catch(() => Effect.succeed(false)),
+	);
+
 const hasBatsFile = (fs: FileSystem.FileSystem, dir: string, depth: number): Effect.Effect<boolean> =>
 	Effect.gen(function* () {
 		if (depth > MAX_DEPTH) return false;
 		const entries = yield* fs.readDirectory(dir).pipe(Effect.catch(() => Effect.succeed([] as Array<string>)));
 		for (const entry of entries) {
-			if (entry.endsWith(".bats")) return true;
+			// The name is not enough: `readDirectory` reports directories too, and a
+			// directory named `example.bats` would otherwise provision the whole
+			// toolchain for a repository that contains no test file at all. A stat
+			// that cannot be taken answers "not a file" — an entry this cannot read
+			// is not evidence of anything.
+			if (entry.endsWith(".bats") && (yield* isFile(fs, dir === "." ? entry : `${dir}/${entry}`))) return true;
 		}
 		for (const entry of entries) {
 			if (SKIP.has(entry) || entry.startsWith(".")) continue;

@@ -3,12 +3,21 @@ import { Effect, FileSystem } from "effect";
 
 import { detectBats } from "../../../src/steps/detect-bats.js";
 
-/** A filesystem double answering from a fixed file map. */
+/**
+ * A filesystem double answering from a fixed file map.
+ *
+ * `dirs` names each directory's entries; anything listed there is a directory,
+ * anything else that is asked about is a regular file. That is what lets a case
+ * model the entry `detectBats` must reject — a *directory* whose name ends in
+ * `.bats` — rather than only the file it must accept.
+ */
 const fsWith = (files: Record<string, string>, dirs: Record<string, ReadonlyArray<string>> = {}) =>
 	FileSystem.layerNoop({
 		readFileString: (path: string) =>
 			path in files ? Effect.succeed(files[path] as string) : Effect.fail(new Error(`no such file: ${path}`) as never),
 		readDirectory: (path: string) => Effect.succeed([...(dirs[path] ?? [])]),
+		stat: (path: string) =>
+			Effect.succeed({ type: path in dirs ? "Directory" : "File" } as unknown as FileSystem.File.Info),
 	});
 
 const AUTO = { bats: "auto", kcov: "auto" } as const;
@@ -40,6 +49,20 @@ describe("detectBats", () => {
 			expect(decision.installBats).toBe(true);
 		}).pipe(
 			Effect.provide(fsWith({ "package.json": JSON.stringify({ name: "x" }) }, { ".": ["test"], test: ["cli.bats"] })),
+		),
+	);
+
+	it.effect("does not count a *directory* whose name ends in .bats", () =>
+		Effect.gen(function* () {
+			// `readDirectory` reports directories alongside files, so a name check
+			// alone would provision the whole toolchain for a repository holding no
+			// test file at all.
+			const decision = yield* detectBats(AUTO);
+			expect(decision).toEqual({ installBats: false, installKcov: false });
+		}).pipe(
+			Effect.provide(
+				fsWith({ "package.json": JSON.stringify({ name: "x" }) }, { ".": ["fixtures.bats"], "fixtures.bats": [] }),
+			),
 		),
 	);
 

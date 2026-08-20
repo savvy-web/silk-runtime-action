@@ -40,6 +40,17 @@ export interface InstalledKcov {
 }
 
 /**
+ * An environment value that is actually present, treating `""` as absent.
+ *
+ * @remarks
+ * The runner exports an empty string for a variable it has no value for, which
+ * `??` happily keeps — and an empty key segment is worse than a missing one,
+ * because it mints a namespace nothing else on that runner will ever match.
+ */
+const nonEmpty = (value: string | undefined): string | undefined =>
+	value === undefined || value === "" ? undefined : value;
+
+/**
  * Whether `kcov --version` runs at all.
  *
  * @remarks
@@ -261,7 +272,13 @@ export const installKcov = (
 		if (!install) return Option.none();
 
 		const host = options.host ?? currentHost();
-		const imageOs = options.imageOs ?? process.env.ImageOS ?? `${host.platform}-unknown`;
+		// Empty is absent, matching `ImageVersion` below — the comment there used to
+		// claim the two were "treated identically" while this line filtered only
+		// `null`/`undefined`. A runner exporting `ImageOS=""` would have keyed on
+		// `kcov-43--x64-…`, a namespace the `<platform>-unknown` fallback that same
+		// runner uses everywhere else never matches, so its cache would stay cold
+		// forever without ever looking wrong.
+		const imageOs = nonEmpty(options.imageOs ?? process.env.ImageOS) ?? `${host.platform}-unknown`;
 		// Read beside `ImageOS` and treated identically: an unset or empty variable
 		// (every self-hosted runner) is `none`, which collapses the primary key onto
 		// the prefix rather than minting one nothing will match.
@@ -277,6 +294,7 @@ export const installKcov = (
 		const plan = planned.success;
 
 		const path = yield* Path.Path;
+		const fs = yield* FileSystem.FileSystem;
 		const prefix = path.join(toolRoot, "kcov", plan.version, host.arch);
 		const binDir = path.join(prefix, "bin");
 		const binary = path.join(binDir, plan.binary);
@@ -314,6 +332,14 @@ export const installKcov = (
 				return Option.some({ version: plan.version, binDir, cacheHit: true });
 			}
 			yield* Effect.logWarning(`Restored kcov ${plan.version} could not be executed — rebuilding from source`);
+			// Delete the rejected tree before rebuilding over it. `make install`
+			// only replaces the files it produces, so anything the restored entry
+			// carried that this build does not would survive — and `stash` hands
+			// `post` the whole prefix, which would then seal the probe's rejects
+			// into the *new* entry. That is the opposite of what this path is for.
+			// A failure to remove is not worth failing over: the build still runs,
+			// and the worst case is the staleness this delete exists to avoid.
+			yield* fs.remove(prefix, { recursive: true }).pipe(Effect.catch(() => Effect.void));
 		}
 
 		yield* build(plan, prefix, host);
@@ -326,9 +352,16 @@ export const installKcov = (
 
 		// `restoredKey` is `none` on this path whatever the restore did: the tree on
 		// disk was just built and nothing about the entry that was restored
-		// describes it, so `post` must always attempt the save. That is what makes a
-		// failed probe self-healing — the rebuild lands under a fresh primary rather
-		// than being discarded against the taken key it came from.
+		// describes it, so `post` must always attempt the save.
+		//
+		// That save heals a **rung** restore whose probe failed — the rebuild lands
+		// under a primary nothing holds yet, and the next run exact-hits it. It does
+		// NOT heal an **exact** restore whose probe failed: the key is the one just
+		// restored from, the entry is immutable, and the save is a no-op, so the
+		// next run repeats restore → probe → rebuild until an `ImageVersion` bump
+		// mints a new primary. Bounded to one image-version window rather than the
+		// ~2 years a single key would cost; see `descriptors/kcov.ts` for why
+		// closing it outright is not worth a segment every run pays for.
 		yield* stash(prefix, key.key, Option.none());
 
 		yield* publish(binDir, binary, plan.version);

@@ -105,13 +105,24 @@ const DIGEST_LENGTH = 8;
  * restores warm off the rung, and re-saves under the new primary. The cache
  * stays warm across a bump *and* gains what a single key can never have.
  *
- * What it gains is **self-healing**. Cache entries are immutable and a save to
- * an existing key is a success, so under a single key a tree whose system
- * libraries have moved is poisoned permanently: every run restores it, fails
- * the verify probe, rebuilds, saves to the same taken key, and throws the good
- * tree away — correct every time and permanently slow, for the ~2 years an LTS
- * `ImageOS` lives. With the ladder, the rebuild lands on a *new* primary, and
- * the next run exact-hits a binary that works.
+ * What it gains is **self-healing on the rung**, and the qualifier is exact.
+ * Cache entries are immutable and a save to an existing key is a success, so
+ * under a single key a tree whose system libraries have moved is poisoned
+ * permanently: every run restores it, fails the verify probe, rebuilds, saves
+ * to the same taken key, and throws the good tree away — correct every time and
+ * permanently slow, for the ~2 years an LTS `ImageOS` lives. With the ladder, a
+ * **fallback-rung** restore that fails its probe rebuilds onto a *new* primary,
+ * and the next run exact-hits a binary that works.
+ *
+ * An **exact-key** restore that fails its probe is not healed, and this is the
+ * residual the ladder does not remove: the rebuild's key is the one it just
+ * restored from, which is taken, so the save is a no-op and the next run
+ * repeats restore → probe → rebuild. What the ladder buys there is a *bound*.
+ * The poisoning lasts until any primary component moves — in practice the next
+ * `ImageVersion` bump, roughly a week — rather than until `ImageOS` turns over.
+ * One image-version window instead of two years. Closing it entirely would need
+ * a discriminator for failed exact restores, which is not worth a key segment
+ * every run pays for to shorten a window this rare.
  *
  * **The bust is a digest segment the rung retains** (oracle 15, and the same
  * shape as `cache-config`'s version digest): it lets a busted run keep the key

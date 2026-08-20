@@ -134,6 +134,12 @@ jobs:
             # where it is actually used and the warm-cache path is observable
             # — this fixture only proves bats detection and BATS_LIB_PATH.
             kcov: "false"
+            # Pinned now that kcov is uniformly off for this row. It was left
+            # unset while kcov followed `auto`, because the expected value
+            # differed per OS and no single literal could hold across the
+            # matrix; disabling kcov removed that split, so the fixture can and
+            # should assert the output rather than merely not build it.
+            expected-kcov-enabled: "false"
             expected-cache-hit: "false"
             expected-node-enabled: "true"
             expected-node-version: 24.11.0

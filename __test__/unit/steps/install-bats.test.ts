@@ -12,7 +12,7 @@ interface Recorded {
 	readonly downloaded: Array<string>;
 	readonly paths: Array<string>;
 	readonly env: Array<readonly [string, string]>;
-	readonly written: Array<string>;
+	readonly written: Array<readonly [path: string, content: string]>;
 	readonly logs: Array<string>;
 }
 
@@ -40,7 +40,7 @@ const makeLayer = (r: Recorded, overrides: Partial<Parameters<typeof ToolInstall
 			makeDirectory: () => Effect.void,
 			copy: () => Effect.void,
 			access: () => Effect.void,
-			writeFileString: (p: string) => Effect.sync(() => void r.written.push(p)),
+			writeFileString: (p: string, c: string) => Effect.sync(() => void r.written.push([p, c])),
 			chmod: () => Effect.void,
 		}),
 		Path.layer,
@@ -105,13 +105,20 @@ describe("installBats", () => {
 							copy: () => Effect.void,
 							access: (p: string) =>
 								p.endsWith("bats-mock/load.bash") ? Effect.fail(new Error("absent") as never) : Effect.void,
-							writeFileString: (p: string) => Effect.sync(() => void r.written.push(p)),
+							writeFileString: (p: string, c: string) => Effect.sync(() => void r.written.push([p, c])),
 							chmod: () => Effect.void,
 						}),
 					),
 				),
 			);
-			expect(r.written).toContain(`${HOME}/.local/share/bats-mock/load.bash`);
+			// The content, not just the path. Asserting only that *a* write happened
+			// lets a wrong loader through, and a wrong loader breaks
+			// `bats_load_library bats-mock` for every consumer with nothing to show
+			// for it. Spelled literally rather than imported from the module under
+			// test, which would pass against a mangled constant.
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: shell interpolation the installed script evaluates, not a JS template
+			const loader = 'source "$(dirname "${BASH_SOURCE[0]}")/stub.bash"\n';
+			expect(r.written).toEqual([[`${HOME}/.local/share/bats-mock/load.bash`, loader]]);
 		}),
 	);
 
