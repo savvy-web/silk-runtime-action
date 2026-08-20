@@ -14,6 +14,7 @@
  * @module descriptors/kcov
  */
 
+import { CacheKey } from "@effected/github-actions";
 import { Option, Result } from "effect";
 
 /** The pinned kcov version. Bumped by changeset, never by an input. */
@@ -81,30 +82,28 @@ export const kcov = {
 	},
 };
 
-/** The two-part Actions cache key the built kcov tree is stored under. */
-export interface KcovCacheKey {
-	/** The key a save writes and an exact restore matches. */
-	readonly primary: string;
-	/**
-	 * The fallback rung, handed to `ActionCache.restore` as its restore-key
-	 * ladder: any entry whose key starts with this prefix will do.
-	 */
-	readonly restorePrefix: string;
-}
+/** How many hex characters of the bust digest the key segment carries. */
+const DIGEST_LENGTH = 8;
 
 /**
- * The Actions cache key the built kcov tree is stored under, as a primary key
- * and the prefix a restore falls back to.
+ * The Actions cache key the built kcov tree is stored under, ladder and all.
  *
  * @remarks
- * The prefix is `ImageOS` (`ubuntu24`, `macos15`) and the primary appends
- * `ImageVersion`. That is **not** a reversal of the earlier
- * ImageOS-over-ImageVersion decision — that decision assumed `ImageVersion` as
- * the *sole* key, where a roughly weekly bump means a cold cache and a
- * multi-minute rebuild for nothing. It was incomplete rather than wrong: with
- * an `ImageOS` prefix underneath it, a bump misses the primary, restores warm
- * from the prefix, and re-saves under the new primary. The cache stays warm
- * across a bump *and* gains what a single key can never have.
+ * A typed `CacheKey` rather than a hand-rolled primary/prefix pair: the kit
+ * already owns this concept, `ActionCache.restore` reads the rungs straight off
+ * the key, and that is what makes the primary and its fallbacks unable to drift
+ * apart. `restore-cache` states the same rule for the dependency cache.
+ *
+ * The segments are `kcov-<version>-<imageOs>-<arch>-<bustDigest>[-<imageVersion>]`,
+ * with one rung that keeps everything but `imageVersion`.
+ *
+ * **`ImageOS` in the rung, `ImageVersion` in the primary.** This is not a
+ * reversal of the earlier ImageOS-over-ImageVersion decision — that decision
+ * assumed `ImageVersion` as the *sole* key, where a roughly weekly bump means a
+ * cold cache and a multi-minute rebuild for nothing. It was incomplete rather
+ * than wrong: with an `ImageOS` rung underneath it, a bump misses the primary,
+ * restores warm off the rung, and re-saves under the new primary. The cache
+ * stays warm across a bump *and* gains what a single key can never have.
  *
  * What it gains is **self-healing**. Cache entries are immutable and a save to
  * an existing key is a success, so under a single key a tree whose system
@@ -114,15 +113,19 @@ export interface KcovCacheKey {
  * `ImageOS` lives. With the ladder, the rebuild lands on a *new* primary, and
  * the next run exact-hits a binary that works.
  *
- * `imageVersion` is an **argument** and `Option.none()` is a first-class case:
- * a self-hosted runner sets no such variable, and the primary then collapses to
- * the prefix, degrading exactly to the previous single-key behavior rather than
- * minting a `…-undefined` key nothing will ever match.
+ * **The bust is a digest segment the rung retains** (oracle 15, and the same
+ * shape as `cache-config`'s version digest): it lets a busted run keep the key
+ * layout while matching nothing an unbusted run wrote, *and* — the part a
+ * trailing bust segment gets wrong — stops an unbusted run's rung from
+ * prefix-matching a busted entry in the other direction. A busted run then also
+ * drops its ladder entirely, so the restore proves an exact hit rather than
+ * being satisfied by a rung.
  *
- * `bust` sits in the **prefix**, not on the end of the primary, so that
- * `cache-bust` still does what it is documented to do. Appended after
- * `imageVersion` it would namespace the primary while leaving the fallback rung
- * matching every un-busted entry — a forced miss that silently restores anyway.
+ * `imageVersion` is an **argument** and `Option.none()` is a first-class case: a
+ * self-hosted runner sets no such variable. The primary then collapses onto what
+ * would have been the rung and the ladder is dropped, degrading exactly to the
+ * previous single-key behavior rather than minting a `…-undefined` key nothing
+ * will ever match, or a dead rung nothing can match either.
  */
 export const kcovCacheKey = (
 	version: string,
@@ -130,14 +133,17 @@ export const kcovCacheKey = (
 	arch: string,
 	bust: Option.Option<string>,
 	imageVersion: Option.Option<string> = Option.none(),
-): KcovCacheKey => {
-	const base = `kcov-${version}-${imageOs}-${arch}`;
-	const restorePrefix = Option.match(bust, { onNone: () => base, onSome: (value) => `${base}-${value}` });
-	return {
-		primary: Option.match(imageVersion, {
-			onNone: () => restorePrefix,
-			onSome: (value) => `${restorePrefix}-${value}`,
-		}),
-		restorePrefix,
-	};
+): CacheKey => {
+	const bustDigest = CacheKey.digest(Option.match(bust, { onNone: () => "", onSome: (value) => value }), DIGEST_LENGTH);
+	const base = ["kcov", version, imageOs, arch, bustDigest] as const;
+	const key = Option.match(imageVersion, {
+		onNone: () => CacheKey.of(...base),
+		onSome: (value) => CacheKey.of(...base, value),
+	});
+	// Zero rungs is a *policy*, distinct from absence — absence still selects
+	// `CacheKey`'s default every-prefix ladder, whose shorter rungs would drop the
+	// bust digest and the arch.
+	return Option.isSome(bust) || Option.isNone(imageVersion)
+		? key.withoutRestoreKeys()
+		: key.withRestoreDepths([base.length]);
 };

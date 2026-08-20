@@ -285,8 +285,10 @@ export const installKcov = (
 		const cache = yield* ActionCache;
 		// A cache that cannot be reached is a miss: the build below is the whole
 		// fallback, and failing here would turn a degraded cache into a failed job.
+		// The typed key carries its own ladder; `ActionCache` reads the rungs off it,
+		// so the primary and its fallbacks cannot drift apart.
 		const restored = yield* cache
-			.restore([prefix], key.primary, [key.restorePrefix])
+			.restore([prefix], key)
 			.pipe(
 				Effect.catch((cause) =>
 					Effect.logWarning(`kcov cache could not be read: ${cause.message}`).pipe(Effect.as(Option.none<string>())),
@@ -295,7 +297,7 @@ export const installKcov = (
 
 		if (Option.isSome(restored)) {
 			if (yield* probe(binary)) {
-				if (restored.value === key.primary) {
+				if (restored.value === key.key) {
 					// An exact hit is already in the cache under the key a save would
 					// use, so there is nothing for `post` to do and no state to write.
 					yield* Effect.logInfo(`kcov ${plan.version} (cached)`);
@@ -305,8 +307,8 @@ export const installKcov = (
 					// state is stashed and `post` re-saves it under the new one. Skipping
 					// this save is the mistake that leaves the ladder permanently one
 					// image behind.
-					yield* stash(prefix, key.primary, restored);
-					yield* Effect.logInfo(`kcov ${plan.version} (restored from ${restored.value}, re-saving as ${key.primary})`);
+					yield* stash(prefix, key.key, restored);
+					yield* Effect.logInfo(`kcov ${plan.version} (restored from ${restored.value}, re-saving as ${key.key})`);
 				}
 				yield* publish(binDir, binary, plan.version);
 				return Option.some({ version: plan.version, binDir, cacheHit: true });
@@ -327,7 +329,7 @@ export const installKcov = (
 		// describes it, so `post` must always attempt the save. That is what makes a
 		// failed probe self-healing — the rebuild lands under a fresh primary rather
 		// than being discarded against the taken key it came from.
-		yield* stash(prefix, key.primary, Option.none());
+		yield* stash(prefix, key.key, Option.none());
 
 		yield* publish(binDir, binary, plan.version);
 		yield* Effect.logInfo(`kcov ${plan.version} (built)`);

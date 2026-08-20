@@ -31,29 +31,43 @@ describe("kcov.plan", () => {
 });
 
 describe("kcovCacheKey", () => {
-	it("embeds version, image os and arch in both rungs", () => {
-		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.none(), Option.some("20260801.1"))).toEqual({
-			primary: "kcov-43-ubuntu24-X64-20260801.1",
-			restorePrefix: "kcov-43-ubuntu24-X64",
-		});
+	const UNBUSTED = kcovCacheKey("43", "ubuntu24", "X64", Option.none(), Option.some("20260801.1"));
+
+	it("puts image version in the primary and keeps everything else in the rung", () => {
+		expect(UNBUSTED.key).toMatch(/^kcov-43-ubuntu24-X64-[0-9a-f]{8}-20260801\.1$/);
+		expect(UNBUSTED.restoreKeys).toEqual([UNBUSTED.key.replace("20260801.1", "")]);
 	});
 
-	// A self-hosted runner sets no `ImageVersion`; the ladder must degrade to the
-	// previous single-key behavior rather than mint a key nothing can match.
-	it("collapses the primary onto the prefix when there is no image version", () => {
-		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.none())).toEqual({
-			primary: "kcov-43-ubuntu24-X64",
-			restorePrefix: "kcov-43-ubuntu24-X64",
-		});
+	// A self-hosted runner sets no `ImageVersion`. The primary must collapse onto
+	// what would have been the rung — no `-undefined` segment, and no dead rung
+	// that nothing can ever match.
+	it("collapses the primary onto the rung when there is no image version", () => {
+		const key = kcovCacheKey("43", "ubuntu24", "X64", Option.none());
+		expect(key.key).toBe(UNBUSTED.restoreKeys[0]?.slice(0, -1));
+		expect(key.restoreKeys).toEqual([]);
 	});
 
-	// `cache-bust` is documented to force a miss. On the end of the primary it
-	// would leave the fallback rung matching every un-busted entry, so the forced
-	// miss would silently restore anyway — it belongs in the prefix.
-	it("busts both rungs, not just the primary", () => {
-		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-7"), Option.some("20260801.1"))).toEqual({
-			primary: "kcov-43-ubuntu24-X64-run-7-20260801.1",
-			restorePrefix: "kcov-43-ubuntu24-X64-run-7",
-		});
+	// Oracle 15: a busted run drops the ladder entirely, so its restore proves an
+	// exact hit rather than being satisfied by a rung.
+	it("drops the ladder entirely when busted", () => {
+		expect(kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-7"), Option.some("20260801.1")).restoreKeys).toEqual(
+			[],
+		);
+	});
+
+	// The leak a trailing bust segment leaves: an unbusted run's rung would
+	// prefix-match a busted entry. A retained digest segment stops it in BOTH
+	// directions.
+	it("keeps busted and unbusted keys from matching each other in either direction", () => {
+		const busted = kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-7"), Option.some("20260801.1"));
+		expect(busted.key).not.toBe(UNBUSTED.key);
+		for (const rung of UNBUSTED.restoreKeys) expect(busted.key.startsWith(rung)).toBe(false);
+		for (const rung of busted.restoreKeys) expect(UNBUSTED.key.startsWith(rung)).toBe(false);
+	});
+
+	it("gives different busts different keys", () => {
+		const seven = kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-7"), Option.some("20260801.1"));
+		const eight = kcovCacheKey("43", "ubuntu24", "X64", Option.some("run-8"), Option.some("20260801.1"));
+		expect(seven.key).not.toBe(eight.key);
 	});
 });

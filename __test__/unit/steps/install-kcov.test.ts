@@ -13,6 +13,7 @@ import {
 } from "@effected/github-actions";
 import { Effect, FileSystem, Layer, Logger, Option, Path, PlatformError, References } from "effect";
 
+import { kcovCacheKey } from "../../../src/descriptors/kcov.js";
 import { installKcov } from "../../../src/steps/install-kcov.js";
 
 const HOST = { platform: "linux", arch: "x64" };
@@ -23,8 +24,15 @@ const OPTS = {
 	bust: Option.none<string>(),
 	toolRoot: "/opt/hostedtoolcache",
 };
-const PRIMARY = "kcov-43-ubuntu24-x64-20260801.1";
-const PREFIX = "kcov-43-ubuntu24-x64";
+const KEY = kcovCacheKey("43", "ubuntu24", "x64", Option.none(), Option.some("20260801.1"));
+const PRIMARY = KEY.key;
+const RUNG = KEY.restoreKeys[0] ?? "";
+/**
+ * What the real backend answers on a rung match: the **full stored key** of an
+ * older entry, not the rung itself. The double returns this so the fallback
+ * tests exercise the realistic value.
+ */
+const OLDER = `${RUNG}20260715.2`;
 
 interface Recorded {
 	readonly restored: Array<string>;
@@ -78,14 +86,22 @@ const makeLayer = (r: Recorded, options: LayerOptions) => {
 	return Layer.mergeAll(
 		spawner.layer,
 		ActionCache.layerTest({
-			restore: (_paths, key, restoreKeys) =>
+			// A typed `CacheKey` carries its own ladder, which the real service reads
+			// off the key rather than taking as a third argument — the double reads it
+			// the same way.
+			restore: (_paths, key) =>
 				options.restoreFails === true
 					? Effect.fail(new ActionCacheError({ reason: "unreachable" }))
 					: Effect.sync(() => {
-							r.restored.push(String(key));
-							r.ladders.push(restoreKeys ?? []);
-							if (options.restore === "primary") return Option.some(String(key));
-							if (options.restore === "prefix") return Option.fromNullishOr(restoreKeys?.[0]);
+							const primary = typeof key === "string" ? key : key.key;
+							const rungs = typeof key === "string" ? [] : key.restoreKeys;
+							r.restored.push(primary);
+							r.ladders.push(rungs);
+							if (options.restore === "primary") return Option.some(primary);
+							// A rung match answers the full key of the older entry it found.
+							if (options.restore === "prefix" && rungs[0] !== undefined) {
+								return Option.some(`${rungs[0]}20260715.2`);
+							}
 							return Option.none<string>();
 						}),
 		}),
@@ -149,7 +165,7 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 0 })),
 			);
 			expect(r.restored).toEqual([PRIMARY]);
-			expect(r.ladders).toEqual([[PREFIX]]);
+			expect(r.ladders).toEqual([[RUNG]]);
 			expect(Option.isSome(result) && result.value.cacheHit).toBe(true);
 			// The entry already lives under the key a save would use, so there is no
 			// state to stash.
@@ -188,7 +204,7 @@ describe("installKcov", () => {
 			// Warm: restored, probed, published — never built.
 			expect(r.ran).toEqual(["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
 			expect(r.saved).toHaveLength(1);
-			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.some(PREFIX) });
+			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.some(OLDER) });
 		}),
 	);
 
@@ -204,8 +220,10 @@ describe("installKcov", () => {
 			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
 			expect(r.ran).toContain("make install");
 			expect(r.saved).toHaveLength(1);
-			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY });
-			expect((r.saved[0] as { primaryKey: string }).primaryKey).not.toBe(PREFIX);
+			// Saved under the NEW primary with no restored key — never under the key it
+			// came from, which is what makes the poisoned entry heal.
+			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.none() });
+			expect((r.saved[0] as { primaryKey: string }).primaryKey).not.toBe(OLDER);
 		}),
 	);
 
@@ -236,8 +254,9 @@ describe("installKcov", () => {
 			yield* installKcov(true, { ...OPTS, host: { platform: "darwin", arch: "arm64" }, imageOs: "macos15" }).pipe(
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
-			expect(r.restored).toEqual(["kcov-43-macos15-arm64-20260801.1"]);
-			expect(r.ladders).toEqual([["kcov-43-macos15-arm64"]]);
+			const macKey = kcovCacheKey("43", "macos15", "arm64", Option.none(), Option.some("20260801.1"));
+			expect(r.restored).toEqual([macKey.key]);
+			expect(r.ladders).toEqual([macKey.restoreKeys]);
 			expect(r.ran[0]).toBe("brew install dwarfutils openssl@3");
 		}),
 	);
@@ -348,6 +367,29 @@ describe("installKcov", () => {
 			);
 			expect(error.reason).toBe("build");
 			expect(error.message).toContain("apt-get update could not be run");
+		}),
+	);
+
+	// `imageVersion` is read from the environment beside `ImageOS`, and every other
+	// test in this file supplies it directly — so without this one the `??` and the
+	// empty-string guard are executed but never discriminated.
+	it.effect("reads ImageVersion from the environment, treating empty as absent", () =>
+		Effect.gen(function* () {
+			const r = recorder();
+			const before = process.env.ImageVersion;
+			process.env.ImageVersion = "";
+			try {
+				const { imageVersion: _ignored, ...withoutImageVersion } = OPTS;
+				yield* installKcov(true, withoutImageVersion).pipe(
+					Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
+				);
+			} finally {
+				if (before === undefined) delete process.env.ImageVersion;
+				else process.env.ImageVersion = before;
+			}
+			// Collapsed onto the rung, with no trailing separator and no ladder.
+			expect(r.restored).toEqual([RUNG.slice(0, -1)]);
+			expect(r.ladders).toEqual([[]]);
 		}),
 	);
 });
