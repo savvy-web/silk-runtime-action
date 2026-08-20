@@ -63,13 +63,31 @@ const fail = (error: ToolInstallerError) =>
  * The synthesized `load.bash` for a `flat`-layout library that ships none.
  *
  * @remarks
- * Assembled from two literals rather than one: bats-core's `${BASH_SOURCE[0]}`
- * is bash interpolation for the *installed* script to evaluate at load time,
- * not a placeholder for this module to fill in — a single string literal
- * containing it unbroken reads to a linter as an accidentally unescaped
- * template.
+ * `${BASH_SOURCE[0]}` here is **bash** interpolation, for the installed script
+ * to evaluate at its own load time — not a placeholder for this module to fill
+ * in. It must reach disk verbatim.
+ *
+ * A **plain** string literal, and it has to be: inside one, `${…}` is inert
+ * text that no JavaScript stage can evaluate. The obvious alternatives are both
+ * traps, and one of them shipped:
+ *
+ * - A template literal spelled ``` `…$${"{BASH_SOURCE[0]}"}…` ``` evaluates
+ *   correctly *in source* — verified twice, in review and by hand — and is then
+ *   **constant-folded by the minifier back into a real substitution**. The
+ *   bundled `dist/main.js` came out carrying a live `${BASH_SOURCE[0]}` inside a
+ *   template literal, so every run died at module load with
+ *   `ReferenceError: BASH_SOURCE is not defined` before the action did anything
+ *   at all. This action is bundled and CI runs the committed `dist`, so a string
+ *   that survives `tsc` and the unit tests but not the minifier is a string that
+ *   only fails in production.
+ * - Concatenating `"$" + "{BASH_SOURCE[0]}"` invites the same folding.
+ *
+ * Biome's `noTemplateCurlyInString` exists to catch a `${…}` that *was* meant to
+ * be a template. This one is not, and the rule cannot tell the difference, so it
+ * is suppressed here rather than worked around — the workaround is what broke.
  */
-const BATS_MOCK_LOADER = `source "$(dirname "$${"{BASH_SOURCE[0]}"}")/stub.bash"\n`;
+// biome-ignore lint/suspicious/noTemplateCurlyInString: shell interpolation for the installed script, not a JS template — see remarks
+const BATS_MOCK_LOADER = 'source "$(dirname "${BASH_SOURCE[0]}")/stub.bash"\n';
 
 /**
  * Installs one helper library into `<libRoot>/<name>/`.
