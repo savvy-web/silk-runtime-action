@@ -70,7 +70,7 @@ step's; `MainLive` supplies only what `ActionServices` lacks.
 - **`ProcessId.make`, never `makeUnsafe`** — `makeUnsafe` typechecks through test doubles
   then dies at runtime where `catchDefect` goes blind.
 - **API authority:** `docs/superpowers/reference/effected-api-dossier.md`, then the
-  installed `.d.ts`, then `.repos/effect` (read-only, pinned to beta.101).
+  installed `.d.ts`, then `.repos/effect` (read-only, pinned to rc.109).
 - **Design:** `docs/superpowers/specs/2026-07-28-effected-rebuild-design.md`.
 - **Legacy oracle:** `docs/superpowers/reference/legacy-v1/` — cite it for behavior
   questions; **never import from it**.

@@ -44,7 +44,7 @@ Consuming repositories **MUST** have a root `package.json` with:
 
 ## Technical Stack
 
-* **Framework:** [Effect](https://effect.website) **v4** (`effect@4.0.0-beta.107` via
+* **Framework:** [Effect](https://effect.website) **v4** (`effect@4.0.0-rc.109` via
   `catalog:effect`, supplied by the `@effected/pnpm-plugin-effect` config dependency). In v4
   `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient`
   live there); only Node platform layers ship separately, in `@effect/platform-node`.
@@ -124,7 +124,7 @@ Library edits ship separately on their own branch. **Never push while linked** �
 the published range, `pnpm install`, then push.
 
 **Effect v4 API authority:** `.repos/effect` is a vendored, read-only submodule pinned to
-`effect@4.0.0-beta.107` — the source of truth for v4 APIs, whose surface diverges from the
+`effect@4.0.0-rc.109` — the source of truth for v4 APIs, whose surface diverges from the
 v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not edit.
 
 ### Turbo file caching: `**/.turbo/cache` only
