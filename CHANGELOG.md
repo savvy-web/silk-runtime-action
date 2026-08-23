@@ -4,6 +4,21 @@
 
 ### Dependencies
 
+* | Dependency           | Type       | Action  | From    | To      |                                                                              |
+  | -------------------- | ---------- | ------- | ------- | ------- | ---------------------------------------------------------------------------- |
+  | @effected/lockfiles  | dependency | updated | ^0.6.2  | ^0.6.3  |                                                                              |
+  | @effected/markdown   | dependency | updated | ^0.6.1  | ^0.6.2  |                                                                              |
+  | @effected/workspaces | dependency | updated | ^0.17.1 | ^0.17.2 |                                                                              |
+  | @effected/yaml       | dependency | updated | ^0.10.0 | ^0.11.0 | [#288][#288] Thanks [@savvy-web-bot](https://github.com/apps/savvy-web-bot)! |
+
+### Patch Changes
+
+[#288]: https://github.com/savvy-web/silk-runtime-action/pull/288
+
+## 1.4.6
+
+### Dependencies
+
 * | Dependency         | Type       | Action  | From   | To     |                                                                              |
   | ------------------ | ---------- | ------- | ------ | ------ | ---------------------------------------------------------------------------- |
   | @effected/markdown | dependency | updated | ^0.6.0 | ^0.6.1 | [#285][#285] Thanks [@savvy-web-bot](https://github.com/apps/savvy-web-bot)! |
