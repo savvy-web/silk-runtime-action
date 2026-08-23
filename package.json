@@ -1,6 +1,6 @@
 {
 	"name": "@savvy-web/silk-runtime-action",
-	"version": "1.4.6",
+	"version": "1.4.5",
 	"private": true,
 	"description": "Comprehensive Node.js runtime setup action with automatic package manager detection, dependency caching and Turbo build cache configuration",
 	"repository": {
@@ -31,28 +31,28 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:effect",
-		"@effected/commands": "^0.5.0",
-		"@effected/git": "^0.9.0",
-		"@effected/github": "^0.7.0",
-		"@effected/github-actions": "^0.9.2",
-		"@effected/glob": "^0.4.0",
-		"@effected/jsonc": "^0.7.0",
-		"@effected/lockfiles": "^0.6.2",
-		"@effected/markdown": "^0.6.1",
-		"@effected/npm": "^0.11.1",
-		"@effected/package-json": "^0.10.2",
-		"@effected/runtimes": "^0.4.3",
-		"@effected/sbom": "^0.4.1",
-		"@effected/semver": "^0.5.0",
-		"@effected/workspaces": "^0.17.1",
-		"@effected/yaml": "^0.10.0",
+		"@effected/commands": "catalog:effected",
+		"@effected/git": "catalog:effected",
+		"@effected/github": "catalog:effected",
+		"@effected/github-actions": "catalog:effected",
+		"@effected/glob": "catalog:effected",
+		"@effected/jsonc": "catalog:effected",
+		"@effected/lockfiles": "catalog:effected",
+		"@effected/markdown": "catalog:effected",
+		"@effected/npm": "catalog:effected",
+		"@effected/package-json": "catalog:effected",
+		"@effected/runtimes": "catalog:effected",
+		"@effected/sbom": "catalog:effected",
+		"@effected/semver": "catalog:effected",
+		"@effected/workspaces": "catalog:effected",
+		"@effected/yaml": "catalog:effected",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",
 		"@savvy-web/github-action-builder": "^2.2.7",
 		"@savvy-web/silk": "^3.9.1",
-		"@vitest-agent/plugin": "^2.4.5"
+		"@vitest-agent/plugin": "^2.4.4"
 	},
 	"packageManager": "pnpm@11.22.0+sha512.1ff870c4c6133dfd88fb2afc46dd13d47f09c9794b438c6fdb47ca98caf3bc16381ee0be93a091b8e3824cf01f889f46d7d9e20910fb0be1ab0fb5baa80dd621",
 	"engines": {
