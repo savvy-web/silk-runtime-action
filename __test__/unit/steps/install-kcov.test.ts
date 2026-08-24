@@ -4,10 +4,10 @@ import {
 	ActionCache,
 	ActionCacheError,
 	ActionLogger,
-	ActionOutputError,
 	ActionOutputs,
 	ActionState,
 	ActionStateError,
+	RunnerFileWriteError,
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
@@ -121,7 +121,7 @@ const makeLayer = (r: Recorded, options: LayerOptions) => {
 		ActionOutputs.layerTest({
 			addPath: (p) =>
 				options.publishFails === true
-					? Effect.fail(new ActionOutputError({ reason: "writeFailed" }))
+					? Effect.fail(new RunnerFileWriteError({ file: "GITHUB_PATH" }))
 					: Effect.sync(() => void r.paths.push(p)),
 			exportVariable: (n, v) => Effect.sync(() => void r.env.push([n, v])),
 		}),

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
 	ActionLogger,
-	ActionOutputError,
 	ActionOutputs,
+	RunnerFileUnavailableError,
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
@@ -343,7 +343,10 @@ describe("installRuntimes", () => {
 				installRuntimes(configOf({ name: "deno", version: "2.5.6" }), LINUX_X64).pipe(
 					Effect.provide(
 						layerFor(log, {
-							installer: { extractZip: () => Effect.fail(new ToolInstallerError({ reason: "extractFailed" })) },
+							installer: {
+								extractZip: (archive) =>
+									Effect.fail(new ToolInstallerError({ reason: "extractFailed", subject: archive })),
+							},
 						}),
 					),
 				),
@@ -359,7 +362,10 @@ describe("installRuntimes", () => {
 				installRuntimes(configOf({ name: "deno", version: "2.5.6" }), LINUX_X64).pipe(
 					Effect.provide(
 						layerFor(log, {
-							installer: { cacheDir: () => Effect.fail(new ToolInstallerError({ reason: "cacheFailed" })) },
+							installer: {
+								cacheDir: (_directory, tool) =>
+									Effect.fail(new ToolInstallerError({ reason: "cacheFailed", subject: tool })),
+							},
 						}),
 					),
 				),
@@ -403,7 +409,7 @@ describe("installRuntimes", () => {
 				installRuntimes(configOf({ name: "deno", version: "2.5.6" }), LINUX_X64).pipe(
 					Effect.provide(
 						layerFor(log, {
-							addPath: () => Effect.fail(new ActionOutputError({ reason: "unavailable", file: "GITHUB_PATH" })),
+							addPath: () => Effect.fail(new RunnerFileUnavailableError({ file: "GITHUB_PATH" })),
 						}),
 					),
 				),
@@ -425,7 +431,9 @@ describe("installRuntimes", () => {
 				).pipe(
 					Effect.provide(
 						layerFor(log, {
-							installer: { download: () => Effect.fail(new ToolInstallerError({ reason: "downloadFailed" })) },
+							installer: {
+								download: (url) => Effect.fail(new ToolInstallerError({ reason: "downloadFailed", subject: url })),
+							},
 						}),
 					),
 				),

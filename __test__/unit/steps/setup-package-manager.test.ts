@@ -2,12 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import type { PackageManagerInstallOptions } from "@effected/github-actions";
 import {
 	ActionLogger,
-	ActionOutputError,
 	ActionOutputs,
 	AmbientPackageManager,
 	CachedPackageManager,
 	PackageManagerInstaller,
 	PackageManagerInstallerError,
+	RunnerFileUnavailableError,
 } from "@effected/github-actions";
 import type { PackageManagerPin } from "@effected/npm";
 import { Effect, Layer, Logger, Option } from "effect";
@@ -395,7 +395,7 @@ describe("setupPackageManager", () => {
 				setupPackageManager(specOf("pnpm", "10.20.0")).pipe(
 					Effect.provide(
 						layerFor(log, {
-							addPath: () => Effect.fail(new ActionOutputError({ reason: "unavailable", file: "GITHUB_PATH" })),
+							addPath: () => Effect.fail(new RunnerFileUnavailableError({ file: "GITHUB_PATH" })),
 						}),
 					),
 				),

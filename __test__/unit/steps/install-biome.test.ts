@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import type { ProvisionFileOptions } from "@effected/github-actions";
 import {
 	ActionLogger,
-	ActionOutputError,
 	ActionOutputs,
+	RunnerFileWriteError,
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
@@ -159,7 +159,7 @@ describe("installBiome", () => {
 							},
 						}),
 						ActionOutputs.layerTest({
-							addPath: () => Effect.fail(new ActionOutputError({ reason: "writeFailed", file: "GITHUB_PATH" })),
+							addPath: () => Effect.fail(new RunnerFileWriteError({ file: "GITHUB_PATH" })),
 						}),
 						FileSystem.layerNoop({}),
 						ActionLogger.layerTest({}),

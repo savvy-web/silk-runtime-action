@@ -187,7 +187,21 @@ export const makeTurboHandler =
 			if (req.method === "GET") {
 				const blob = yield* store
 					.get(key, TurboArtifactMeta)
-					.pipe(Effect.catchTag("BlobEnvelopeError", () => Effect.succeedNone));
+					// Every way an envelope can be unreadable is a cache miss, not a 500:
+					// upstream split `BlobEnvelopeError` into one class per failure, so
+					// all five members are named here.
+					.pipe(
+						Effect.catchTag(
+							[
+								"NotABlobEnvelopeError",
+								"TruncatedBlobEnvelopeError",
+								"UnsupportedBlobEnvelopeVersionError",
+								"BlobMetadataDecodeError",
+								"BlobMetadataEncodeError",
+							],
+							() => Effect.succeedNone,
+						),
+					);
 				if (Option.isNone(blob)) return NOT_FOUND;
 
 				const { tag, durationMs } = blob.value.metadata;

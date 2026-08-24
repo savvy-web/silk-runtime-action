@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ActionLogger, ActionOutputError, ActionOutputs } from "@effected/github-actions";
+import type { ActionOutputError } from "@effected/github-actions";
+import { ActionLogger, ActionOutputs, RunnerFileWriteError } from "@effected/github-actions";
 import { Cause, Effect, Exit, Layer, Logger, Option } from "effect";
 import type { OutputsModel } from "../../../src/schema/outputs.js";
 import { initialOutputs } from "../../../src/schema/outputs.js";
@@ -187,7 +188,7 @@ describe("writeSummary", () => {
 
 	it.effect("degrades a failed write to a warning, and still logs the final group", () => {
 		const { logs, layer } = harness({
-			summary: () => Effect.fail(new ActionOutputError({ reason: "writeFailed", file: "GITHUB_STEP_SUMMARY" })),
+			summary: () => Effect.fail(new RunnerFileWriteError({ file: "GITHUB_STEP_SUMMARY" })),
 		});
 		return Effect.gen(function* () {
 			const exit = yield* writeSummary(facts()).pipe(Effect.exit);

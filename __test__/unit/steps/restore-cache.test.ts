@@ -443,7 +443,7 @@ describe("restoreCache", () => {
 
 			expect(askedFor(restores[0]).endsWith("-empty")).toBe(true);
 			expect(state.lockfiles).toEqual([]);
-			expect(logs.join("\n")).toContain("readFailed");
+			expect(logs.join("\n")).toContain("CacheKeyReadError");
 		}),
 	);
 

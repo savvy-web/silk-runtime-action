@@ -7,7 +7,7 @@ import {
 	ActionState,
 	ActionStateError,
 	DetachedProcess,
-	DetachedProcessError,
+	DetachedSignalFailedError,
 	ProcessId,
 } from "@effected/github-actions";
 import { Effect, Layer, Logger, Option, References } from "effect";
@@ -328,9 +328,7 @@ describe("post", () => {
 
 	it.effect("never fails the workflow when the reap itself fails", () =>
 		Effect.gen(function* () {
-			const exit = yield* postReaping(() =>
-				Effect.fail(new DetachedProcessError({ reason: "signalFailed", pid: 4242 })),
-			).pipe(
+			const exit = yield* postReaping(() => Effect.fail(new DetachedSignalFailedError({ pid: 4242 }))).pipe(
 				Effect.provide(Layer.mergeAll(serverOnly, ActionCache.layerTest({}), ActionLogger.layerSilent)),
 				Effect.exit,
 			);
@@ -371,9 +369,7 @@ describe("post", () => {
 	it.effect("saves the cache even when the reap fails typed", () =>
 		Effect.gen(function* () {
 			const saves: Array<Saved> = [];
-			const exit = yield* postReaping(() =>
-				Effect.fail(new DetachedProcessError({ reason: "signalFailed", pid: 4242 })),
-			).pipe(
+			const exit = yield* postReaping(() => Effect.fail(new DetachedSignalFailedError({ pid: 4242 }))).pipe(
 				Effect.provide(
 					Layer.mergeAll(
 						ActionState.layerTest({
