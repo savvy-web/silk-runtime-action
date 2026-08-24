@@ -287,7 +287,7 @@ const startEmbeddedServer = (
 					Effect.fail(
 						new TurboCacheError({
 							reason: "spawn",
-							message: `Turbo cache server could not be started (${cause.reason}): ${cause.message}`,
+							message: `Turbo cache server could not be started (${cause._tag}): ${cause.message}`,
 							cause,
 						}),
 					),

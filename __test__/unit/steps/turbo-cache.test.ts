@@ -3,14 +3,15 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NodeFileSystem } from "@effect/platform-node";
 import { describe, expect, it } from "@effect/vitest";
-import type { DetachedProcessOps, DetachedSpawnOptions } from "@effected/github-actions";
+import type { DetachedProcessError, DetachedProcessOps, DetachedSpawnOptions } from "@effected/github-actions";
 import {
 	ActionEnvironment,
 	ActionOutputs,
 	ActionState,
 	ActionStateError,
+	DetachedNotReadyError,
 	DetachedProcess,
-	DetachedProcessError,
+	DetachedSpawnFailedError,
 	ProcessId,
 } from "@effected/github-actions";
 import { Effect, FileSystem, Layer, Logger, Option, Redacted } from "effect";
@@ -655,7 +656,7 @@ describe("startTurboCache: degraded", () => {
 				inputs: inputs(),
 				turbo: { enabled: true },
 				detached: detachedTest(recorded, {
-					ready: Effect.fail(new DetachedProcessError({ reason: "notReady" })),
+					ready: Effect.fail(new DetachedNotReadyError({})),
 				}),
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
@@ -679,7 +680,7 @@ describe("startTurboCache: degraded", () => {
 				turbo: { enabled: true },
 				detached: detachedTest(recorded, {
 					pid: 7331,
-					ready: Effect.fail(new DetachedProcessError({ reason: "notReady" })),
+					ready: Effect.fail(new DetachedNotReadyError({})),
 				}),
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
@@ -700,7 +701,7 @@ describe("startTurboCache: degraded", () => {
 				inputs: inputs(),
 				turbo: { enabled: true },
 				detached: detachedTest(recorded, {
-					spawn: Effect.fail(new DetachedProcessError({ reason: "spawnFailed", path: SERVER_ENTRY })),
+					spawn: Effect.fail(new DetachedSpawnFailedError({})),
 				}),
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
@@ -709,7 +710,7 @@ describe("startTurboCache: degraded", () => {
 			expect(Option.isNone(started.state)).toBe(true);
 			expect(recorded.saved).toEqual([]);
 			expect(recorded.logs.join("\n")).toContain("Turbo cache setup error");
-			expect(recorded.logs.join("\n")).toContain("spawnFailed");
+			expect(recorded.logs.join("\n")).toContain("DetachedSpawnFailedError");
 		}),
 	);
 

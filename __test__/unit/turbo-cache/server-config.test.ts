@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { BlobEnvelopeError, BlobStore, BlobStoreError } from "@effected/github-actions";
+import { BlobStore, BlobStoreError, TruncatedBlobEnvelopeError } from "@effected/github-actions";
 import { Effect, Redacted, Result } from "effect";
 
 import {
@@ -217,6 +217,6 @@ describe("isAuthShapedFailure", () => {
 	});
 
 	it("is false for an envelope failure", () => {
-		expect(isAuthShapedFailure(new BlobEnvelopeError({ reason: "truncated" }))).toBe(false);
+		expect(isAuthShapedFailure(new TruncatedBlobEnvelopeError({}))).toBe(false);
 	});
 });

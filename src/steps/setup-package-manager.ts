@@ -27,6 +27,16 @@ export class PackageManagerError extends Data.TaggedError("PackageManagerError")
 type SetupFailure = InvalidPackageManagerPinError | PackageManagerInstallerError | ActionOutputError;
 
 /**
+ * The `addPath` failure, as a stage.
+ *
+ * @remarks
+ * A function rather than a bare literal so its parameter type can assert what
+ * {@link classify} matched: upstream split `ActionOutputError` into one class
+ * per failure, and this is where that residue is proven to be exactly those.
+ */
+const activate = (_: ActionOutputError): PackageManagerError["reason"] => "activate";
+
+/**
  * Which stage a failure belongs to.
  *
  * @remarks
@@ -41,8 +51,13 @@ type SetupFailure = InvalidPackageManagerPinError | PackageManagerInstallerError
  * which is `install`.
  */
 const classify = (error: SetupFailure): PackageManagerError["reason"] => {
-	if (error._tag === "ActionOutputError") return "activate";
 	if (error._tag === "InvalidPackageManagerPinError") return "install";
+	// Upstream split `ActionOutputError` into one class per failure, so the
+	// output failures are matched as the residue rather than named by tag. The
+	// parameter type keeps that residue honest: a failure added to
+	// `SetupFailure` that is not an output failure fails to assign here, so it
+	// is a compile error rather than a silent `activate`.
+	if (error._tag !== "PackageManagerInstallerError") return activate(error);
 	// Bound before the switch: narrowing `error` itself to `never` in the
 	// default branch would leave nothing to read the unhandled reason from.
 	const reason: PackageManagerInstallerError["reason"] = error.reason;

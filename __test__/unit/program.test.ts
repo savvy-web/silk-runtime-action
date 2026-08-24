@@ -114,7 +114,7 @@ const provisioningToolInstallerTest = (
 		download: (url) => {
 			options.downloads?.push(url);
 			return options.failing !== undefined && url.includes(options.failing)
-				? Effect.fail(new ToolInstallerError({ reason: "downloadFailed", status: 404 }))
+				? Effect.fail(new ToolInstallerError({ reason: "downloadFailed", subject: url, status: 404 }))
 				: Effect.succeed(`/tmp/download/${options.downloads?.length ?? 0}.tar.gz`);
 		},
 		extractTar: () => Effect.succeed("/tmp/extracted"),
@@ -709,7 +709,8 @@ describe("program", () => {
 							directory: { biome: biomeConfig("2.4.9") },
 							tools: ToolInstaller.layerTest({
 								find: (tool, version) => Effect.succeed(Option.some(`/opt/toolcache/${tool}/${version}`)),
-								provisionFile: () => Effect.fail(new ToolInstallerError({ reason: "downloadFailed", status: 404 })),
+								provisionFile: ({ tool }) =>
+									Effect.fail(new ToolInstallerError({ reason: "downloadFailed", subject: tool, status: 404 })),
 							}),
 						}),
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),

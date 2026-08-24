@@ -198,13 +198,13 @@ export const restoreCache = (
 		const lockfiles = yield* absorb(
 			CacheKey.matchingFiles({ workspace, patterns }),
 			"key",
-			(cause) => `Lockfile discovery failed (${cause.reason}): ${cause.message}`,
+			(cause) => `Lockfile discovery failed (${cause._tag}): ${cause.message}`,
 			[] as ReadonlyArray<string>,
 		);
 		const lockfileHash = yield* absorb(
 			CacheKey.hashFiles(lockfiles),
 			"key",
-			(cause) => `Lockfile hashing failed (${cause.reason}): ${cause.message}`,
+			(cause) => `Lockfile hashing failed (${cause._tag}): ${cause.message}`,
 			Option.none<string>(),
 		);
 
