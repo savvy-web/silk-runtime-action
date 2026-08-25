@@ -336,6 +336,14 @@ export class KcovCacheState extends Schema.Class<KcovCacheState>("KcovCacheState
 
 `StoreCacheState` is `KcovCacheState`'s shape for the same reasons, and carries no `lockfiles`: the workspace state already holds the resolved list, both keys hash the same digest from it, and a second copy in `GITHUB_STATE` would be two things that can disagree. Its `post` branch compares `restoredKey` to `primaryKey` inline, and that comparison carries weight — the store's one rung drops the lockfile digest, so a run whose lockfile changed hits the rung and **must** archive the union under its own new key. Reading every `Some` as "already cached" would freeze the store.
 
+Its `paths` are the directories each manager *would* download to, never a probe of what is on disk, so `post` probes them for content before archiving and saves only the populated ones. That probe is load-bearing rather than tidy. The store key deliberately carries no install policy — the whole point of it — so unlike the workspace key it **cannot** tell an `install-deps: false` run from a full one, and `installSegment` is no defence. Without the probe, a cold store keyspace whose first job installs nothing would archive an empty store under the shared key; the next full-install job would exact-hit it, download everything, and skip its own save, freezing the entry until the lockfile changed. That is the workspace poisoning arriving by a different door.
+
+A *missing* directory was never the danger — `ActionCache.save` resolves its paths first and fails outright when nothing matched. An *existing but empty* one is, and it is reachable: a manager creates its store root the first time it runs, whether or not it downloaded anything.
+
+The probe is on **content**, not on whether an install ran, and that distinction is what makes it right rather than merely safe. `post` runs at the end of the job, so a workflow passing `install-deps: false` and installing in a later step has a populated store by then — archiving it is correct, and gating on the input would throw it away.
+
+It also makes the empty-path guards honest. Every manager contributes a store directory, deno's `~/.cache/deno` included, so `paths.length === 0` is defensive rather than reachable; "nothing worth archiving" is a statement about content, and only the probe can make it.
+
 `KcovCacheState` carries no `lockfiles` and gets no `isExactHit`: its cache has two outcomes where the dependency cache has three, so `post` compares `restoredKey` to `primaryKey` inline rather than reaching for a shared helper that encodes a distinction kcov does not have.
 
 `restoredKey` distinguishes all three outcomes in one field: `None` is a miss, `Some(primaryKey)` is an exact hit, `Some(other)` is a partial restore from a fallback rung. The comparison lives once, beside the state:

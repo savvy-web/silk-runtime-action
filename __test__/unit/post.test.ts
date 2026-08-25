@@ -10,7 +10,7 @@ import {
 	DetachedSignalFailedError,
 	ProcessId,
 } from "@effected/github-actions";
-import { Effect, Layer, Logger, Option, References } from "effect";
+import { Effect, FileSystem, Layer, Logger, Option, PlatformError, References } from "effect";
 
 import { makePost, post } from "../../src/post.js";
 import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState } from "../../src/state.js";
@@ -41,8 +41,9 @@ const postReaping = (reap: DetachedProcessOps["reap"]) => makePost(DetachedProce
 const makeLayer = (
 	read: Array<string>,
 	cache: Layer.Layer<ActionCache> = ActionCache.layerTest({}),
-): Layer.Layer<ActionCache | ActionState> =>
+): Layer.Layer<ActionCache | ActionState | FileSystem.FileSystem> =>
 	Layer.mergeAll(
+		fileSystemTest(),
 		ActionState.layerTest({
 			getOptional: ((key: string) =>
 				Effect.sync(() => {
@@ -97,17 +98,53 @@ const stateWithKcov = (
 			)) as ActionState["Service"]["getOptional"],
 	});
 
+/**
+ * A `FileSystem` whose `readDirectory` serves `directories`, and reports every
+ * other path as absent.
+ *
+ * @remarks
+ * The store save probes each configured directory for content before archiving
+ * it, so this is the seam that separates "the manager created its store root and
+ * downloaded nothing" from "there is a store here worth keeping" — the two cases
+ * a configured path list cannot tell apart.
+ */
+const fileSystemTest = (directories: Readonly<Record<string, ReadonlyArray<string>>> = {}) =>
+	FileSystem.layerNoop({
+		readDirectory: (path: string) => {
+			const entries = directories[path];
+			return entries === undefined
+				? Effect.fail(
+						PlatformError.systemError({
+							_tag: "NotFound",
+							module: "FileSystem",
+							method: "readDirectory",
+							pathOrDescriptor: path,
+						}),
+					)
+				: Effect.succeed([...entries]);
+		},
+	});
+
 /** Runs `post` over `state` and `cache`, capturing every log line it emits. */
 const runPost = (options: {
 	readonly state: Layer.Layer<ActionState>;
 	readonly cache: Layer.Layer<ActionCache>;
 	readonly logs?: Array<string>;
+	/** What `readDirectory` answers, per absolute path. Absent means not found. */
+	readonly directories?: Readonly<Record<string, ReadonlyArray<string>>>;
 }) =>
 	post.pipe(
 		Effect.provide(
 			Layer.mergeAll(
 				options.state,
 				options.cache,
+				// The store paths every case that is not about the probe uses, so a
+				// save under test is not silently skipped for want of content.
+				fileSystemTest(
+					options.directories ?? {
+						"/home/runner/.local/share/pnpm/store": ["v11"],
+					},
+				),
 				Logger.layer([Logger.make(({ message }) => void (options.logs ?? []).push(String(message)))]),
 			),
 		),
@@ -213,18 +250,58 @@ describe("post", () => {
 		}),
 	);
 
-	it.effect("skips the store save when deno left no store to archive", () =>
+	it.effect("skips the store save when every store directory is empty", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
-			const empty = StoreCacheState.make({ ...missedStore, paths: [] });
+			// The poisoning this closes: the store key carries no install policy —
+			// deliberately, since a store is as good whichever run filled it — so a
+			// cold keyspace whose first job installs nothing would archive an empty
+			// store under the key a full install shares, and the next full install
+			// would exact-hit it, download everything, and skip its own save.
+			// Every `ActionCache` member is unstubbed, so a save would die.
 			const exit = yield* runPost({
-				state: stateWithStore(Option.some(empty)),
+				state: stateWithStore(Option.some(missedStore)),
 				cache: ActionCache.layerTest({}),
+				directories: { [missedStore.paths[0] ?? ""]: [] },
 				logs,
 			});
 
 			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("No store cache paths");
+			expect(logs.join("\n")).toContain("No populated store directories");
+		}),
+	);
+
+	it.effect("skips the store save when the store directory does not exist", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const exit = yield* runPost({
+				state: stateWithStore(Option.some(missedStore)),
+				cache: ActionCache.layerTest({}),
+				directories: {},
+				logs,
+			});
+
+			expect(exit._tag).toBe("Success");
+			expect(logs.join("\n")).toContain("No populated store directories");
+		}),
+	);
+
+	it.effect("archives only the store directories that hold something", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const two = StoreCacheState.make({
+				...missedStore,
+				paths: ["/home/runner/.cache/yarn", "/home/runner/.yarn/berry/cache"],
+			});
+			// yarn contributes both Classic's and Berry's directories because the
+			// major is not known when the paths are derived; only one is ever real.
+			yield* runPost({
+				state: stateWithStore(Option.some(two)),
+				cache: cacheTest(saves),
+				directories: { "/home/runner/.cache/yarn": [], "/home/runner/.yarn/berry/cache": ["v6"] },
+			});
+
+			expect(saves).toEqual([{ paths: ["/home/runner/.yarn/berry/cache"], key: two.primaryKey }]);
 		}),
 	);
 
@@ -339,6 +416,7 @@ describe("post", () => {
 			const exit = yield* post.pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								Effect.sync(() => {
@@ -370,6 +448,7 @@ describe("post", () => {
 			).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								Effect.succeed(
@@ -394,6 +473,7 @@ describe("post", () => {
 			yield* postReaping(() => Effect.succeed(true)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						serverOnly,
 						ActionCache.layerTest({}),
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
@@ -416,6 +496,7 @@ describe("post", () => {
 			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						serverOnly,
 						ActionCache.layerTest({}),
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
@@ -434,7 +515,9 @@ describe("post", () => {
 	it.effect("never fails the workflow when the reap itself fails", () =>
 		Effect.gen(function* () {
 			const exit = yield* postReaping(() => Effect.fail(new DetachedSignalFailedError({ pid: 4242 }))).pipe(
-				Effect.provide(Layer.mergeAll(serverOnly, ActionCache.layerTest({}), ActionLogger.layerSilent)),
+				Effect.provide(
+					Layer.mergeAll(fileSystemTest(), serverOnly, ActionCache.layerTest({}), ActionLogger.layerSilent),
+				),
 				Effect.exit,
 			);
 			expect(exit._tag).toBe("Success");
@@ -448,6 +531,7 @@ describe("post", () => {
 			const exit = yield* postReaping(() => Effect.die(new Error("kill exploded"))).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								Effect.succeed(
@@ -477,6 +561,7 @@ describe("post", () => {
 			const exit = yield* postReaping(() => Effect.fail(new DetachedSignalFailedError({ pid: 4242 }))).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								Effect.succeed(
@@ -501,6 +586,7 @@ describe("post", () => {
 			const exit = yield* postReaping(() => Effect.succeed(true)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								key === STATE_KEYS.cache
@@ -529,6 +615,7 @@ describe("post", () => {
 			const exit = yield* post.pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								Effect.fail(
@@ -550,6 +637,7 @@ describe("post", () => {
 			const exit = yield* post.pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: (() =>
 								Effect.die(new Error("GITHUB_STATE unreadable"))) as ActionState["Service"]["getOptional"],
@@ -571,6 +659,7 @@ describe("post", () => {
 			const exit = yield* post.pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: (() => Effect.die("GITHUB_STATE unreadable")) as ActionState["Service"]["getOptional"],
 						}),
@@ -591,7 +680,12 @@ describe("kcov cache save", () => {
 			const saved: Array<Saved> = [];
 			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
 				Effect.provide(
-					Layer.mergeAll(stateWithKcov(Option.some(missedKcov)), cacheTest(saved), ActionLogger.layerSilent),
+					Layer.mergeAll(
+						fileSystemTest(),
+						stateWithKcov(Option.some(missedKcov)),
+						cacheTest(saved),
+						ActionLogger.layerSilent,
+					),
 				),
 				Effect.exit,
 			);
@@ -609,7 +703,12 @@ describe("kcov cache save", () => {
 					// `cacheTest(saved)` rather than a bare `layerTest({})`: the bare double
 					// records nothing, so `saved` stays empty whether or not `save` ran and
 					// the assertion below passes against a broken skip-guard.
-					Layer.mergeAll(stateWithKcov(Option.some(exact)), cacheTest(saved), ActionLogger.layerSilent),
+					Layer.mergeAll(
+						fileSystemTest(),
+						stateWithKcov(Option.some(exact)),
+						cacheTest(saved),
+						ActionLogger.layerSilent,
+					),
 				),
 				Effect.exit,
 			);
@@ -629,7 +728,14 @@ describe("kcov cache save", () => {
 			const olderKey = "kcov-43-ubuntu24-x64-aaaaaaaa-20260708.3";
 			const rungHit = KcovCacheState.make({ ...missedKcov, restoredKey: Option.some(olderKey) });
 			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
-				Effect.provide(Layer.mergeAll(stateWithKcov(Option.some(rungHit)), cacheTest(saved), ActionLogger.layerSilent)),
+				Effect.provide(
+					Layer.mergeAll(
+						fileSystemTest(),
+						stateWithKcov(Option.some(rungHit)),
+						cacheTest(saved),
+						ActionLogger.layerSilent,
+					),
+				),
 				Effect.exit,
 			);
 			expect(exit._tag).toBe("Success");
@@ -653,6 +759,7 @@ describe("kcov cache save", () => {
 			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						stateWithKcov(Option.some(missedKcov), Option.some(missed)),
 						kcovCache,
 						ActionLogger.layerSilent,
@@ -672,6 +779,7 @@ describe("kcov cache save", () => {
 			const exit = yield* postReaping(() => Effect.succeed(false)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						fileSystemTest(),
 						ActionState.layerTest({
 							getOptional: ((key: string) =>
 								key === STATE_KEYS.kcovCache

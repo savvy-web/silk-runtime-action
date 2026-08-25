@@ -358,6 +358,17 @@ interface RestoreStoreArgs {
  * Degradation is the whole step's rule, applied again: a store that cannot be
  * restored costs a download, and the state is written either way so the post
  * phase archives what this run did fetch.
+ *
+ * The `paths.length === 0` guard is defensive rather than reachable: every
+ * manager in the table contributes a store directory, deno's `~/.cache/deno`
+ * included, so an active manager always yields at least one path. It stays
+ * because `ActionCache.restore` refuses an empty set outright, and a defensive
+ * skip is a better answer to a future table row with no store than a typed
+ * failure this step would only absorb.
+ *
+ * The paths it reports are the directories each manager *would* download to,
+ * never a probe of what is on disk — `post` does that probe before archiving,
+ * because an existing-but-empty store is exactly what must not become an entry.
  */
 const restoreStore = (args: RestoreStoreArgs): Effect.Effect<StoreCacheState, never, ActionCache | ActionState> =>
 	Effect.gen(function* () {

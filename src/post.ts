@@ -18,7 +18,7 @@
 
 import type { DetachedProcessOps } from "@effected/github-actions";
 import { Action, ActionCache, ActionState, DetachedProcess } from "@effected/github-actions";
-import { Effect, Option } from "effect";
+import { Effect, FileSystem, Option } from "effect";
 
 import { PostLive } from "./layers/app.js";
 import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState, isExactHit } from "./state.js";
@@ -75,6 +75,41 @@ const saveDependencyCache = (saved: CacheState) =>
 	});
 
 /**
+ * The store directories that actually hold something, at save time.
+ *
+ * @remarks
+ * `StoreCacheState.paths` is the *configured* store list — where each manager
+ * would download to — and never a probe of what is on disk. That distinction is
+ * what {@link saveStoreCache} turns on, so the probe lives here rather than
+ * inline.
+ *
+ * A directory that does not exist is not the dangerous case: `ActionCache.save`
+ * resolves its paths first and fails outright when nothing matched, so a missing
+ * store never becomes an entry. A directory that exists and is **empty** is, and
+ * it is reachable — a manager creates its store root the first time it runs,
+ * whether or not it downloaded anything into it.
+ *
+ * Every read failure counts as empty. A store this phase cannot enumerate is one
+ * it has no business archiving, and post-action work never fails the job.
+ */
+const populatedStores = (
+	paths: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		// The initial value is lazy, matching the kit's `Effect.reduce` signature.
+		return yield* Effect.reduce(
+			paths,
+			(): ReadonlyArray<string> => [],
+			(kept, path) =>
+				fs.readDirectory(path).pipe(
+					Effect.map((entries) => (entries.length === 0 ? kept : [...kept, path])),
+					Effect.catch(() => Effect.succeed(kept)),
+				),
+		);
+	});
+
+/**
  * Archives the package managers' global stores.
  *
  * @remarks
@@ -89,8 +124,22 @@ const saveDependencyCache = (saved: CacheState) =>
  * cached" would leave the store frozen at whatever the first run downloaded,
  * which is the shape of the bug this whole split addresses.
  *
- * An empty path set means no manager had a store worth archiving — deno alone
- * is the case — and is a skip rather than an error.
+ * **Only populated directories are archived, and an empty set is a skip.** The
+ * store key deliberately carries no install policy — that is the whole point of
+ * it, since a store is as good whichever run filled it — so unlike the workspace
+ * key it cannot tell an `install-deps: false` run apart from a full one, and
+ * `installSegment` is no defence here. Without this probe a cold store keyspace
+ * whose first job installs nothing would archive an empty store under the shared
+ * key; the next full-install job would exact-hit it, download everything, and
+ * skip its own save, freezing the entry until the lockfile changed. Exactly the
+ * class of poisoning the workspace key was hardened against, arriving by a
+ * different door.
+ *
+ * The probe is on **content**, not on whether an install ran, and that is the
+ * distinction that makes it right rather than merely safe. A job passing
+ * `install-deps: false` and then running its own install in a later step has a
+ * populated store by the time this phase runs, and archiving it is the correct
+ * outcome — gating on the input instead would throw that away.
  */
 const saveStoreCache = (saved: StoreCacheState) =>
 	Effect.gen(function* () {
@@ -98,14 +147,16 @@ const saveStoreCache = (saved: StoreCacheState) =>
 			yield* Effect.logInfo("Store cache was an exact hit — skipping save");
 			return;
 		}
-		if (saved.paths.length === 0) {
-			yield* Effect.logInfo("No store cache paths — skipping save");
+
+		const paths = yield* populatedStores(saved.paths);
+		if (paths.length === 0) {
+			yield* Effect.logInfo("No populated store directories — skipping save");
 			return;
 		}
 
 		const cache = yield* ActionCache;
-		yield* Effect.logInfo(`Saving store cache: key=${saved.primaryKey}, paths (${saved.paths.length})`);
-		yield* cache.save(saved.paths, saved.primaryKey).pipe(
+		yield* Effect.logInfo(`Saving store cache: key=${saved.primaryKey}, paths (${paths.length})`);
+		yield* cache.save(paths, saved.primaryKey).pipe(
 			Effect.tap(() => Effect.logInfo(`Store cache saved: ${saved.primaryKey}`)),
 			Effect.catch((cause) =>
 				Effect.logWarning(
@@ -256,7 +307,7 @@ const reapCacheServer = (saved: TurboServerState, reap: DetachedProcessOps["reap
  */
 export const makePost = (
 	ops: DetachedProcessOps = DetachedProcess.ops,
-): Effect.Effect<void, never, ActionCache | ActionState> =>
+): Effect.Effect<void, never, ActionCache | ActionState | FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const state = yield* ActionState;
 		yield* Effect.logDebug("Running post-action script");

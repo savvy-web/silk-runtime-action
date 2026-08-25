@@ -40,6 +40,13 @@ Its single restore key drops the lockfile digest, which is what lets the entry t
 a changed lockfile restores the previous store, the install adds what is new, and the
 union is archived under the new key.
 
+The post phase probes each store directory for content and archives only the populated
+ones. The store key carries no install policy by design, so it cannot tell a
+`install-deps: false` run from a full one; without the probe, a cold store keyspace whose
+first job installs nothing would archive an empty store under the shared key and freeze it.
+The probe is on content rather than on whether an install ran, so a workflow that skips
+this action's install and runs its own in a later step still gets its store archived.
+
 ### `store-cache-hit` output
 
 Reports the store restore as `true` | `partial` | `false`, independently of
