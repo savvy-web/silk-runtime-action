@@ -233,6 +233,7 @@ versions come only from `devEngines` — there are no version inputs.
 | --- | --- | --- |
 | `biome-version` | `""` | Override; empty auto-detects from the `$schema`, or skips |
 | `install-deps` | `"true"` | Install dependencies |
+| `ignore-scripts` | `"false"` | Skip lifecycle scripts during the install — `--ignore-scripts` (npm/pnpm/bun), `--mode=skip-build` (yarn Berry). Inert when `install-deps` is `false` or the manager is deno. Part of the cache key |
 | `bats` | `"auto"` | `auto` \| `true` \| `false`. `auto` installs bats-core, bats-support, bats-assert, bats-file and bats-mock when a `*.bats` file or a `vitest-bats` dependency is present |
 | `kcov` | `"auto"` | `auto` \| `true` \| `false`. `auto` follows the bats decision; built from source and cached, never installed when bats is off |
 | `turbo-cache` | `"auto"` | `auto` \| `off`. `auto` starts the embedded server when `turbo.json` exists and no Vercel creds are set |
@@ -263,8 +264,9 @@ versions come only from `devEngines` — there are no version inputs.
 | `turbo-enabled` | Whether `turbo.json` was detected |
 | `turbo-cache-backend` | `"github"` (embedded Actions cache) \| `"s3"` (embedded S3) \| `"remote"` (Vercel passthrough) \| `"none"` |
 | `turbo-cache-port` | Port the embedded server bound to; empty when not started |
-| `cache-hit` | `"true"` \| `"partial"` \| `"false"` |
-| `lockfiles` / `cache-paths` | Comma-separated, as used for the key / restore |
+| `cache-hit` | `"true"` \| `"partial"` \| `"false"` — the workspace archive |
+| `store-cache-hit` | `"true"` \| `"partial"` \| `"false"` — the package-manager store, keyed independently |
+| `lockfiles` / `cache-paths` | Comma-separated, as used for the key / restore (both entries) |
 
 `biome-enabled` reflects a **successful install**, not detection — a Biome that could not be
 fetched degrades to a warning and reports disabled.

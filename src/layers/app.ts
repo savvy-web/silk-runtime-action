@@ -17,6 +17,7 @@
  */
 
 import { ActionCache, PackageManagerInstaller, ToolInstaller } from "@effected/github-actions";
+import { WorkspaceDiscovery, WorkspaceRoot } from "@effected/workspaces";
 import { Layer } from "effect";
 
 /**
@@ -30,10 +31,20 @@ import { Layer } from "effect";
  * directly. Everything the two layers still require — `ActionEnvironment`,
  * `FileSystem`, `Path`, `ChildProcessSpawner`, `HttpClient` — `ActionServices`
  * already provides.
+ *
+ * `WorkspaceDiscovery` is what tells `restoreCache` which directories the
+ * workspace actually has, so the archive names each member's `node_modules`
+ * rather than globbing for every `node_modules` under the checkout. It builds
+ * over `WorkspaceRoot`, which is `provide`d rather than merged: nothing else in
+ * the action resolves a workspace root, so there is no second consumer to keep
+ * it visible for. Both are memoized per layer, so the discovery walk happens
+ * once however many times the step asks.
  */
-export const MainLive = Layer.mergeAll(ActionCache.layer, PackageManagerInstaller.layer).pipe(
-	Layer.provideMerge(ToolInstaller.layer),
-);
+export const MainLive = Layer.mergeAll(
+	ActionCache.layer,
+	PackageManagerInstaller.layer,
+	WorkspaceDiscovery.layer().pipe(Layer.provide(WorkspaceRoot.layer)),
+).pipe(Layer.provideMerge(ToolInstaller.layer));
 
 /**
  * The `post` phase's extra services: only the runner cache, which is what a

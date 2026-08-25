@@ -14,6 +14,7 @@ import {
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
+import { WorkspaceDiscovery } from "@effected/workspaces";
 import { Cause, Effect, Exit, FileSystem, Layer, Logger, Option, Path, PlatformError, Sink, Stream } from "effect";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
@@ -373,8 +374,14 @@ const makeLayer = (
 	| Path.Path
 	| ChildProcessSpawnerNS.ChildProcessSpawner
 	| HttpClient.HttpClient
+	| WorkspaceDiscovery
 > =>
 	Layer.mergeAll(
+		// The workspace archive names each member's node_modules, so the step asks
+		// discovery for the membership. `layerTest` with no override answers with
+		// an empty list, which the step reads as "root only" — the shape almost
+		// every case here wants, and the one `restore-cache.test.ts` varies.
+		WorkspaceDiscovery.layerTest(),
 		// The cache restore is real, and by default nothing matches: a miss leaves
 		// the installs that follow to do the work, which is what most cases here
 		// are about. `restore-cache.test.ts` owns the key derivation itself.
@@ -863,11 +870,18 @@ describe("program", () => {
 			);
 
 			expect(captured.get("cache-hit")).toBe("true");
+			// The store is a second entry, keyed independently, and reports its own
+			// verdict — a "false" here beside a "true" above is the shape of a job
+			// that restored its linked trees and still downloads every package.
+			expect(captured.get("store-cache-hit")).toBe("true");
 			// The resolved file, not the pattern that found it.
 			expect(captured.get("lockfiles")).toBe(join(WORKSPACE, LOCKFILE));
 			const paths = (captured.get("cache-paths") ?? "").split(",");
-			expect(paths).toContain("**/node_modules");
+			expect(paths).toContain("node_modules");
 			expect(paths).toContain(join("/opt/hostedtoolcache", "node", "24.11.0"));
+			// Both archives' paths, so a consumer reading the output back can see
+			// whether their store was covered.
+			expect(paths.some((path) => path.includes("pnpm/store"))).toBe(true);
 		}),
 	);
 

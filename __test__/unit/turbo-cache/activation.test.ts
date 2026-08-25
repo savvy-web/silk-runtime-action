@@ -19,6 +19,7 @@ const baseInputs: Inputs = {
 	turboS3SessionToken: Option.none(),
 	turboS3Prefix: Option.none(),
 	installDeps: true,
+	ignoreScripts: false,
 	bats: "auto",
 	kcov: "auto",
 	cacheBust: Option.none(),

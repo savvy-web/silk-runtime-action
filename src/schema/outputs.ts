@@ -26,6 +26,7 @@ export const OUTPUT_NAMES = [
 	"turbo-cache-backend",
 	"turbo-cache-port",
 	"cache-hit",
+	"store-cache-hit",
 	"lockfiles",
 	"cache-paths",
 ] as const;
@@ -59,6 +60,17 @@ export interface OutputsModel {
 	readonly turboCacheBackend: "github" | "s3" | "remote" | "none";
 	readonly turboCachePort: string;
 	readonly cacheHit: "true" | "partial" | "false";
+	/**
+	 * How the package-manager store restore went.
+	 *
+	 * @remarks
+	 * Separate from {@link OutputsModel.cacheHit} because the two entries hit and
+	 * miss independently — that is the whole point of the split. A `"false"` here
+	 * beside a `"true"` there is the shape of a job that restored its linked trees
+	 * and will still download every package, which is exactly the failure this
+	 * output exists to make visible.
+	 */
+	readonly storeCacheHit: "true" | "partial" | "false";
 	readonly lockfiles: string;
 	readonly cachePaths: string;
 }
@@ -89,6 +101,7 @@ export const initialOutputs: OutputsModel = {
 	turboCacheBackend: "none",
 	turboCachePort: "",
 	cacheHit: "false",
+	storeCacheHit: "false",
 	lockfiles: "",
 	cachePaths: "",
 };
@@ -121,6 +134,7 @@ export const emitOutputs = (model: OutputsModel): Effect.Effect<void, ActionOutp
 		yield* outputs.set("turbo-cache-backend", model.turboCacheBackend);
 		yield* outputs.set("turbo-cache-port", model.turboCachePort);
 		yield* outputs.set("cache-hit", model.cacheHit);
+		yield* outputs.set("store-cache-hit", model.storeCacheHit);
 		yield* outputs.set("lockfiles", model.lockfiles);
 		yield* outputs.set("cache-paths", model.cachePaths);
 	});

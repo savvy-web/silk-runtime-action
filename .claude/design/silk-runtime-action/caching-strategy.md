@@ -16,7 +16,7 @@ dependencies: []
 
 # Caching strategy
 
-Dependency and tool caching: the typed `CacheKey`, the restore ladder, lockfile discovery, the archived path set, the separate kcov cache, and the cross-phase state protocol.
+Dependency and tool caching: the typed `CacheKey`, the two cache entries and their restore ladders, lockfile discovery, the archived path sets, the separate kcov cache, and the cross-phase state protocol.
 
 ## Table of contents
 
@@ -32,7 +32,12 @@ Dependency and tool caching: the typed `CacheKey`, the restore ladder, lockfile 
 
 ## Overview
 
-The action caches dependency stores, workspace `node_modules`, the tool-cache directories of everything it installed, and (when turbo is detected) turbo's local artifact cache — all under one key derived from the platform, the architecture, the tool versions, the branch and the lockfile contents.
+The action keeps **two** cache entries, because what they hold goes stale for different reasons.
+
+- The **workspace archive** — the linked `node_modules` trees, yarn's PnP directories, the tool-cache directories of everything installed, and (when turbo is detected) turbo's local artifact cache — keyed on the platform, the architecture, the tool versions, the install policy, the branch and the lockfile contents.
+- The **package-manager store** — each active manager's global download cache — keyed on the platform, the architecture, the manager version and the lockfile contents, and **nothing else**. A store is content-addressable and append-only, so a branch cut and a runtime bump have no business discarding it.
+
+They hit and miss independently, and report on `cache-hit` and `store-cache-hit` respectively.
 
 There is a **second, deliberately separate** Actions cache entry: the kcov tree, keyed on the runner image and the pinned kcov version and on nothing a lockfile can touch. See [the kcov cache](#the-kcov-cache).
 
@@ -70,13 +75,27 @@ Example: `linux-x64-abc12345-def67890-ghi11223`.
 | --- | --- |
 | `platform` | `process.platform` — `linux` / `darwin` / `win32` |
 | `arch` | `process.arch` — `x64` / `arm64` / … |
-| `versionHash` | SHA-256, first 8 hex, of the cache-bust (if any) then each tool as `name:version` **sorted by name**, then `packageManager.name:version` |
+| `versionHash` | SHA-256, first 8 hex, of the cache-bust (if any), then the install-policy token, then each tool as `name:version` **sorted by name**, then `packageManager.name:version` |
 | `branchHash` | SHA-256, first 8 hex, of the branch — or of the literal `"null"` when there is none |
 | `lockfileHash` | `CacheKey.hashFiles(lockfiles)`, first 8 hex — or the literal `"empty"` when nothing matched |
 
 "Tools" means every `devEngines` runtime plus Biome when a version was resolved. Biome rides along because it is versioned, tool-cached, and a version change has to invalidate the archive holding the old one.
 
 The **arch segment is new**. Without it an arm64 and an x64 macOS runner share a key and restore each other's tool-cache directories — binaries for the wrong architecture, from a cache that reports a hit.
+
+The **install-policy token** is `deps:scripts`, `deps:no-scripts` or `no-deps`, from the `install-deps` and `ignore-scripts` inputs. The archive is a picture of the workspace *after* the install, so two runs whose installs do different things must not share a key — and before the token existed they did. A job passing `install-deps: false` archived an empty `node_modules` under exactly the key a full-install job would use; every later run then reported an exact hit, skipped the save, and installed from the network anyway, with nothing able to repair it because the poisoned entry kept winning. Observed in `spencerbeggs/effected` as an `exact hit` restore followed by pnpm's `reused 0, downloaded 939`. `ignore-scripts` is the same hazard one layer down: a tree built with lifecycle scripts skipped is missing every `postinstall` artifact. A skipped install collapses to one token whatever `ignore-scripts` says.
+
+### Store cache key format
+
+```text
+store-{platform}-{arch}-{managerHash}-{lockfileHash}
+```
+
+The `store` literal leads so the two key spaces cannot overlap — a workspace key opens with the platform, and no rung of either ladder reaches the other's entries.
+
+What is **absent** is the point. No branch: a store from another branch is as good as this one's. No runtime or Biome version: a package tarball is the same tarball whichever node unpacks it. `managerHash` is a digest of the cache-bust (if any) then each active manager as `name:version`, sorted by name — versioned because the store layout is, pnpm keeping a `v10`/`v11` subdirectory beneath the archived path.
+
+The lockfile digest stays, doing a different job than it does above. A store is append-only, so an older one is never *wrong* — only short. Keeping the digest on the primary key while `STORE_RESTORE_DEPTHS = [4]` drops it from the one rung below is what makes the entry **top up**: a changed lockfile misses the primary, hits the rung, restores the previous store, lets the install add what is new, and archives the union under the new digest. Without the digest the key would never change, every run after the first would report an exact hit, and — since an exact hit skips the save — the store would freeze at whatever the first run downloaded. There is deliberately nothing below depth 4: depth 3 would drop the manager version and restore a store laid out for a different major.
 
 The **cache bust goes into the version digest** rather than into a segment of its own, so a busted run keeps the same key layout while matching nothing an unbusted run wrote.
 
@@ -106,13 +125,19 @@ A **cache bust removes the ladder entirely** via `withoutRestoreKeys()` — zero
 
 ### Lockfile patterns
 
+Every built-in name is anchored at the **workspace root**. Nothing is globbed at any depth.
+
 | Manager | Patterns |
 | --- | --- |
-| npm | `**/package-lock.json`, `**/npm-shrinkwrap.json` |
-| pnpm | `**/pnpm-lock.yaml`, `**/pnpm-workspace.yaml`, `**/.pnpmfile.cjs` |
-| yarn | `**/yarn.lock`, `**/.pnp.cjs`, `**/.yarn/install-state.gz` |
-| bun | `**/bun.lock`, `**/bun.lockb` |
-| deno | `**/deno.lock` |
+| npm | `package-lock.json`, `npm-shrinkwrap.json` |
+| pnpm | `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.pnpmfile.cjs` |
+| yarn | `yarn.lock`, `.pnp.cjs`, `.yarn/install-state.gz` |
+| bun | `bun.lock`, `bun.lockb` |
+| deno | `deno.lock` |
+
+All five managers write one lockfile, at the root, and a workspace package's dependency change reaches the key through that file rather than beside it — so a deeper match is never a lockfile an install reads. What it reliably *is* instead is a test fixture: this repository's own `__fixtures__/` carries five, and `spencerbeggs/effected` carries forty-one under `packages/*/__test__/fixtures/`. The exclusions below caught those two layouts by name, which is the whole problem with them — they are a denylist of directory conventions, and `test/fixtures/`, `e2e/` or `examples/` walk straight past it.
+
+Anchoring costs the repository keeping several independent projects side by side, each with its own lockfile. That is what `additional-lockfiles` is for, and it is a case the action already declines to serve elsewhere: `load-config` reads `package.json` from the working directory, so a root manifest is a hard requirement.
 
 Two of pnpm's three are not lockfiles at all — `pnpm-workspace.yaml` and `.pnpmfile.cjs` change what an install resolves to just as a lockfile does, so they belong in the key. They land in the `lockfiles` output as a consequence.
 
@@ -124,7 +149,7 @@ Exclusions apply to every pattern set:
 ["!**/node_modules/**", "!**/.git/**", "!**/__fixtures__/**", "!**/__tests__/**", "!**/__test__/**"]
 ```
 
-A lockfile only means something at the repository root or in a real workspace package. Inside `node_modules` it belongs to a dependency; inside a fixture tree it is a deliberate fake — this repository's own `__fixtures__/` carries five.
+These now guard the **caller's** patterns rather than the built-ins, which are root-anchored and cannot match any of them. `additional-lockfiles` still takes arbitrary globs, and a consumer writing `**/deno.lock` should not have it resolve inside `node_modules` or a fixture tree.
 
 The caller's `additional-lockfiles` are appended **after** the built-in sort, in the order written, so a workflow author reading them back out of the `lockfiles` output sees their own list where they put it.
 
@@ -134,24 +159,29 @@ A **runtime**, not the manifest, is what makes a manager active: node brings the
 
 ### Archived paths
 
-Three groups, and the order is the contract:
+**The workspace archive** — three groups, and the order is the contract:
 
 1. **Built-ins, sorted** (absolute paths alphabetically, then globs alphabetically):
-   - each active manager's default store directory,
    - each active manager's workspace paths,
    - `<toolCacheBase>/<tool>/<version>` for every runtime and Biome.
 2. **`additional-cache-paths`**, in the order written.
 3. **`**/.turbo/cache`**, when turbo was detected.
 
-The final list is de-duplicated, because a caller naming `**/node_modules` would otherwise hand `tar` the same tree twice. Legacy concatenated the same three groups and lost both the sort and the de-duplication.
+The final list is de-duplicated, because a caller naming a directory already present would otherwise hand `tar` the same tree twice. Legacy concatenated the same groups and lost both the sort and the de-duplication.
+
+The `node_modules` entries come from `WorkspaceDiscovery.listPackages()` — one per workspace package, as `<relativePath>/node_modules`, root first. That replaced a bare `**/node_modules`, which matched every `node_modules` anywhere beneath the checkout, including the ones inside `dist/` trees and test fixtures, so the archive carried directories no install produced and no restore used. A discovery failure, or an empty answer, degrades to root-only with a warning: a layout the kit cannot parse is precisely the one where a wildcard would sweep up the most, and a cache is never worth failing a run over.
+
+**The store archive** is `storeCachePaths` alone — each active manager's default store directory, de-duplicated and sorted.
 
 | Manager | Default store (POSIX / win32) | Workspace paths |
 | --- | --- | --- |
-| npm | `~/.npm` / `%LOCALAPPDATA%\npm-cache` | `**/node_modules` |
-| pnpm | `~/.local/share/pnpm/store` / `…\pnpm\store` | `**/node_modules` |
-| yarn | `~/.yarn/cache` **and** `~/.cache/yarn` / `…\Yarn\Cache` and `…\Yarn\Berry\cache` | `**/node_modules`, `**/.yarn/cache`, `**/.yarn/unplugged`, `**/.yarn/install-state.gz` |
-| bun | `~/.bun/install/cache` / `…\bun\install\cache` | `**/node_modules` |
+| npm | `~/.npm` / `%LOCALAPPDATA%\npm-cache` | `<pkg>/node_modules` |
+| pnpm | `~/.local/share/pnpm/store` / `…\pnpm\store` | `<pkg>/node_modules` |
+| yarn | `~/.yarn/cache` **and** `~/.cache/yarn` / `…\Yarn\Cache` and `…\Yarn\Berry\cache` | `<pkg>/node_modules`, `.yarn/cache`, `.yarn/unplugged`, `.yarn/install-state.gz` |
+| bun | `~/.bun/install/cache` / `…\bun\install\cache` | `<pkg>/node_modules` |
 | deno | `~/.cache/deno` / `%LOCALAPPDATA%\deno` | none — deno resolves from its own store and never populates `node_modules` |
+
+The tool-cache directories stay with the workspace, which means a runtime bump still invalidates the linked trees. That is the right pairing — a `node_modules` with native builds is specific to the runtime that built it — and it is the pairing the split preserves rather than one it introduces.
 
 yarn contributes two stores because Berry and Classic disagree about where the cache lives and the manager's major version is not known here. The tool-cache base is `RUNNER_TOOL_CACHE` when set, else `/opt/hostedtoolcache` (`C:\hostedtoolcache` on win32).
 
@@ -267,11 +297,12 @@ Two corollaries:
 - **In-memory test doubles are strictly more permissive than the runner.** A `Map`-backed double hands the encoded object straight back and round-trips schemas that JSON cannot. Never trust one alone for a state schema — `__test__/unit/state.test.ts` uses the **real** `ActionState.layer` against a temp `GITHUB_STATE` file and republishes it the way the runner does. That is the harness pattern for any future state schema.
 - **The same constraint applies to `BlobEnvelope` metadata.** The envelope writes metadata as JSON between its header and the body, so `turbo-cache/meta.ts` spells its tag `Schema.NullOr(Schema.String)` for exactly this reason.
 
-### The three state values
+### The four state values
 
 ```ts
 export const STATE_KEYS = {
   cache: "silk-runtime-cache",
+  storeCache: "silk-runtime-store",
   turboServer: "silk-runtime-turbo-server",
   kcovCache: "silk-runtime-kcov",
 } as const;
@@ -281,6 +312,12 @@ export class CacheState extends Schema.Class<CacheState>("CacheState")({
   primaryKey: Schema.String,
   restoredKey: Schema.OptionFromNullOr(Schema.String),
   lockfiles: Schema.Array(Schema.String),
+}) {}
+
+export class StoreCacheState extends Schema.Class<StoreCacheState>("StoreCacheState")({
+  paths: Schema.Array(Schema.String),
+  primaryKey: Schema.String,
+  restoredKey: Schema.OptionFromNullOr(Schema.String),
 }) {}
 
 export class TurboServerState extends Schema.Class<TurboServerState>("TurboServerState")({
@@ -296,6 +333,16 @@ export class KcovCacheState extends Schema.Class<KcovCacheState>("KcovCacheState
   restoredKey: Schema.OptionFromNullOr(Schema.String),
 }) {}
 ```
+
+`StoreCacheState` is `KcovCacheState`'s shape for the same reasons, and carries no `lockfiles`: the workspace state already holds the resolved list, both keys hash the same digest from it, and a second copy in `GITHUB_STATE` would be two things that can disagree. Its `post` branch compares `restoredKey` to `primaryKey` inline, and that comparison carries weight — the store's one rung drops the lockfile digest, so a run whose lockfile changed hits the rung and **must** archive the union under its own new key. Reading every `Some` as "already cached" would freeze the store.
+
+Its `paths` are the directories each manager *would* download to, never a probe of what is on disk, so `post` probes them for content before archiving and saves only the populated ones. That probe is load-bearing rather than tidy. The store key deliberately carries no install policy — the whole point of it — so unlike the workspace key it **cannot** tell an `install-deps: false` run from a full one, and `installSegment` is no defence. Without the probe, a cold store keyspace whose first job installs nothing would archive an empty store under the shared key; the next full-install job would exact-hit it, download everything, and skip its own save, freezing the entry until the lockfile changed. That is the workspace poisoning arriving by a different door.
+
+A *missing* directory was never the danger — `ActionCache.save` resolves its paths first and fails outright when nothing matched. An *existing but empty* one is, and it is reachable: a manager creates its store root the first time it runs, whether or not it downloaded anything.
+
+The probe is on **content**, not on whether an install ran, and that distinction is what makes it right rather than merely safe. `post` runs at the end of the job, so a workflow passing `install-deps: false` and installing in a later step has a populated store by then — archiving it is correct, and gating on the input would throw it away.
+
+It also makes the empty-path guards honest. Every manager contributes a store directory, deno's `~/.cache/deno` included, so `paths.length === 0` is defensive rather than reachable; "nothing worth archiving" is a statement about content, and only the probe can make it.
 
 `KcovCacheState` carries no `lockfiles` and gets no `isExactHit`: its cache has two outcomes where the dependency cache has three, so `post` compares `restoredKey` to `primaryKey` inline rather than reaching for a shared helper that encodes a distinction kcov does not have.
 

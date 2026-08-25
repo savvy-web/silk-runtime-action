@@ -7,12 +7,15 @@ import {
 	EMPTY_LOCKFILE_SEGMENT,
 	LOCKFILE_EXCLUSIONS,
 	RESTORE_DEPTHS,
+	STORE_RESTORE_DEPTHS,
 	TURBO_LOCAL_CACHE_PATHS,
 	activePackageManagers,
 	cachePaths,
 	defaultToolCacheBase,
 	keySegments,
 	lockfilePatterns,
+	storeCachePaths,
+	storeKeySegments,
 } from "../../../src/steps/cache-config.js";
 
 /** A `devEngines` config, spelled as briefly as the helpers need it. */
@@ -34,6 +37,7 @@ const pathOptions = (overrides: Partial<Parameters<typeof cachePaths>[0]> = {}):
 	toolCacheBase: "/opt/hostedtoolcache",
 	additional: [],
 	turbo: false,
+	packageDirs: ["."],
 	platform: "linux",
 	home: "/home/runner",
 	...overrides,
@@ -48,6 +52,7 @@ const keyOptions = (overrides: Partial<Parameters<typeof keySegments>[0]> = {}):
 	branch: "main",
 	lockfileHash: Option.some("0123456789abcdef0123456789abcdef"),
 	cacheBust: Option.none(),
+	install: { deps: true, ignoreScripts: false },
 	...overrides,
 });
 
@@ -77,37 +82,44 @@ describe("activePackageManagers", () => {
 });
 
 describe("lockfilePatterns", () => {
-	it("carries each manager's patterns verbatim", () => {
-		expect(lockfilePatterns(["npm"], [])).toEqual(["**/npm-shrinkwrap.json", "**/package-lock.json", ...EXCLUSIONS]);
+	it("anchors each manager's names at the workspace root", () => {
+		expect(lockfilePatterns(["npm"], [])).toEqual(["npm-shrinkwrap.json", "package-lock.json", ...EXCLUSIONS]);
 		expect(lockfilePatterns(["pnpm"], [])).toEqual([
-			"**/.pnpmfile.cjs",
-			"**/pnpm-lock.yaml",
-			"**/pnpm-workspace.yaml",
+			".pnpmfile.cjs",
+			"pnpm-lock.yaml",
+			"pnpm-workspace.yaml",
 			...EXCLUSIONS,
 		]);
-		expect(lockfilePatterns(["yarn"], [])).toEqual([
-			"**/.pnp.cjs",
-			"**/.yarn/install-state.gz",
-			"**/yarn.lock",
-			...EXCLUSIONS,
-		]);
-		expect(lockfilePatterns(["bun"], [])).toEqual(["**/bun.lock", "**/bun.lockb", ...EXCLUSIONS]);
-		expect(lockfilePatterns(["deno"], [])).toEqual(["**/deno.lock", ...EXCLUSIONS]);
+		expect(lockfilePatterns(["yarn"], [])).toEqual([".pnp.cjs", ".yarn/install-state.gz", "yarn.lock", ...EXCLUSIONS]);
+		expect(lockfilePatterns(["bun"], [])).toEqual(["bun.lock", "bun.lockb", ...EXCLUSIONS]);
+		expect(lockfilePatterns(["deno"], [])).toEqual(["deno.lock", ...EXCLUSIONS]);
+	});
+
+	it("globs no built-in name at any depth", () => {
+		// The regression: `**\/pnpm-lock.yaml` hashed every fixture lockfile in the
+		// tree, and the exclusions below only caught the two directory conventions
+		// they happen to name. `spencerbeggs/effected` carries forty-one lockfiles
+		// under `packages/*\/__test__/fixtures/`, and a repository spelling that
+		// `test/fixtures/` instead would have keyed its cache on all of them.
+		for (const manager of ["npm", "pnpm", "yarn", "bun", "deno"] as const) {
+			const built = lockfilePatterns([manager], []).slice(0, -EXCLUSIONS.length);
+			expect(built.filter((pattern) => pattern.includes("*"))).toEqual([]);
+		}
 	});
 
 	it("unions multiple managers and sorts the union", () => {
 		expect(lockfilePatterns(["pnpm", "deno"], [])).toEqual([
-			"**/.pnpmfile.cjs",
-			"**/deno.lock",
-			"**/pnpm-lock.yaml",
-			"**/pnpm-workspace.yaml",
+			".pnpmfile.cjs",
+			"deno.lock",
+			"pnpm-lock.yaml",
+			"pnpm-workspace.yaml",
 			...EXCLUSIONS,
 		]);
 	});
 
 	it("appends additional patterns after the sort, in the order they were given", () => {
 		expect(lockfilePatterns(["deno"], ["**/vendor.lock", "**/custom.lock"])).toEqual([
-			"**/deno.lock",
+			"deno.lock",
 			"**/vendor.lock",
 			"**/custom.lock",
 			...EXCLUSIONS,
@@ -120,16 +132,16 @@ describe("lockfilePatterns", () => {
 	});
 });
 
-describe("cachePaths", () => {
+describe("storeCachePaths", () => {
 	it("uses each manager's default store directory on Linux", () => {
-		expect(cachePaths(pathOptions({ packageManagers: ["npm"] }))).toContain("/home/runner/.npm");
-		expect(cachePaths(pathOptions({ packageManagers: ["pnpm"] }))).toContain("/home/runner/.local/share/pnpm/store");
+		expect(storeCachePaths(["npm"], "linux", "/home/runner")).toContain("/home/runner/.npm");
+		expect(storeCachePaths(["pnpm"], "linux", "/home/runner")).toContain("/home/runner/.local/share/pnpm/store");
 		// Classic and Berry both, because the manager's major is not known here.
-		const yarn = cachePaths(pathOptions({ packageManagers: ["yarn"] }));
+		const yarn = storeCachePaths(["yarn"], "linux", "/home/runner");
 		expect(yarn).toContain("/home/runner/.cache/yarn");
 		expect(yarn).toContain("/home/runner/.yarn/berry/cache");
-		expect(cachePaths(pathOptions({ packageManagers: ["bun"] }))).toContain("/home/runner/.bun/install/cache");
-		expect(cachePaths(pathOptions({ packageManagers: ["deno"] }))).toContain("/home/runner/.cache/deno");
+		expect(storeCachePaths(["bun"], "linux", "/home/runner")).toContain("/home/runner/.bun/install/cache");
+		expect(storeCachePaths(["deno"], "linux", "/home/runner")).toContain("/home/runner/.cache/deno");
 	});
 
 	it("uses each manager's default store directory on macOS", () => {
@@ -137,50 +149,77 @@ describe("cachePaths", () => {
 		// pnpm's *linux* store here, so a macOS job cached an empty directory and
 		// restored nothing. Classic's macOS cache is under `~/Library/Caches`,
 		// which that table did not have a cell for at all.
-		const macos = { platform: "darwin", home: "/Users/runner" };
-		expect(cachePaths(pathOptions({ ...macos, packageManagers: ["npm"] }))).toContain("/Users/runner/.npm");
-		expect(cachePaths(pathOptions({ ...macos, packageManagers: ["pnpm"] }))).toContain(
-			"/Users/runner/Library/pnpm/store",
-		);
-		const yarn = cachePaths(pathOptions({ ...macos, packageManagers: ["yarn"] }));
+		const home = "/Users/runner";
+		expect(storeCachePaths(["npm"], "darwin", home)).toContain("/Users/runner/.npm");
+		expect(storeCachePaths(["pnpm"], "darwin", home)).toContain("/Users/runner/Library/pnpm/store");
+		const yarn = storeCachePaths(["yarn"], "darwin", home);
 		expect(yarn).toContain("/Users/runner/Library/Caches/Yarn");
 		expect(yarn).toContain("/Users/runner/.yarn/berry/cache");
-		expect(cachePaths(pathOptions({ ...macos, packageManagers: ["bun"] }))).toContain(
-			"/Users/runner/.bun/install/cache",
-		);
+		expect(storeCachePaths(["bun"], "darwin", home)).toContain("/Users/runner/.bun/install/cache");
 	});
 
 	it("uses each manager's default store directory on Windows", () => {
-		const windows = { platform: "win32", home: "C:\\Users\\runneradmin", toolCacheBase: "C:\\hostedtoolcache" };
-		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["npm"] }))).toContain(
-			"C:\\Users\\runneradmin\\AppData\\Local\\npm-cache",
-		);
-		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["pnpm"] }))).toContain(
-			"C:\\Users\\runneradmin\\AppData\\Local\\pnpm\\store",
-		);
-		const yarn = cachePaths(pathOptions({ ...windows, packageManagers: ["yarn"] }));
+		const home = "C:\\Users\\runneradmin";
+		expect(storeCachePaths(["npm"], "win32", home)).toContain("C:\\Users\\runneradmin\\AppData\\Local\\npm-cache");
+		expect(storeCachePaths(["pnpm"], "win32", home)).toContain("C:\\Users\\runneradmin\\AppData\\Local\\pnpm\\store");
+		const yarn = storeCachePaths(["yarn"], "win32", home);
 		expect(yarn).toContain("C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Cache");
 		expect(yarn).toContain("C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Berry\\cache");
 		// bun documents no Windows divergence: the cache is under the user profile
 		// on every platform, not `AppData` as the table this replaces claimed.
-		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["bun"] }))).toContain(
-			"C:\\Users\\runneradmin\\.bun\\install\\cache",
-		);
-		expect(cachePaths(pathOptions({ ...windows, packageManagers: ["deno"] }))).toContain(
-			"C:\\Users\\runneradmin\\AppData\\Local\\deno",
+		expect(storeCachePaths(["bun"], "win32", home)).toContain("C:\\Users\\runneradmin\\.bun\\install\\cache");
+		expect(storeCachePaths(["deno"], "win32", home)).toContain("C:\\Users\\runneradmin\\AppData\\Local\\deno");
+	});
+
+	it("de-duplicates a store two managers share, and sorts the result", () => {
+		expect(storeCachePaths(["pnpm", "pnpm"], "linux", "/home/runner")).toEqual([
+			"/home/runner/.local/share/pnpm/store",
+		]);
+		expect(storeCachePaths(["pnpm", "npm"], "linux", "/home/runner")).toEqual([
+			"/home/runner/.local/share/pnpm/store",
+			"/home/runner/.npm",
+		]);
+	});
+});
+
+describe("cachePaths", () => {
+	it("holds no global store — those are archived under their own key", () => {
+		// The split: a store is content-addressable and append-only, so keying it
+		// on the branch and the exact lockfile digest threw the download away on
+		// every branch cut for no correctness this cache needed.
+		for (const manager of ["npm", "pnpm", "yarn", "bun", "deno"] as const) {
+			const paths = cachePaths(pathOptions({ packageManagers: [manager] }));
+			for (const store of storeCachePaths([manager], "linux", "/home/runner")) {
+				expect(paths).not.toContain(store);
+			}
+		}
+	});
+
+	it("names one node_modules per workspace package, root first", () => {
+		expect(cachePaths(pathOptions({ packageManagers: ["pnpm"], packageDirs: [".", "packages/a", "website"] }))).toEqual(
+			["node_modules", "packages/a/node_modules", "website/node_modules"],
 		);
 	});
 
+	it("globs no node_modules at any depth", () => {
+		// The regression: `**\/node_modules` swept up every node_modules under the
+		// checkout, including the ones inside `dist/` trees and test fixtures, so
+		// the archive carried directories no install produced and no restore used.
+		const paths = cachePaths(pathOptions({ packageManagers: ["pnpm"], packageDirs: [".", "packages/a"] }));
+		expect(paths).not.toContain("**/node_modules");
+		expect(paths.filter((path) => path.includes("*"))).toEqual([]);
+	});
+
 	it("adds the per-manager dependency directories (oracle 19)", () => {
-		expect(cachePaths(pathOptions({ packageManagers: ["npm"] }))).toContain("**/node_modules");
-		expect(cachePaths(pathOptions({ packageManagers: ["bun"] }))).toContain("**/node_modules");
+		expect(cachePaths(pathOptions({ packageManagers: ["npm"] }))).toContain("node_modules");
+		expect(cachePaths(pathOptions({ packageManagers: ["bun"] }))).toContain("node_modules");
 		const yarn = cachePaths(pathOptions({ packageManagers: ["yarn"] }));
-		expect(yarn).toContain("**/node_modules");
-		expect(yarn).toContain("**/.yarn/cache");
-		expect(yarn).toContain("**/.yarn/unplugged");
-		expect(yarn).toContain("**/.yarn/install-state.gz");
+		expect(yarn).toContain("node_modules");
+		expect(yarn).toContain(".yarn/cache");
+		expect(yarn).toContain(".yarn/unplugged");
+		expect(yarn).toContain(".yarn/install-state.gz");
 		// deno resolves modules into its own store and never writes node_modules.
-		expect(cachePaths(pathOptions({ packageManagers: ["deno"] }))).not.toContain("**/node_modules");
+		expect(cachePaths(pathOptions({ packageManagers: ["deno"] }))).not.toContain("node_modules");
 	});
 
 	it("adds a hostedtoolcache directory per cacheable tool, and only those", () => {
@@ -222,14 +261,15 @@ describe("cachePaths", () => {
 			pathOptions({
 				packageManagers: ["pnpm"],
 				tools: [{ name: "node", version: "24.11.0" }],
+				packageDirs: [".", "packages/a"],
 				additional: ["**/build", "**/dist"],
 				turbo: true,
 			}),
 		);
 		expect(paths).toEqual([
-			"/home/runner/.local/share/pnpm/store",
 			"/opt/hostedtoolcache/node/24.11.0",
-			"**/node_modules",
+			"node_modules",
+			"packages/a/node_modules",
 			"**/build",
 			"**/dist",
 			"**/.turbo/cache",
@@ -242,9 +282,9 @@ describe("cachePaths", () => {
 	});
 
 	it("de-duplicates a caller path that repeats a built-in, keeping the built-in's place", () => {
-		const paths = cachePaths(pathOptions({ packageManagers: ["pnpm"], additional: ["**/node_modules", "**/dist"] }));
-		expect(paths.filter((path) => path === "**/node_modules")).toHaveLength(1);
-		expect(paths).toEqual(["/home/runner/.local/share/pnpm/store", "**/node_modules", "**/dist"]);
+		const paths = cachePaths(pathOptions({ packageManagers: ["pnpm"], additional: ["node_modules", "**/dist"] }));
+		expect(paths.filter((path) => path === "node_modules")).toHaveLength(1);
+		expect(paths).toEqual(["node_modules", "**/dist"]);
 	});
 });
 
@@ -307,6 +347,37 @@ describe("keySegments", () => {
 		expect(busted[4]).toBe(plain[4]);
 	});
 
+	it("separates a skipped install from a real one, so a deps-less run cannot poison the key", () => {
+		// The regression: a job passing `install-deps: false` archived an empty
+		// node_modules and an empty store under the key a full-install job used,
+		// and every later run then reported an exact hit on a cache holding
+		// nothing.
+		const full = keySegments(keyOptions({ install: { deps: true, ignoreScripts: false } }));
+		const skipped = keySegments(keyOptions({ install: { deps: false, ignoreScripts: false } }));
+		expect(skipped[2]).not.toBe(full[2]);
+	});
+
+	it("separates an install that ran lifecycle scripts from one that did not", () => {
+		const withScripts = keySegments(keyOptions({ install: { deps: true, ignoreScripts: false } }));
+		const without = keySegments(keyOptions({ install: { deps: true, ignoreScripts: true } }));
+		expect(without[2]).not.toBe(withScripts[2]);
+	});
+
+	it("collapses ignore-scripts when there is no install for it to change", () => {
+		const off = keySegments(keyOptions({ install: { deps: false, ignoreScripts: false } }));
+		const on = keySegments(keyOptions({ install: { deps: false, ignoreScripts: true } }));
+		expect(on[2]).toBe(off[2]);
+	});
+
+	it("keeps the install policy in the version segment, and out of every other one", () => {
+		const plain = keySegments(keyOptions());
+		const skipped = keySegments(keyOptions({ install: { deps: false, ignoreScripts: false } }));
+		expect(skipped[0]).toBe(plain[0]);
+		expect(skipped[1]).toBe(plain[1]);
+		expect(skipped[3]).toBe(plain[3]);
+		expect(skipped[4]).toBe(plain[4]);
+	});
+
 	it("separates branches, and hashes the branchless case as a literal", () => {
 		expect(keySegments(keyOptions({ branch: "dev" }))[3]).not.toBe(keySegments(keyOptions({ branch: "main" }))[3]);
 		// A detached or tagged ref yields no branch name; legacy hashed "null"
@@ -316,6 +387,95 @@ describe("keySegments", () => {
 
 	it("is deterministic across calls", () => {
 		expect(keySegments(keyOptions())).toEqual(keySegments(keyOptions()));
+	});
+});
+
+describe("storeKeySegments", () => {
+	const storeOptions = (
+		overrides: Partial<Parameters<typeof storeKeySegments>[0]> = {},
+	): Parameters<typeof storeKeySegments>[0] => ({
+		platform: "linux",
+		arch: "x64",
+		packageManagers: [{ name: "pnpm", version: "10.20.0" }],
+		lockfileHash: Option.some("0123456789abcdef0123456789abcdef"),
+		cacheBust: Option.none(),
+		...overrides,
+	});
+
+	it("lays the key out as store-platform-arch-managerHash-lockfileHash", () => {
+		const segments = storeKeySegments(storeOptions());
+		expect(segments).toHaveLength(5);
+		expect(segments[0]).toBe("store");
+		expect(segments[1]).toBe("linux");
+		expect(segments[2]).toBe("x64");
+		expect(segments[4]).toBe("01234567");
+	});
+
+	it("leads with a literal no workspace key can collide with", () => {
+		// The workspace key opens with the platform, so no rung of either ladder
+		// can reach the other's entries.
+		expect(storeKeySegments(storeOptions())[0]).not.toBe(keySegments(keyOptions())[0]);
+	});
+
+	it("does not depend on the branch, which is why it survives a branch cut", () => {
+		// There is no branch input at all — the assertion is on the type as much
+		// as the value. A store from another branch is as good as this branch's.
+		expect(Object.keys(storeOptions())).not.toContain("branch");
+	});
+
+	it("does not depend on the runtimes, which cannot change a package tarball", () => {
+		expect(Object.keys(storeOptions())).not.toContain("tools");
+	});
+
+	it("separates manager versions, because the store layout is versioned", () => {
+		// pnpm keeps a v10/v11 subdirectory under the archived path, and a major
+		// bump writes a new one rather than reusing the old.
+		const ten = storeKeySegments(storeOptions({ packageManagers: [{ name: "pnpm", version: "10.20.0" }] }));
+		const eleven = storeKeySegments(storeOptions({ packageManagers: [{ name: "pnpm", version: "11.0.0" }] }));
+		expect(eleven[3]).not.toBe(ten[3]);
+	});
+
+	it("does not depend on the order the managers were declared in", () => {
+		const managers = [
+			{ name: "pnpm", version: "10.20.0" },
+			{ name: "bun", version: "1.3.3" },
+		];
+		expect(storeKeySegments(storeOptions({ packageManagers: managers }))[3]).toBe(
+			storeKeySegments(storeOptions({ packageManagers: [...managers].reverse() }))[3],
+		);
+	});
+
+	it("keeps the lockfile digest on the primary key, so the entry can top up", () => {
+		// Without it the key would never change, every run after the first would
+		// report an exact hit, and — since an exact hit skips the save — the store
+		// would freeze at whatever the first run happened to download.
+		const first = storeKeySegments(storeOptions({ lockfileHash: Option.some("aaaaaaaabbbbbbbb") }));
+		const second = storeKeySegments(storeOptions({ lockfileHash: Option.some("ccccccccdddddddd") }));
+		expect(second[4]).not.toBe(first[4]);
+		expect(second[3]).toBe(first[3]);
+	});
+
+	it("names the no-lockfile case rather than leaving the segment empty", () => {
+		expect(storeKeySegments(storeOptions({ lockfileHash: Option.none() }))[4]).toBe(EMPTY_LOCKFILE_SEGMENT);
+	});
+
+	it("perturbs the manager digest with the cache bust, and nothing else", () => {
+		const plain = storeKeySegments(storeOptions());
+		const busted = storeKeySegments(storeOptions({ cacheBust: Option.some("npm-ubuntu-123") }));
+		expect(busted[3]).not.toBe(plain[3]);
+		expect(busted[0]).toBe(plain[0]);
+		expect(busted[4]).toBe(plain[4]);
+	});
+});
+
+describe("STORE_RESTORE_DEPTHS", () => {
+	it("keeps one rung, which drops the lockfile digest and nothing more", () => {
+		expect([...STORE_RESTORE_DEPTHS]).toEqual([4]);
+	});
+
+	it("stops short of dropping the manager version", () => {
+		// Depth 3 would restore a store laid out for a different major.
+		expect(STORE_RESTORE_DEPTHS).not.toContain(3);
 	});
 });
 

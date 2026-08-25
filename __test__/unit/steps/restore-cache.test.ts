@@ -8,11 +8,12 @@ import {
 	ActionState,
 	ActionStateError,
 } from "@effected/github-actions";
+import { WorkspaceDiscovery, WorkspacePackage } from "@effected/workspaces";
 import { Effect, FileSystem, Layer, Logger, Option, Path, References } from "effect";
 
 import { RuntimeConfig } from "../../../src/schema/domain.js";
 import type { Inputs } from "../../../src/schema/inputs.js";
-import { CacheState, STATE_KEYS } from "../../../src/state.js";
+import { CacheState, STATE_KEYS, StoreCacheState } from "../../../src/state.js";
 import { restoreCache } from "../../../src/steps/restore-cache.js";
 
 /** The checkout every case runs against, as `GITHUB_WORKSPACE` names it. */
@@ -42,6 +43,7 @@ const baseInputs: Inputs = {
 	turboS3SessionToken: Option.none(),
 	turboS3Prefix: Option.none(),
 	installDeps: true,
+	ignoreScripts: false,
 	bats: "auto",
 	kcov: "auto",
 	cacheBust: Option.none(),
@@ -111,6 +113,20 @@ const stateTest = (
 	});
 
 /** Everything the step needs, with the parts a case does not exercise pinned. */
+/** `relativePath`s as the `WorkspacePackage` values discovery would report. */
+const discovered = (relativePaths: ReadonlyArray<string>): ReadonlyArray<WorkspacePackage> =>
+	relativePaths.map((relativePath) => {
+		const path = relativePath === "." ? WORKSPACE : `${WORKSPACE}/${relativePath}`;
+		return WorkspacePackage.make({
+			name: relativePath === "." ? "root" : relativePath,
+			version: "0.0.0",
+			path,
+			packageJsonPath: `${path}/package.json`,
+			relativePath,
+			workspaceRoot: WORKSPACE,
+		});
+	});
+
 const makeLayer = (options: {
 	readonly restores?: Array<Restore>;
 	readonly saves?: Array<Save>;
@@ -121,8 +137,17 @@ const makeLayer = (options: {
 	readonly logs?: Array<string>;
 	/** A filesystem other than the one serving `files` — an unreadable one, say. */
 	readonly fs?: Layer.Layer<FileSystem.FileSystem>;
+	/** The workspace membership discovery reports, as root-relative directories. */
+	readonly packages?: ReadonlyArray<string>;
 }) =>
 	Layer.mergeAll(
+		// The workspace archive names each member's node_modules, so the step asks
+		// discovery for the membership. The default is an empty answer, which the
+		// step reads as root-only — the shape every case that is not about the
+		// membership wants.
+		WorkspaceDiscovery.layerTest(
+			options.packages === undefined ? {} : { listPackages: () => Effect.succeed(discovered(options.packages ?? [])) },
+		),
 		cacheTest(options.restores ?? [], options.answer),
 		stateTest(options.saves ?? [], options.save),
 		options.fs ?? fileSystemTest(options.files),
@@ -151,7 +176,9 @@ const makeLayer = (options: {
 
 /** Runs the step with `overrides` folded into the default arguments. */
 const run = (
-	layer: Layer.Layer<ActionCache | ActionState | FileSystem.FileSystem | Path.Path | ActionEnvironment>,
+	layer: Layer.Layer<
+		ActionCache | ActionState | FileSystem.FileSystem | Path.Path | ActionEnvironment | WorkspaceDiscovery
+	>,
 	overrides: {
 		readonly inputs?: Partial<Inputs>;
 		readonly config?: RuntimeConfig;
@@ -191,24 +218,77 @@ describe("restoreCache", () => {
 			const restores: Array<Restore> = [];
 			const state = yield* run(makeLayer({ restores }));
 
-			expect(restores).toHaveLength(1);
 			expect(askedFor(restores[0])).toMatch(
 				new RegExp(`^${process.platform}-${process.arch}-[0-9a-f]{8}-[0-9a-f]{8}-empty$`),
 			);
-			expect(state.primaryKey).toBe(askedFor(restores[0]));
+			expect(state.workspace.primaryKey).toBe(askedFor(restores[0]));
 		}),
 	);
 
-	it.effect("archives the active manager's store, its node_modules and the tool cache", () =>
+	it.effect("archives each workspace package's node_modules and the tool cache", () =>
+		Effect.gen(function* () {
+			const restores: Array<Restore> = [];
+			yield* run(makeLayer({ restores, packages: [".", "packages/a"] }));
+
+			const paths = restores[0]?.paths ?? [];
+			expect(paths).toContain("node_modules");
+			expect(paths).toContain("packages/a/node_modules");
+			expect(paths).toContain(join(TOOL_CACHE, "node", "24.11.0"));
+			// Nothing turbo-shaped: this workspace has no turbo.json.
+			expect(paths).not.toContain("**/.turbo/cache");
+			// No glob: the membership is enumerated, so a node_modules inside a
+			// dist tree or a fixture is not swept in.
+			expect(paths).not.toContain("**/node_modules");
+			// The store is the second restore's business, not this one's.
+			expect(paths.some((path) => path.includes("pnpm/store"))).toBe(false);
+		}),
+	);
+
+	it.effect("archives the manager's store under a second key of its own", () =>
 		Effect.gen(function* () {
 			const restores: Array<Restore> = [];
 			yield* run(makeLayer({ restores }));
 
-			const paths = restores[0]?.paths ?? [];
-			expect(paths).toContain("**/node_modules");
-			expect(paths).toContain(join(TOOL_CACHE, "node", "24.11.0"));
-			// Nothing turbo-shaped: this workspace has no turbo.json.
-			expect(paths).not.toContain("**/.turbo/cache");
+			expect(restores).toHaveLength(2);
+			expect(askedFor(restores[1]).startsWith("store-")).toBe(true);
+			expect((restores[1]?.paths ?? []).some((path) => path.includes("pnpm/store"))).toBe(true);
+		}),
+	);
+
+	it.effect("keeps the store key free of the branch, so a branch cut does not discard it", () =>
+		Effect.gen(function* () {
+			const onMain: Array<Restore> = [];
+			const onFeature: Array<Restore> = [];
+			yield* run(makeLayer({ restores: onMain }));
+			yield* run(makeLayer({ restores: onFeature, env: { GITHUB_REF_NAME: "feat/whatever" } }));
+
+			// The workspace key moves with the branch; the store key does not. That
+			// difference is the whole point of the split: a store is content-
+			// addressable, so another branch's is as good as this one's.
+			expect(askedFor(onFeature[0])).not.toBe(askedFor(onMain[0]));
+			expect(askedFor(onFeature[1])).toBe(askedFor(onMain[1]));
+		}),
+	);
+
+	it.effect("gives the store one rung, which drops the lockfile digest", () =>
+		Effect.gen(function* () {
+			const restores: Array<Restore> = [];
+			yield* run(makeLayer({ restores }));
+
+			const ladder = ladderOf(restores[1]);
+			expect(ladder).toHaveLength(1);
+			expect(askedFor(restores[1]).startsWith(ladder[0] ?? "")).toBe(true);
+		}),
+	);
+
+	it.effect("persists the store state under its own key, for the post phase to save", () =>
+		Effect.gen(function* () {
+			const saves: Array<Save> = [];
+			const result = yield* run(makeLayer({ saves }));
+
+			expect(saves.map((save) => save.key)).toEqual([STATE_KEYS.cache, STATE_KEYS.storeCache]);
+			expect(saves[1]?.value).toStrictEqual(result.store);
+			expect(result.store).toBeInstanceOf(StoreCacheState);
 		}),
 	);
 
@@ -244,7 +324,7 @@ describe("restoreCache", () => {
 			const restores: Array<Restore> = [];
 			const state = yield* run(makeLayer({ restores, answer: (key) => Effect.succeed(Option.some(key)) }));
 
-			expect(Option.getOrThrow(state.restoredKey)).toBe(state.primaryKey);
+			expect(Option.getOrThrow(state.workspace.restoredKey)).toBe(state.workspace.primaryKey);
 		}),
 	);
 
@@ -254,15 +334,15 @@ describe("restoreCache", () => {
 				makeLayer({ answer: (key) => Effect.succeed(Option.some(`${key.slice(0, 20)}-older`)) }),
 			);
 
-			expect(Option.isSome(state.restoredKey)).toBe(true);
-			expect(Option.getOrThrow(state.restoredKey)).not.toBe(state.primaryKey);
+			expect(Option.isSome(state.workspace.restoredKey)).toBe(true);
+			expect(Option.getOrThrow(state.workspace.restoredKey)).not.toBe(state.workspace.primaryKey);
 		}),
 	);
 
 	it.effect("reports a miss when nothing matched", () =>
 		Effect.gen(function* () {
 			const state = yield* run(makeLayer({}));
-			expect(Option.isNone(state.restoredKey)).toBe(true);
+			expect(Option.isNone(state.workspace.restoredKey)).toBe(true);
 		}),
 	);
 
@@ -271,10 +351,9 @@ describe("restoreCache", () => {
 			const saves: Array<Save> = [];
 			const state = yield* run(makeLayer({ saves, answer: (key) => Effect.succeed(Option.some(key)) }));
 
-			expect(saves).toHaveLength(1);
 			expect(saves[0]?.key).toBe(STATE_KEYS.cache);
-			expect(saves[0]?.value).toStrictEqual(state);
-			expect(state).toBeInstanceOf(CacheState);
+			expect(saves[0]?.value).toStrictEqual(state.workspace);
+			expect(state.workspace).toBeInstanceOf(CacheState);
 		}),
 	);
 
@@ -285,7 +364,7 @@ describe("restoreCache", () => {
 				makeLayer({ restores, files: { "pnpm-lock.yaml": "lockfileVersion: '9.0'", "README.md": "# repo" } }),
 			);
 
-			expect(state.lockfiles).toEqual([join(WORKSPACE, "pnpm-lock.yaml")]);
+			expect(state.workspace.lockfiles).toEqual([join(WORKSPACE, "pnpm-lock.yaml")]);
 			expect(askedFor(restores[0])).toMatch(
 				new RegExp(`^${process.platform}-${process.arch}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}$`),
 			);
@@ -315,7 +394,7 @@ describe("restoreCache", () => {
 				}),
 			);
 
-			expect(state.lockfiles).toEqual([]);
+			expect(state.workspace.lockfiles).toEqual([]);
 		}),
 	);
 
@@ -325,7 +404,7 @@ describe("restoreCache", () => {
 				inputs: { additionalLockfiles: ["**/vendor.lock"] },
 			});
 
-			expect(state.lockfiles).toEqual([join(WORKSPACE, "vendor.lock")]);
+			expect(state.workspace.lockfiles).toEqual([join(WORKSPACE, "vendor.lock")]);
 		}),
 	);
 
@@ -337,10 +416,10 @@ describe("restoreCache", () => {
 				turbo: { enabled: true },
 			});
 
-			expect(restores[0]?.paths).toEqual(state.paths);
-			expect(state.paths).toContain("**/build");
-			expect(state.paths).toContain("**/dist");
-			expect(state.paths).toContain("**/.turbo/cache");
+			expect(restores[0]?.paths).toEqual(state.workspace.paths);
+			expect(state.workspace.paths).toContain("**/build");
+			expect(state.workspace.paths).toContain("**/dist");
+			expect(state.workspace.paths).toContain("**/.turbo/cache");
 		}),
 	);
 
@@ -352,7 +431,7 @@ describe("restoreCache", () => {
 			const state = yield* run(makeLayer({ restores: with_ }), { biomeVersion: Option.some("2.3.14") });
 
 			expect(askedFor(with_[0])).not.toBe(askedFor(without[0]));
-			expect(state.paths).toContain(join(TOOL_CACHE, "biome", "2.3.14"));
+			expect(state.workspace.paths).toContain(join(TOOL_CACHE, "biome", "2.3.14"));
 		}),
 	);
 
@@ -422,14 +501,15 @@ describe("restoreCache", () => {
 
 			// A cache is an optimization: the run continues, and the installs that
 			// follow simply do the work the cache would have saved.
-			expect(Option.isNone(state.restoredKey)).toBe(true);
-			expect(state.primaryKey).not.toBe("");
-			expect(state.paths.length).toBeGreaterThan(0);
+			expect(Option.isNone(state.workspace.restoredKey)).toBe(true);
+			expect(state.workspace.primaryKey).not.toBe("");
+			expect(state.workspace.paths.length).toBeGreaterThan(0);
 			// The reason literal is what a workflow log needs to tell a missing
 			// token apart from a broken archive.
 			expect(logs.join("\n")).toContain("unreachable");
-			// The state is still persisted, so post saves what this run installs.
-			expect(saves).toHaveLength(1);
+			// The state is still persisted — both entries — so post saves what this
+			// run installs.
+			expect(saves.map((save) => save.key)).toEqual([STATE_KEYS.cache, STATE_KEYS.storeCache]);
 		}),
 	);
 
@@ -442,7 +522,7 @@ describe("restoreCache", () => {
 			const state = yield* run(makeLayer({ logs, restores, fs: FileSystem.layerNoop({}) }));
 
 			expect(askedFor(restores[0]).endsWith("-empty")).toBe(true);
-			expect(state.lockfiles).toEqual([]);
+			expect(state.workspace.lockfiles).toEqual([]);
 			expect(logs.join("\n")).toContain("CacheKeyReadError");
 		}),
 	);
@@ -497,7 +577,7 @@ describe("restoreCache", () => {
 
 			// Post will do nothing without the state, which is the cost. Failing the
 			// action over it would throw away a restore that already landed.
-			expect(Option.isSome(state.restoredKey)).toBe(true);
+			expect(Option.isSome(state.workspace.restoredKey)).toBe(true);
 			expect(logs.join("\n")).toContain("writeFailed");
 		}),
 	);

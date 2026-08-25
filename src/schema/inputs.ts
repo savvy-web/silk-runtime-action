@@ -5,7 +5,7 @@ import { Config, Option } from "effect";
 import type { ToolMode } from "./domain.js";
 
 /**
- * The 18 `action.yml` input names, verbatim, as a const tuple.
+ * The 19 `action.yml` input names, verbatim, as a const tuple.
  *
  * @remarks
  * The counterpart to `OUTPUT_NAMES`. It is what makes "the code and
@@ -27,6 +27,7 @@ export const INPUT_NAMES = [
 	"turbo-s3-session-token",
 	"turbo-s3-prefix",
 	"install-deps",
+	"ignore-scripts",
 	"bats",
 	"kcov",
 	"cache-bust",
@@ -46,7 +47,7 @@ export type InputName = (typeof INPUT_NAMES)[number];
 export type TurboCacheMode = "auto" | "off";
 
 /**
- * The fully decoded, typed shape of all 18 `action.yml` inputs.
+ * The fully decoded, typed shape of all 19 `action.yml` inputs.
  */
 export interface Inputs {
 	readonly biomeVersion: Option.Option<string>;
@@ -62,6 +63,15 @@ export interface Inputs {
 	readonly turboS3SessionToken: Option.Option<Redacted.Redacted<string>>;
 	readonly turboS3Prefix: Option.Option<string>;
 	readonly installDeps: boolean;
+	/**
+	 * Whether the dependency install skips lifecycle scripts.
+	 *
+	 * @remarks
+	 * Inert unless {@link Inputs.installDeps} is `true`: there is no install to
+	 * strip scripts from otherwise. Inert for deno too, which has no install step
+	 * at all.
+	 */
+	readonly ignoreScripts: boolean;
 	readonly bats: ToolMode;
 	readonly kcov: ToolMode;
 	readonly cacheBust: Option.Option<string>;
@@ -70,7 +80,7 @@ export interface Inputs {
 }
 
 /**
- * Decodes all 18 `action.yml` inputs into a typed {@link Inputs} value, via
+ * Decodes all 19 `action.yml` inputs into a typed {@link Inputs} value, via
  * `ActionInput` accessors so `INPUT_` mangling and empty-string-is-absent
  * semantics stay owned by `@effected/github-actions`, not reimplemented here.
  */
@@ -88,6 +98,7 @@ export const loadInputs: Config.Config<Inputs> = Config.all({
 	turboS3SessionToken: Config.option(ActionInput.redacted("turbo-s3-session-token")),
 	turboS3Prefix: Config.option(ActionInput.string("turbo-s3-prefix")),
 	installDeps: ActionInput.boolean("install-deps").pipe(Config.withDefault(true)),
+	ignoreScripts: ActionInput.boolean("ignore-scripts").pipe(Config.withDefault(false)),
 	bats: ActionInput.string("bats").pipe(Config.withDefault("auto")),
 	kcov: ActionInput.string("kcov").pipe(Config.withDefault("auto")),
 	cacheBust: Config.option(ActionInput.string("cache-bust")),

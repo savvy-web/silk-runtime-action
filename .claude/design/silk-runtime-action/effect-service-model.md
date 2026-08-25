@@ -84,7 +84,7 @@ A frozen contract is sometimes wider than the implementation needs. `loadConfig`
 | `turbo-cache/handler.ts` | `BlobStore` |
 | `post.ts` | `ActionCache`, `ActionState` |
 
-`ActionRuntime.layer` (composed by `Action.run`) provides `ActionEnvironment`, `ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient` and `NodeServices`. `MainLive` adds `ActionCache`, `PackageManagerInstaller` and `ToolInstaller`; `PostLive` adds `ActionCache` alone.
+`ActionRuntime.layer` (composed by `Action.run`) provides `ActionEnvironment`, `ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient` and `NodeServices`. `MainLive` adds `ActionCache`, `PackageManagerInstaller`, `ToolInstaller` and `WorkspaceDiscovery` (over a provided `WorkspaceRoot`, which `restoreCache` uses to enumerate the workspace's `node_modules` directories); `PostLive` adds `ActionCache` alone.
 
 ### Detached worker runtime
 
@@ -100,6 +100,7 @@ export const loadInputs: Config.Config<Inputs> = Config.all({
   turboCache: ActionInput.string("turbo-cache").pipe(Config.withDefault("auto")),
   turboToken: Config.option(ActionInput.redacted("turbo-token")),
   installDeps: ActionInput.boolean("install-deps").pipe(Config.withDefault(true)),
+  ignoreScripts: ActionInput.boolean("ignore-scripts").pipe(Config.withDefault(false)),
   additionalLockfiles: ActionInput.lines("additional-lockfiles").pipe(Config.withDefault([])),
   // …
 }).pipe(
@@ -218,9 +219,11 @@ That inverts the hazard. The local interfaces had to be satisfied in full, so th
 
 ```ts
 // src/layers/app.ts
-export const MainLive = Layer.mergeAll(ActionCache.layer, PackageManagerInstaller.layer).pipe(
-  Layer.provideMerge(ToolInstaller.layer),
-);
+export const MainLive = Layer.mergeAll(
+  ActionCache.layer,
+  PackageManagerInstaller.layer,
+  WorkspaceDiscovery.layer().pipe(Layer.provide(WorkspaceRoot.layer)),
+).pipe(Layer.provideMerge(ToolInstaller.layer));
 
 export const PostLive = ActionCache.layer;
 ```
