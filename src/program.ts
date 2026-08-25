@@ -21,8 +21,6 @@ import type { RuntimeName } from "./schema/domain.js";
 import { loadInputs } from "./schema/inputs.js";
 import type { OutputsModel } from "./schema/outputs.js";
 import { emitOutputs, initialOutputs } from "./schema/outputs.js";
-import type { CacheState } from "./state.js";
-import { isExactHit } from "./state.js";
 import { detectBats } from "./steps/detect-bats.js";
 import { detectBiome } from "./steps/detect-biome.js";
 import { detectTurbo } from "./steps/detect-turbo.js";
@@ -169,8 +167,11 @@ export const turboCacheOutputs = (
  * from a neighbouring key rather than its own. v1 published the same three
  * values from a hit enum; here they come off `restoredKey` directly.
  */
-const cacheHit = (state: CacheState): OutputsModel["cacheHit"] =>
-	Option.isNone(state.restoredKey) ? "false" : isExactHit(state) ? "true" : "partial";
+const cacheHit = (state: {
+	readonly primaryKey: string;
+	readonly restoredKey: Option.Option<string>;
+}): OutputsModel["cacheHit"] =>
+	Option.isNone(state.restoredKey) ? "false" : state.restoredKey.value === state.primaryKey ? "true" : "partial";
 
 export const program = Effect.gen(function* () {
 	const logger = yield* ActionLogger;
@@ -238,7 +239,9 @@ export const program = Effect.gen(function* () {
 	// skipped install as done (oracle 44, quirk 52).
 	const dependencies = yield* logger.group(
 		"Install dependencies",
-		installDependencies(activated, inputs.installDeps, installPathPrepends(activated, runtimes)),
+		installDependencies(activated, inputs.installDeps, installPathPrepends(activated, runtimes), {
+			ignoreScripts: inputs.ignoreScripts,
+		}),
 	);
 	// Biome is optional, so a failed install degrades to a warning and the run
 	// carries on (oracle 29) — a lint tool a later step may or may not invoke is
@@ -306,9 +309,14 @@ export const program = Effect.gen(function* () {
 		kcovCacheHit: Option.match(kcov, { onNone: () => false, onSome: (installed) => installed.cacheHit }),
 		turboEnabled: turbo.enabled,
 		...turboCacheOutputs(turboCache),
-		cacheHit: cacheHit(cache),
-		lockfiles: cache.lockfiles.join(","),
-		cachePaths: cache.paths.join(","),
+		cacheHit: cacheHit(cache.workspace),
+		storeCacheHit: cacheHit(cache.store),
+		lockfiles: cache.workspace.lockfiles.join(","),
+		// Both archives' paths, workspace first. The output is documented as the
+		// set this run restores, and after the split that is two entries — a
+		// consumer reading it back to see whether their store was covered would
+		// otherwise find it simply missing.
+		cachePaths: [...cache.workspace.paths, ...cache.store.paths].join(","),
 	};
 
 	yield* emitOutputs(outputs);
@@ -328,7 +336,7 @@ export const program = Effect.gen(function* () {
 		// Requested-but-failed is what the panel's `unavailable` cell reports, and
 		// the decision is the only thing that can tell it apart from never asked.
 		kcovRequested: batsDecision.installKcov,
-		cache,
+		cache: cache.workspace,
 		turboCache,
 		dependenciesInstalled: dependencies.ran,
 	});

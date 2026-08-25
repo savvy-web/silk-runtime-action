@@ -13,7 +13,7 @@ import {
 import { Effect, Layer, Logger, Option, References } from "effect";
 
 import { makePost, post } from "../../src/post.js";
-import { CacheState, KcovCacheState, STATE_KEYS, TurboServerState } from "../../src/state.js";
+import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState } from "../../src/state.js";
 
 /**
  * `makePost` over a seam that stubs `reap` and nothing else.
@@ -138,6 +138,20 @@ const missed = CacheState.make({
 	lockfiles: ["/home/runner/work/repo/repo/pnpm-lock.yaml"],
 });
 
+/** What `main` saves for the store after a miss. */
+const missedStore = StoreCacheState.make({
+	paths: ["/home/runner/.local/share/pnpm/store"],
+	primaryKey: "store-linux-x64-aaaaaaaa-cccccccc",
+	restoredKey: Option.none(),
+});
+
+/** An `ActionState` serving `store` under the store-cache key, and nothing else. */
+const stateWithStore = (store: Option.Option<StoreCacheState>): Layer.Layer<ActionState> =>
+	ActionState.layerTest({
+		getOptional: ((key: string) =>
+			Effect.succeed(key === STATE_KEYS.storeCache ? store : Option.none())) as ActionState["Service"]["getOptional"],
+	});
+
 /** What `main` saves after a kcov build, on a miss (no restore-key hit at all). */
 const missedKcov = KcovCacheState.make({
 	paths: ["/opt/hostedtoolcache/kcov/43/x64"],
@@ -146,13 +160,104 @@ const missedKcov = KcovCacheState.make({
 });
 
 describe("post", () => {
-	it.effect("reads all three cross-phase state keys, the server first", () =>
+	it.effect("reads all four cross-phase state keys, the server first", () =>
 		Effect.gen(function* () {
 			const read: Array<string> = [];
 			yield* post.pipe(Effect.provide(makeLayer(read)));
 			// Teardown precedes every branch that can return early (oracle 35): a
 			// detached child outliving the job is worse than an unsaved cache.
-			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.kcovCache]);
+			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.storeCache, STATE_KEYS.kcovCache]);
+		}),
+	);
+
+	it.effect("saves the store under its own key", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const exit = yield* runPost({ state: stateWithStore(Option.some(missedStore)), cache: cacheTest(saves) });
+
+			expect(exit._tag).toBe("Success");
+			expect(saves).toEqual([{ paths: missedStore.paths, key: missedStore.primaryKey }]);
+		}),
+	);
+
+	it.effect("saves the store under its primary key after a rung hit, so the entry tops up", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			// The store's one rung drops the lockfile digest, so a run whose
+			// lockfile changed restores the *previous* store and must archive the
+			// union under its own new key. Reading every `some` as "already cached"
+			// would freeze the store at whatever the first run downloaded.
+			const rung = StoreCacheState.make({
+				...missedStore,
+				restoredKey: Option.some("store-linux-x64-aaaaaaaa-older"),
+			});
+			yield* runPost({ state: stateWithStore(Option.some(rung)), cache: cacheTest(saves) });
+
+			expect(saves).toEqual([{ paths: rung.paths, key: rung.primaryKey }]);
+		}),
+	);
+
+	it.effect("skips the store save after an exact hit", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const exact = StoreCacheState.make({ ...missedStore, restoredKey: Option.some(missedStore.primaryKey) });
+			// Every `ActionCache` member is unstubbed, so a save would die.
+			const exit = yield* runPost({
+				state: stateWithStore(Option.some(exact)),
+				cache: ActionCache.layerTest({}),
+				logs,
+			});
+
+			expect(exit._tag).toBe("Success");
+			expect(logs.join("\n")).toContain("Store cache was an exact hit");
+		}),
+	);
+
+	it.effect("skips the store save when deno left no store to archive", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const empty = StoreCacheState.make({ ...missedStore, paths: [] });
+			const exit = yield* runPost({
+				state: stateWithStore(Option.some(empty)),
+				cache: ActionCache.layerTest({}),
+				logs,
+			});
+
+			expect(exit._tag).toBe("Success");
+			expect(logs.join("\n")).toContain("No store cache paths");
+		}),
+	);
+
+	it.effect("keeps saving the workspace archive when the store save fails", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			// Three independent jobs, three independent failures: a store that the
+			// runner would not take must not cost the workspace archive its turn.
+			const both: Layer.Layer<ActionState> = ActionState.layerTest({
+				getOptional: ((key: string) =>
+					Effect.succeed(
+						key === STATE_KEYS.cache
+							? Option.some(missed)
+							: key === STATE_KEYS.storeCache
+								? Option.some(missedStore)
+								: Option.none(),
+					)) as ActionState["Service"]["getOptional"],
+			});
+			const exit = yield* runPost({
+				state: both,
+				cache: ActionCache.layerTest({
+					save: (paths, key) => {
+						const named = typeof key === "string" ? key : key.key;
+						saves.push({ paths, key: named });
+						return named.startsWith("store-")
+							? Effect.fail(new ActionCacheError({ reason: "unreachable", key: named }))
+							: Effect.void;
+					},
+				}),
+			});
+
+			expect(exit._tag).toBe("Success");
+			expect(saves.map((save) => save.key)).toEqual([missed.primaryKey, missedStore.primaryKey]);
 		}),
 	);
 
@@ -249,7 +354,7 @@ describe("post", () => {
 			);
 
 			expect(exit._tag).toBe("Success");
-			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.kcovCache]);
+			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.storeCache, STATE_KEYS.kcovCache]);
 		}),
 	);
 

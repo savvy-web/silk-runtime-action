@@ -142,6 +142,7 @@ describe("emitOutputs", () => {
 				turboCacheBackend: "s3",
 				turboCachePort: "sentinel-7",
 				cacheHit: "partial",
+				storeCacheHit: "true",
 				lockfiles: "sentinel-8",
 				cachePaths: "sentinel-9",
 			});
@@ -167,6 +168,7 @@ describe("emitOutputs", () => {
 				"turbo-cache-backend": "s3",
 				"turbo-cache-port": "sentinel-7",
 				"cache-hit": "partial",
+				"store-cache-hit": "true",
 				lockfiles: "sentinel-8",
 				"cache-paths": "sentinel-9",
 			});

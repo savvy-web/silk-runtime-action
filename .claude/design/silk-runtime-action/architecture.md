@@ -139,9 +139,11 @@ action.yml (node24 runtime)
 
 ```ts
 // src/layers/app.ts
-export const MainLive = Layer.mergeAll(ActionCache.layer, PackageManagerInstaller.layer).pipe(
-  Layer.provideMerge(ToolInstaller.layer),
-);
+export const MainLive = Layer.mergeAll(
+  ActionCache.layer,
+  PackageManagerInstaller.layer,
+  WorkspaceDiscovery.layer().pipe(Layer.provide(WorkspaceRoot.layer)),
+).pipe(Layer.provideMerge(ToolInstaller.layer));
 
 export const PostLive = ActionCache.layer;
 ```

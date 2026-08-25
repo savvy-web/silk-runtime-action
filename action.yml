@@ -56,6 +56,10 @@ inputs:
     description: Whether to install dependencies (true | false). Set to false to skip dependency installation.
     required: false
     default: "true"
+  ignore-scripts:
+    description: Skip dependency lifecycle scripts during the install (true | false). Passes --ignore-scripts to npm/pnpm/bun and --mode=skip-build to yarn Berry. No effect when install-deps is false, or for deno.
+    required: false
+    default: "false"
   bats:
     description: Provision the BATS toolchain — bats-core, bats-support, bats-assert, bats-file, bats-mock (auto | true | false). auto installs when a *.bats file or a vitest-bats dependency is present.
     required: false
@@ -117,6 +121,8 @@ outputs:
     description: Local port the embedded turbo cache server bound to (empty when not started)
   cache-hit:
     description: Whether dependencies were restored from cache (true | partial | false)
+  store-cache-hit:
+    description: Whether the package manager's global store was restored from cache (true | partial | false). Keyed independently of cache-hit.
   lockfiles:
     description: Comma-separated list of detected lockfiles used for cache key generation (e.g., 'pnpm-lock.yaml,deno.lock')
   cache-paths:

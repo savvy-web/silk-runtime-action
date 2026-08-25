@@ -1,20 +1,24 @@
 import { homedir } from "node:os";
 import type { ActionEnvironmentShape } from "@effected/github-actions";
 import { ActionCache, ActionEnvironment, ActionState, CacheKey } from "@effected/github-actions";
+import { WorkspaceDiscovery } from "@effected/workspaces";
 import type { FileSystem, Path } from "effect";
 import { Data, Effect, Option } from "effect";
 
-import type { RuntimeConfig } from "../schema/domain.js";
+import type { PackageManagerName, RuntimeConfig } from "../schema/domain.js";
 import type { Inputs } from "../schema/inputs.js";
-import { CacheState, STATE_KEYS } from "../state.js";
+import { CacheState, STATE_KEYS, StoreCacheState } from "../state.js";
 import type { ToolEntry } from "./cache-config.js";
 import {
 	RESTORE_DEPTHS,
+	STORE_RESTORE_DEPTHS,
 	activePackageManagers,
 	cachePaths,
 	defaultToolCacheBase,
 	keySegments,
 	lockfilePatterns,
+	storeCachePaths,
+	storeKeySegments,
 } from "./cache-config.js";
 
 /**
@@ -119,6 +123,48 @@ const absorb = <A, B, E, R>(
 		),
 	);
 
+/** Both cache entries this step restores, and the state each was persisted as. */
+export interface RestoredCaches {
+	/** The workspace archive: linked trees, tool cache, turbo's local cache. */
+	readonly workspace: CacheState;
+	/** The package managers' global stores. */
+	readonly store: StoreCacheState;
+}
+
+/**
+ * The workspace's membership as root-relative POSIX directories, root first.
+ *
+ * @remarks
+ * `WorkspaceDiscovery.listPackages` already answers root-first and sorted, and
+ * already reports each member's `relativePath` as POSIX with `"."` for the
+ * root — which is exactly the shape {@link cachePaths} wants, so this is a
+ * projection rather than a computation.
+ *
+ * A discovery failure — or an empty answer, which cannot be truthful — degrades
+ * to `["."]` rather than failing the step or
+ * falling back to a `**\/node_modules` glob. Both alternatives are worse in the
+ * same direction: a repository whose layout the kit cannot parse is precisely
+ * the one where a wildcard would sweep up fixture and `dist` trees, and a cache
+ * is never worth failing a run over. Root-only archives less than it might and
+ * nothing it should not; `additional-cache-paths` is the escape hatch, and the
+ * warning names the reason so a consumer can find it.
+ */
+const packageDirs = (): Effect.Effect<ReadonlyArray<string>, never, WorkspaceDiscovery> =>
+	Effect.gen(function* () {
+		const discovery = yield* WorkspaceDiscovery;
+		const packages = yield* discovery.listPackages();
+		// An empty answer is not a workspace with no members — every workspace has
+		// at least its root package — so it is read the same way a failure is.
+		return packages.length === 0 ? ["."] : packages.map((workspacePackage) => workspacePackage.relativePath);
+	}).pipe(
+		Effect.catch((cause) =>
+			Effect.logWarning(
+				`Workspace discovery failed (${cause._tag}): ${cause.message}. Caching the root node_modules only; ` +
+					"name any others with additional-cache-paths.",
+			).pipe(Effect.as<ReadonlyArray<string>>(["."])),
+		),
+	);
+
 /**
  * The one-line verdict the run reports, in v1's words.
  *
@@ -167,9 +213,9 @@ const cacheLine = (restoredKey: Option.Option<string>, primaryKey: string, lockf
 export const restoreCache = (
 	args: RestoreCacheArgs,
 ): Effect.Effect<
-	CacheState,
+	RestoredCaches,
 	CacheError,
-	ActionCache | ActionState | FileSystem.FileSystem | Path.Path | ActionEnvironment
+	ActionCache | ActionState | FileSystem.FileSystem | Path.Path | ActionEnvironment | WorkspaceDiscovery
 > =>
 	Effect.gen(function* () {
 		const cache = yield* ActionCache;
@@ -208,12 +254,16 @@ export const restoreCache = (
 			Option.none<string>(),
 		);
 
+		const dirs = yield* packageDirs();
+		yield* Effect.logDebug(`Workspace packages (${dirs.length}): ${dirs.join(", ")}`);
+
 		const paths = cachePaths({
 			packageManagers,
 			tools,
 			toolCacheBase,
 			additional: args.inputs.additionalCachePaths,
 			turbo: args.turbo.enabled,
+			packageDirs: dirs,
 			platform: process.platform,
 			home: homedir(),
 		});
@@ -226,6 +276,7 @@ export const restoreCache = (
 				branch,
 				lockfileHash,
 				cacheBust: args.inputs.cacheBust,
+				install: { deps: args.inputs.installDeps, ignoreScripts: args.inputs.ignoreScripts },
 			}),
 		);
 		// A cache bust removes the ladder entirely (oracle 15): the fixtures pair a
@@ -265,6 +316,95 @@ export const restoreCache = (
 			state.save(STATE_KEYS.cache, restored, CacheState),
 			"state",
 			(cause) => `Cache state could not be saved (${cause.reason}); the post phase will not save this run's cache`,
+			undefined,
+		);
+
+		const store = yield* restoreStore({
+			packageManagers,
+			packageManagerVersion: args.config.packageManager,
+			lockfileHash,
+			cacheBust: args.inputs.cacheBust,
+			busted,
+		});
+
+		return { workspace: restored, store };
+	});
+
+/** Everything {@link restoreStore} needs, already resolved by the caller. */
+interface RestoreStoreArgs {
+	readonly packageManagers: ReadonlyArray<PackageManagerName>;
+	/** The `devEngines` manager, the only one carrying a version. */
+	readonly packageManagerVersion: ToolEntry;
+	readonly lockfileHash: Option.Option<string>;
+	readonly cacheBust: Option.Option<string>;
+	readonly busted: boolean;
+}
+
+/**
+ * Restores the managers' global stores, as an entry of their own.
+ *
+ * @remarks
+ * Second, and after the workspace archive, because a store restore can only
+ * make the install that follows cheaper — never change what it resolves — so
+ * nothing above it depends on the outcome.
+ *
+ * The version the key carries is the `devEngines` package manager's. bun and
+ * deno are their own managers and reach {@link activePackageManagers} without
+ * one, so they contribute their name at the version this run pinned when they
+ * *are* the `devEngines` manager, and at `"runtime"` otherwise — a placeholder
+ * rather than an empty segment, because what matters is only that two runs
+ * pinning different managers do not share a store key.
+ *
+ * Degradation is the whole step's rule, applied again: a store that cannot be
+ * restored costs a download, and the state is written either way so the post
+ * phase archives what this run did fetch.
+ */
+const restoreStore = (args: RestoreStoreArgs): Effect.Effect<StoreCacheState, never, ActionCache | ActionState> =>
+	Effect.gen(function* () {
+		const cache = yield* ActionCache;
+		const state = yield* ActionState;
+
+		const paths = storeCachePaths(args.packageManagers, process.platform, homedir());
+		const segments = CacheKey.of(
+			...storeKeySegments({
+				platform: process.platform,
+				arch: process.arch,
+				packageManagers: args.packageManagers.map((name) => ({
+					name,
+					version: name === args.packageManagerVersion.name ? args.packageManagerVersion.version : "runtime",
+				})),
+				lockfileHash: args.lockfileHash,
+				cacheBust: args.cacheBust,
+			}),
+		);
+		const key = args.busted ? segments.withoutRestoreKeys() : segments.withRestoreDepths(STORE_RESTORE_DEPTHS);
+
+		yield* Effect.logDebug(`Store cache primary key: ${key.key}`);
+		yield* Effect.logDebug(`Store cache paths (${paths.length}): ${paths.join(", ") || "(none)"}`);
+
+		const restoredKey =
+			paths.length === 0
+				? Option.none<string>()
+				: yield* absorb(
+						cache.restore(paths, key),
+						"restore",
+						(cause) => `Failed to restore store cache with key ${key.key} (${cause.reason}): ${cause.message}`,
+						Option.none<string>(),
+					);
+
+		yield* Effect.logInfo(
+			Option.isNone(restoredKey)
+				? "Store cache: miss"
+				: restoredKey.value === key.key
+					? "Store cache: exact hit"
+					: "Store cache: partial hit",
+		);
+
+		const restored = StoreCacheState.make({ paths, primaryKey: key.key, restoredKey });
+		yield* absorb(
+			state.save(STATE_KEYS.storeCache, restored, StoreCacheState),
+			"state",
+			(cause) => `Store cache state could not be saved (${cause.reason}); the post phase will not save the store`,
 			undefined,
 		);
 		return restored;

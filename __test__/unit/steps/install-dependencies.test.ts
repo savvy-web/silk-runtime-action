@@ -151,11 +151,13 @@ const run = (
 		readonly enabled?: boolean;
 		readonly prepends?: ReadonlyArray<string>;
 		readonly platform?: string;
+		readonly ignoreScripts?: boolean;
 	} = {},
 ) =>
-	installDependencies(pm, options.enabled ?? true, options.prepends ?? [], options.platform ?? "linux").pipe(
-		Effect.provide(layerFor(log, options)),
-	);
+	installDependencies(pm, options.enabled ?? true, options.prepends ?? [], {
+		ignoreScripts: options.ignoreScripts === true,
+		platform: options.platform ?? "linux",
+	}).pipe(Effect.provide(layerFor(log, options)));
 
 describe("installDependencies", () => {
 	it.effect("runs `npm ci` when a package-lock.json is present", () =>
@@ -197,6 +199,93 @@ describe("installDependencies", () => {
 			expect(log.spawns[0]?.args).toEqual(["install"]);
 		}),
 	);
+
+	describe("ignore-scripts", () => {
+		it.effect("appends --ignore-scripts to npm's frozen `ci`", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* run(log, activated("npm"), { present: ["package-lock.json"], ignoreScripts: true });
+
+				expect(log.spawns[0]?.args).toEqual(["ci", "--ignore-scripts"]);
+			}),
+		);
+
+		it.effect("appends --ignore-scripts to pnpm's frozen install", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"], ignoreScripts: true });
+
+				expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile", "--ignore-scripts"]);
+			}),
+		);
+
+		it.effect("appends --ignore-scripts to a lockfile-less pnpm install", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* run(log, activated("pnpm"), { ignoreScripts: true });
+
+				expect(log.spawns[0]?.args).toEqual(["install", "--ignore-scripts"]);
+			}),
+		);
+
+		it.effect("appends --ignore-scripts to bun's frozen install", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* run(log, activated("bun"), { present: ["bun.lock"], ignoreScripts: true });
+
+				expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile", "--ignore-scripts"]);
+			}),
+		);
+
+		it.effect("appends --mode=skip-build for yarn Berry, which has no --ignore-scripts", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				const berry: ActivatedPackageManager = { ...activated("yarn"), version: "4.6.0" };
+				yield* run(log, berry, { present: ["yarn.lock"], ignoreScripts: true });
+
+				expect(log.spawns[0]?.args).toEqual(["install", "--immutable", "--mode=skip-build"]);
+			}),
+		);
+
+		it.effect("appends --ignore-scripts for yarn Classic, which has no --mode", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				const classic: ActivatedPackageManager = { ...activated("yarn"), version: "1.22.22" };
+				yield* run(log, classic, { present: ["yarn.lock"], ignoreScripts: true });
+
+				expect(log.spawns[0]?.args).toEqual(["install", "--immutable", "--ignore-scripts"]);
+			}),
+		);
+
+		it.effect("changes nothing when it is off", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"], ignoreScripts: false });
+
+				expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
+			}),
+		);
+
+		it.effect("spawns nothing for deno, which has no install to strip scripts from", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				const result = yield* run(log, activated("deno"), { ignoreScripts: true });
+
+				expect(log.spawns).toEqual([]);
+				expect(result).toEqual({ ran: false });
+			}),
+		);
+
+		it.effect("spawns nothing when install-deps is false", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				const result = yield* run(log, activated("pnpm"), { enabled: false, ignoreScripts: true });
+
+				expect(log.spawns).toEqual([]);
+				expect(result).toEqual({ ran: false });
+			}),
+		);
+	});
 
 	it.effect("runs `yarn install --immutable` when a yarn.lock is present", () =>
 		Effect.gen(function* () {

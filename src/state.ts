@@ -8,6 +8,7 @@ import { Option, Schema } from "effect";
  */
 export const STATE_KEYS = {
 	cache: "silk-runtime-cache",
+	storeCache: "silk-runtime-store",
 	turboServer: "silk-runtime-turbo-server",
 	kcovCache: "silk-runtime-kcov",
 } as const;
@@ -50,6 +51,34 @@ export class CacheState extends Schema.Class<CacheState>("CacheState")({
  */
 export const isExactHit = (state: CacheState): boolean =>
 	Option.isSome(state.restoredKey) && state.restoredKey.value === state.primaryKey;
+
+/**
+ * Package-manager store cache state persisted from `main` to `post`.
+ *
+ * @remarks
+ * A separate entry from {@link CacheState}, on the same reasoning that keeps
+ * {@link KcovCacheState} separate: the two are keyed on different things and
+ * must be able to hit and miss independently. The workspace archive is scoped
+ * to a branch and an exact lockfile digest because a linked `node_modules` is
+ * specific to both; the store is scoped to neither, because a content-
+ * addressable download is not. Sharing one entry is what made a branch cut
+ * throw away the store along with the trees, which is the cost this split
+ * exists to remove.
+ *
+ * The three fields are {@link KcovCacheState}'s, for the same reasons — in
+ * particular `restoredKey` is `Schema.OptionFromNullOr`, because state crosses
+ * the phase boundary as JSON and `Schema.Option` encodes to a form that does
+ * not decode back.
+ *
+ * There is no `lockfiles` here: the workspace state already carries the
+ * resolved list, both keys hash the same digest from it, and a second copy in
+ * `GITHUB_STATE` would be two things that can disagree.
+ */
+export class StoreCacheState extends Schema.Class<StoreCacheState>("StoreCacheState")({
+	paths: Schema.Array(Schema.String),
+	primaryKey: Schema.String,
+	restoredKey: Schema.OptionFromNullOr(Schema.String),
+}) {}
 
 /**
  * Embedded turbo remote-cache server state persisted from `main` to `post` so

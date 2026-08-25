@@ -1,10 +1,10 @@
 /**
  * Post-action entry point.
  *
- * Runs after `main`, even when `main` failed. It reads the three pieces of
- * cross-phase state `main` may have saved — the dependency cache state, the
- * kcov cache state, and the embedded turbo cache server state — and acts on
- * each only when present.
+ * Runs after `main`, even when `main` failed. It reads the four pieces of
+ * cross-phase state `main` may have saved — the workspace cache state, the
+ * package-manager store cache state, the kcov cache state, and the embedded
+ * turbo cache server state — and acts on each only when present.
  *
  * The detached-server reap runs **first and unconditionally**, ahead of every
  * cache branch that can return early (oracle 35): a leaked cache server outlives
@@ -21,7 +21,7 @@ import { Action, ActionCache, ActionState, DetachedProcess } from "@effected/git
 import { Effect, Option } from "effect";
 
 import { PostLive } from "./layers/app.js";
-import { CacheState, KcovCacheState, STATE_KEYS, TurboServerState, isExactHit } from "./state.js";
+import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState, isExactHit } from "./state.js";
 import { CacheError } from "./steps/restore-cache.js";
 
 /**
@@ -73,6 +73,55 @@ const saveDependencyCache = (saved: CacheState) =>
 			),
 		);
 	});
+
+/**
+ * Archives the package managers' global stores.
+ *
+ * @remarks
+ * A third independent branch, contained the way the other two are: three jobs,
+ * three failures, and none of them may cost another its work.
+ *
+ * The skip rule is the same `some(primaryKey)` comparison {@link saveKcovCache}
+ * makes, and it carries the same weight for a different reason. The store's
+ * ladder has exactly one rung, which drops the lockfile digest — so a run whose
+ * lockfile changed hits that rung, restores the *previous* store, and must go on
+ * to archive the union under its own new key. Reading every `some` as "already
+ * cached" would leave the store frozen at whatever the first run downloaded,
+ * which is the shape of the bug this whole split addresses.
+ *
+ * An empty path set means no manager had a store worth archiving — deno alone
+ * is the case — and is a skip rather than an error.
+ */
+const saveStoreCache = (saved: StoreCacheState) =>
+	Effect.gen(function* () {
+		if (Option.isSome(saved.restoredKey) && saved.restoredKey.value === saved.primaryKey) {
+			yield* Effect.logInfo("Store cache was an exact hit — skipping save");
+			return;
+		}
+		if (saved.paths.length === 0) {
+			yield* Effect.logInfo("No store cache paths — skipping save");
+			return;
+		}
+
+		const cache = yield* ActionCache;
+		yield* Effect.logInfo(`Saving store cache: key=${saved.primaryKey}, paths (${saved.paths.length})`);
+		yield* cache.save(saved.paths, saved.primaryKey).pipe(
+			Effect.tap(() => Effect.logInfo(`Store cache saved: ${saved.primaryKey}`)),
+			Effect.catch((cause) =>
+				Effect.logWarning(
+					new CacheError({
+						reason: "save",
+						message: `Failed to save store cache with key ${saved.primaryKey} (${cause.reason}): ${cause.message}`,
+						cause,
+					}).message,
+				),
+			),
+		);
+	}).pipe(
+		Effect.catchDefect((defect) =>
+			Effect.logWarning(`Store cache save failed: ${defect instanceof Error ? defect.message : String(defect)}`),
+		),
+	);
 
 /**
  * Archives the kcov tree this run built.
@@ -250,6 +299,20 @@ export const makePost = (
 		yield* Option.match(cache, {
 			onNone: () => Effect.logDebug("No dependency cache state was saved by main; nothing to save"),
 			onSome: saveDependencyCache,
+		});
+
+		const storeCache = yield* state
+			.getOptional(STATE_KEYS.storeCache, StoreCacheState)
+			.pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(`Store cache state could not be read (${error.reason}); nothing to save`).pipe(
+						Effect.as(Option.none<StoreCacheState>()),
+					),
+				),
+			);
+		yield* Option.match(storeCache, {
+			onNone: () => Effect.logDebug("No store cache state was saved by main; nothing to save"),
+			onSome: saveStoreCache,
 		});
 
 		const kcovCache = yield* state

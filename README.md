@@ -79,6 +79,7 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `turbo-s3-session-token` | S3 session token, for temporary credentials. | `""` |
 | `turbo-s3-prefix` | Key prefix within the S3 bucket. | `""` |
 | `install-deps` | Whether to install dependencies (`true` \| `false`). | `"true"` |
+| `ignore-scripts` | Skip dependency lifecycle scripts during the install (`true` \| `false`). Passes `--ignore-scripts` to npm/pnpm/bun and `--mode=skip-build` to yarn Berry. No effect when `install-deps` is `false`, or for deno. | `"false"` |
 | `bats` | Provision the BATS toolchain — bats-core, bats-support, bats-assert, bats-file, bats-mock (`auto` \| `true` \| `false`). `auto` installs when a `*.bats` file or a `vitest-bats` dependency is present. | `"auto"` |
 | `kcov` | Provision kcov for shell-script coverage (`auto` \| `true` \| `false`). `auto` follows the bats decision. Built from source and cached; never installed when bats is off. | `"auto"` |
 | `cache-bust` | String appended to the cache key to force a miss. `false` or empty disables it; any other value busts. **Testing only.** | `"false"` |
@@ -115,9 +116,10 @@ tools are installed and validated on Linux and macOS.
 | `turbo-enabled` | Whether `turbo.json` was detected (`true` \| `false`) |
 | `turbo-cache-backend` | Active turbo cache backend (`github` \| `s3` \| `remote` \| `none`) |
 | `turbo-cache-port` | Local port the embedded turbo cache server bound to, or empty when it did not start |
-| `cache-hit` | Dependency cache status (`true` \| `partial` \| `false`) |
+| `cache-hit` | Workspace cache status (`true` \| `partial` \| `false`) |
+| `store-cache-hit` | Package-manager store cache status (`true` \| `partial` \| `false`). Keyed independently of `cache-hit` |
 | `lockfiles` | Comma-separated list of detected lockfiles used for the cache key |
-| `cache-paths` | Comma-separated list of paths that were cached and restored |
+| `cache-paths` | Comma-separated list of paths that were cached and restored, across both entries |
 
 `biome-enabled` reflects a **successful install**, not detection. A Biome that was detected but could not be fetched degrades to a warning and reports `false`.
 
@@ -227,13 +229,31 @@ Yarn Classic (1.x) and Berry (2.x and later) are both supported. Corepack is not
 
 ## Dependency caching
 
-Cache restore runs before every install, so a hit is what makes the installs after it cheap. The key is built from the runner platform and architecture, a digest of every installed tool version (runtimes, package manager and Biome), a digest of the branch name, and a digest of the matched lockfiles. Any of those changing produces a new key.
+The run keeps **two** cache entries, because the things they hold go stale for different reasons.
 
-Which lockfiles feed the key depends on which package managers this run actually uses — a repository declaring pnpm but running only a Bun runtime keys on Bun's lockfiles, because pnpm never runs. Files under `node_modules`, `.git` and test-fixture directories are excluded. Add your own patterns with `additional-lockfiles`.
+### The workspace archive
 
-Two restore keys back up the primary one: the first drops the lockfile digest and matches an earlier cache for the same tool versions on this branch, the second drops the branch as well and reaches across branches. Either reports `partial` on the `cache-hit` output.
+This is what a lockfile change invalidates: the `node_modules` each workspace package was linked into, yarn's PnP directories, the tool-cache directory of every runtime and Biome version installed, and turbo's local artifact cache. Add more with `additional-cache-paths`.
 
-Cached paths cover each active manager's global store, the workspace directories it populates (`**/node_modules`, and yarn's PnP directories), and the tool-cache directory of every runtime and Biome version installed. Add more with `additional-cache-paths`. The resolved list is reported on the `cache-paths` output, and the key and matched lockfiles appear in the job summary.
+The key is the runner platform and architecture, a digest of every installed tool version (runtimes, package manager and Biome), a digest of what the install is going to do (`install-deps` and `ignore-scripts`), a digest of the branch name, and a digest of the matched lockfiles. Any of those changing produces a new key. Two restore keys back it up: the first drops the lockfile digest and matches an earlier cache for the same tool versions on this branch, the second drops the branch as well and reaches across branches. Either reports `partial` on the `cache-hit` output.
+
+The `node_modules` directories come from the workspace's own membership, so only the packages your manager actually links are archived — not every `node_modules` that happens to exist under the checkout.
+
+### The package-manager store
+
+The global download cache — pnpm's store, npm's `_cacache`, yarn's and bun's caches — is archived separately, and reports on the `store-cache-hit` output.
+
+Its key holds only the platform, the architecture, the manager and its version, and the lockfile digest. There is no branch in it and no runtime version, because a store is content-addressable and append-only: another branch's store is as good as yours, and a package tarball does not change because Node did. Its one restore key drops the lockfile digest, which is what lets the entry top up — a changed lockfile restores the previous store, the install adds what is new, and the union is archived under the new key.
+
+Splitting the two is what keeps a branch cut, or a Node bump, from throwing away a download it did not need to.
+
+### Lockfiles
+
+Which lockfiles feed the key depends on which package managers this run actually uses — a repository declaring pnpm but running only a Bun runtime keys on Bun's lockfiles, because pnpm never runs.
+
+Every built-in lockfile name is matched **at the workspace root only**. All five managers write one lockfile at the root, and a workspace package's dependency change reaches the key through that file rather than beside it, so a deeper match is never a lockfile an install reads — what it reliably is instead is a test fixture. Add your own patterns, globs included, with `additional-lockfiles`; those still skip `node_modules`, `.git` and test-fixture directories.
+
+The resolved list is reported on the `lockfiles` output, both archives' paths on `cache-paths`, and the key and matched lockfiles appear in the job summary.
 
 ### Turbo build cache
 

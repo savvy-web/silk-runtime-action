@@ -61,6 +61,33 @@ const PLANS: Record<
 };
 
 /**
+ * The flag each manager spells "run the install, but none of the packages'
+ * lifecycle scripts as it goes".
+ *
+ * @remarks
+ * Three of the four agree on `--ignore-scripts` — npm, pnpm and bun all
+ * document it, and npm takes it on `ci` as well as `install`. yarn is the
+ * outlier and is the reason this is a function rather than a fifth column in
+ * {@link PLANS}: Berry (v2+) dropped `--ignore-scripts` in favour of the install
+ * *mode* `--mode=skip-build`, while Classic (v1) only ever knew
+ * `--ignore-scripts`. Nothing about the name `yarn` says which is in play, so
+ * the pinned `devEngines` version decides — the same split `cache-config`'s
+ * store table has to make, for the same reason.
+ *
+ * An unparseable major reads as Berry. `devEngines` versions are absolute, so
+ * that branch is unreachable in production; when it is reached the modern
+ * spelling is the better guess than a flag Berry rejects outright.
+ *
+ * deno has no row because it has no install: `installDependencies` returns
+ * before this is ever consulted.
+ */
+const ignoreScriptsArgs = (pm: ActivatedPackageManager): ReadonlyArray<string> => {
+	if (pm.name !== "yarn") return ["--ignore-scripts"];
+	const major = Number.parseInt(pm.version.split(".")[0] ?? "", 10);
+	return major === 1 ? ["--ignore-scripts"] : ["--mode=skip-build"];
+};
+
+/**
  * Whether any of `lockfiles` exists, with every probe failure read as absent.
  *
  * @remarks
@@ -142,8 +169,9 @@ const childEnv = (pathPrepends: ReadonlyArray<string>, platform: string): ChildP
  * Under `shell`, Node concatenates the command and its arguments into a single
  * `cmd.exe` command line rather than passing an argv, which is a quoting hazard
  * for anything containing a space or a shell metacharacter. It is not one here:
- * every argument comes from `PLANS`, which is a table of static flag literals —
- * no path, no version, nothing derived from an input.
+ * every argument comes from `PLANS` or {@link ignoreScriptsArgs}, both of which
+ * yield static flag literals — no path, no version, nothing derived from an
+ * input.
  */
 const spawnInstall = (
 	name: PackageManagerName,
@@ -192,6 +220,14 @@ const exitDetail = (
 	return `${name} ${args.join(" ")} exited with code ${exitCode}${stderr}`;
 };
 
+/** The install policy {@link installDependencies} runs under. */
+export interface InstallOptions {
+	/** Skip the packages' lifecycle scripts — the `ignore-scripts` input. */
+	readonly ignoreScripts?: boolean;
+	/** The host platform; defaults to `process.platform`. A test seam. */
+	readonly platform?: string;
+}
+
 /**
  * Runs the package manager's install command, when `enabled` is `true`.
  *
@@ -221,7 +257,14 @@ const exitDetail = (
  * `pm.binDir` is *not* read for this: the caller has already folded it in at the
  * head of the list.
  *
- * `platform` decides whether the manager is launched through a shell
+ * `options.ignoreScripts` appends {@link ignoreScriptsArgs} to whichever plan
+ * the lockfile probe selected, so the flag composes with the frozen/immutable
+ * decision rather than replacing it. It is inert for deno and for a disabled
+ * install, both of which return before the plan is read — which is what makes
+ * the input's "no effect unless `install-deps` is true" documented rule a
+ * property of the code rather than a note.
+ *
+ * `options.platform` decides whether the manager is launched through a shell
  * (`ChildEnv.needsShell`) and which delimiter joins the `PATH` prepends. It is
  * an argument with a `process.platform` default rather
  * than a read, mirroring `installRuntimes`' `host`: it is the seam that makes
@@ -232,7 +275,7 @@ export const installDependencies = (
 	pm: ActivatedPackageManager,
 	enabled: boolean,
 	pathPrepends: ReadonlyArray<string>,
-	platform: string = process.platform,
+	options: InstallOptions = {},
 ): Effect.Effect<
 	{ readonly ran: boolean },
 	InstallError,
@@ -250,7 +293,10 @@ export const installDependencies = (
 		const logger = yield* ActionLogger;
 		const plan = PLANS[pm.name];
 		const locked = yield* anyLockfile(fs, plan.lockfiles);
-		const args = locked ? plan.locked : plan.unlocked;
+		const args = [
+			...(locked ? plan.locked : plan.unlocked),
+			...(options.ignoreScripts === true ? ignoreScriptsArgs(pm) : []),
+		];
 
 		// The buffer holds the echoed stderr rather than the install itself, whose
 		// stdout is inherited and never passes through the logger. Held so an
@@ -258,7 +304,7 @@ export const installDependencies = (
 		// and flushed on every exit path so a failing install still shows all of
 		// it — not just the tail the message carries.
 		const { exitCode, tail } = yield* logger
-			.withBuffer(pm.name, spawnInstall(pm.name, args, pathPrepends, platform))
+			.withBuffer(pm.name, spawnInstall(pm.name, args, pathPrepends, options.platform ?? process.platform))
 			.pipe(
 				Effect.catch((cause: PlatformError.PlatformError) =>
 					Effect.fail(
