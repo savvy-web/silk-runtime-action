@@ -1,5 +1,21 @@
 # @savvy-web/silk-runtime-action
 
+## 1.5.5
+
+### Dependencies
+
+| Dependency | Type | Action | From | To |
+| --- | --- | --- | --- | --- |
+| @effected/runtimes | dependency | updated | ^0.4.4 | ^0.4.5 |
+
+[#336][#336]
+
+### Thanks
+
+Thanks to [@savvy-web-bot](https://github.com/apps/savvy-web-bot) for their contributions!
+
+[#336]: https://github.com/savvy-web/silk-runtime-action/pull/336
+
 ## 1.5.4
 
 ### Dependencies
