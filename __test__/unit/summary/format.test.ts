@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { Option } from "effect";
 
 import { CacheState } from "../../../src/state.js";
@@ -25,7 +25,7 @@ const cacheState = (options: {
 
 describe("formatDetectLine", () => {
 	it("joins every detected fact with a middle dot", () => {
-		expect(
+		assert.strictEqual(
 			formatDetectLine({
 				runtimes: [{ name: "node", version: "26.3.1" }],
 				packageManager: { name: "pnpm", version: "11.8.0" },
@@ -33,11 +33,12 @@ describe("formatDetectLine", () => {
 				turbo: true,
 				bats: false,
 			}),
-		).toBe("node 26.3.1 · pnpm 11.8.0 · biome 2.4.16 · turbo");
+			"node 26.3.1 · pnpm 11.8.0 · biome 2.4.16 · turbo",
+		);
 	});
 
 	it("omits the biome and turbo parts when neither was detected", () => {
-		expect(
+		assert.strictEqual(
 			formatDetectLine({
 				runtimes: [{ name: "node", version: "26.3.1" }],
 				packageManager: { name: "pnpm", version: "11.8.0" },
@@ -45,11 +46,12 @@ describe("formatDetectLine", () => {
 				turbo: false,
 				bats: false,
 			}),
-		).toBe("node 26.3.1 · pnpm 11.8.0");
+			"node 26.3.1 · pnpm 11.8.0",
+		);
 	});
 
 	it("lists every runtime ahead of the package manager, in declaration order", () => {
-		expect(
+		assert.strictEqual(
 			formatDetectLine({
 				runtimes: [
 					{ name: "node", version: "24.11.0" },
@@ -60,7 +62,8 @@ describe("formatDetectLine", () => {
 				turbo: true,
 				bats: false,
 			}),
-		).toBe("node 24.11.0 · bun 1.3.3 · bun 1.3.3 · turbo");
+			"node 24.11.0 · bun 1.3.3 · bun 1.3.3 · turbo",
+		);
 	});
 
 	it("spells the tool name in lowercase, unlike the panel's row label", () => {
@@ -73,14 +76,14 @@ describe("formatDetectLine", () => {
 			turbo: false,
 			bats: false,
 		});
-		expect(line).toContain("biome 2.4.16");
-		expect(line).not.toContain("Biome");
+		assert.include(line, "biome 2.4.16");
+		assert.notInclude(line, "Biome");
 	});
 });
 
 describe("formatDetectLine with bats", () => {
 	it("appends bats after turbo as a bare word", () => {
-		expect(
+		assert.strictEqual(
 			formatDetectLine({
 				runtimes: [{ name: "node", version: "24.11.0" }],
 				packageManager: { name: "pnpm", version: "10.20.0" },
@@ -88,11 +91,12 @@ describe("formatDetectLine with bats", () => {
 				turbo: true,
 				bats: true,
 			}),
-		).toBe("node 24.11.0 · pnpm 10.20.0 · turbo · bats");
+			"node 24.11.0 · pnpm 10.20.0 · turbo · bats",
+		);
 	});
 
 	it("omits bats when not detected", () => {
-		expect(
+		assert.strictEqual(
 			formatDetectLine({
 				runtimes: [{ name: "node", version: "24.11.0" }],
 				packageManager: { name: "pnpm", version: "10.20.0" },
@@ -100,54 +104,55 @@ describe("formatDetectLine with bats", () => {
 				turbo: false,
 				bats: false,
 			}),
-		).toBe("node 24.11.0 · pnpm 10.20.0");
+			"node 24.11.0 · pnpm 10.20.0",
+		);
 	});
 });
 
 describe("kcovCell", () => {
 	it("reports a cache hit", () => {
-		expect(kcovCell({ _tag: "installed", version: "43", cacheHit: true })).toBe("43 · ✅ cached");
+		assert.strictEqual(kcovCell({ _tag: "installed", version: "43", cacheHit: true }), "43 · ✅ cached");
 	});
 
 	it("reports a build", () => {
-		expect(kcovCell({ _tag: "installed", version: "43", cacheHit: false })).toBe("43 · ⬜ built");
+		assert.strictEqual(kcovCell({ _tag: "installed", version: "43", cacheHit: false }), "43 · ⬜ built");
 	});
 
 	it("reports a requested-but-failed install rather than staying silent", () => {
-		expect(kcovCell({ _tag: "unavailable" })).toBe("⚠️ unavailable");
+		assert.strictEqual(kcovCell({ _tag: "unavailable" }), "⚠️ unavailable");
 	});
 });
 
 describe("formatTurboLine", () => {
 	it("reports no backend as disabled", () => {
-		expect(formatTurboLine("none", Option.none())).toBe("disabled");
+		assert.strictEqual(formatTurboLine("none", Option.none()), "disabled");
 	});
 
 	it("names Vercel for a passthrough", () => {
-		expect(formatTurboLine("remote", Option.none())).toBe("passthrough (Vercel)");
+		assert.strictEqual(formatTurboLine("remote", Option.none()), "passthrough (Vercel)");
 	});
 
 	it("names the embedded backend and the port it bound", () => {
-		expect(formatTurboLine("github", Option.some(41230))).toBe("github · server ready (:41230)");
-		expect(formatTurboLine("s3", Option.some(41230))).toBe("s3 · server ready (:41230)");
+		assert.strictEqual(formatTurboLine("github", Option.some(41230)), "github · server ready (:41230)");
+		assert.strictEqual(formatTurboLine("s3", Option.some(41230)), "s3 · server ready (:41230)");
 	});
 
 	it("drops the port when the embedded server bound none", () => {
-		expect(formatTurboLine("github", Option.none())).toBe("github · server ready");
+		assert.strictEqual(formatTurboLine("github", Option.none()), "github · server ready");
 	});
 });
 
 describe("cacheCell", () => {
 	it("marks a restore that landed on the key it asked for", () => {
-		expect(cacheCell(cacheState({ restoredKey: "silk-linux-x64-abc" }))).toBe("✅ exact hit");
+		assert.strictEqual(cacheCell(cacheState({ restoredKey: "silk-linux-x64-abc" })), "✅ exact hit");
 	});
 
 	it("marks a restore that landed on a fallback rung", () => {
-		expect(cacheCell(cacheState({ restoredKey: "silk-linux-x64" }))).toBe("♻️ partial hit");
+		assert.strictEqual(cacheCell(cacheState({ restoredKey: "silk-linux-x64" })), "♻️ partial hit");
 	});
 
 	it("marks a restore that landed on nothing", () => {
-		expect(cacheCell(cacheState({}))).toBe("⬜ miss");
+		assert.strictEqual(cacheCell(cacheState({})), "⬜ miss");
 	});
 });
 
@@ -168,7 +173,8 @@ describe("buildRuntimeSummary", () => {
 	} as const;
 
 	it("renders the whole panel, verbatim", () => {
-		expect(buildRuntimeSummary(complete)).toBe(
+		assert.strictEqual(
+			buildRuntimeSummary(complete),
 			[
 				"## 🚀 Runtime Setup",
 				"",
@@ -194,9 +200,9 @@ describe("buildRuntimeSummary", () => {
 
 	it("omits the Biome row entirely when none was installed", () => {
 		const panel = buildRuntimeSummary({ ...complete, biome: Option.none() });
-		expect(panel).not.toContain("Biome");
+		assert.notInclude(panel, "Biome");
 		// The rows around it keep their order and their neighbours.
-		expect(panel).toContain("| Package manager | pnpm 11.8.0 |\n| Turbo cache |");
+		assert.include(panel, "| Package manager | pnpm 11.8.0 |\n| Turbo cache |");
 	});
 
 	it("keeps every other row when the run installed and cached nothing", () => {
@@ -207,9 +213,9 @@ describe("buildRuntimeSummary", () => {
 			cache: cacheState({ primaryKey: "" }),
 			dependenciesInstalled: false,
 		});
-		expect(panel).toContain("| Turbo cache | disabled |");
-		expect(panel).toContain("| Dependency cache | ⬜ miss |");
-		expect(panel).toContain("| Dependencies | skipped |");
+		assert.include(panel, "| Turbo cache | disabled |");
+		assert.include(panel, "| Dependency cache | ⬜ miss |");
+		assert.include(panel, "| Dependencies | skipped |");
 	});
 
 	it("says so in the details when no lockfile matched", () => {
@@ -217,7 +223,7 @@ describe("buildRuntimeSummary", () => {
 		// line — a miss with no lockfiles at all is a different problem from a
 		// miss with three.
 		const panel = buildRuntimeSummary({ ...complete, cache: cacheState({ lockfiles: [] }) });
-		expect(panel).toContain("- Lockfiles: none");
+		assert.include(panel, "- Lockfiles: none");
 	});
 
 	it("drops the cache-key item when the key could not be computed", () => {
@@ -225,8 +231,8 @@ describe("buildRuntimeSummary", () => {
 			...complete,
 			cache: cacheState({ primaryKey: "", lockfiles: ["pnpm-lock.yaml"] }),
 		});
-		expect(panel).not.toContain("Cache key:");
-		expect(panel).toContain("- Lockfiles: `pnpm-lock.yaml`");
+		assert.notInclude(panel, "Cache key:");
+		assert.include(panel, "- Lockfiles: `pnpm-lock.yaml`");
 	});
 });
 
@@ -260,14 +266,14 @@ describe("buildRuntimeSummary with bats and kcov", () => {
 			}),
 			kcov: Option.some({ _tag: "installed", version: "43", cacheHit: true }),
 		});
-		expect(panel).toContain("1.14.0 · support 0.3.0 · assert 2.2.4 · file 0.4.0 · mock 1.2.5");
-		expect(panel).toContain("43 · ✅ cached");
+		assert.include(panel, "1.14.0 · support 0.3.0 · assert 2.2.4 · file 0.4.0 · mock 1.2.5");
+		assert.include(panel, "43 · ✅ cached");
 	});
 
 	it("omits both rows when neither tool was requested", () => {
 		const panel = buildRuntimeSummary({ ...baseFacts, bats: Option.none(), kcov: Option.none() });
-		expect(panel).not.toContain("BATS");
-		expect(panel).not.toContain("kcov");
+		assert.notInclude(panel, "BATS");
+		assert.notInclude(panel, "kcov");
 	});
 
 	it("renders the kcov row as unavailable when it was requested and failed", () => {
@@ -276,6 +282,6 @@ describe("buildRuntimeSummary with bats and kcov", () => {
 			bats: Option.some({ version: "1.14.0", libraries: [] }),
 			kcov: Option.some({ _tag: "unavailable" }),
 		});
-		expect(panel).toContain("⚠️ unavailable");
+		assert.include(panel, "⚠️ unavailable");
 	});
 });

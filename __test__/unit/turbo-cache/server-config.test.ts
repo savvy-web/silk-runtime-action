@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { BlobStore, BlobStoreError, TruncatedBlobEnvelopeError } from "@effected/github-actions";
 import { Effect, Redacted, Result } from "effect";
 
@@ -38,16 +38,16 @@ describe("readServerConfig", () => {
 		// a real run reaches.
 		const result = readServerConfig({});
 
-		expect(Result.isFailure(result)).toBe(true);
-		if (Result.isFailure(result)) expect(result.failure).toContain(TURBO_SERVER_ENV.token);
+		assert.strictEqual(Result.isFailure(result), true);
+		if (Result.isFailure(result)) assert.include(result.failure, TURBO_SERVER_ENV.token);
 	});
 
 	it("refuses to boot on an empty token", () => {
-		expect(Result.isFailure(readServerConfig({ [TURBO_SERVER_ENV.token]: "" }))).toBe(true);
+		assert.strictEqual(Result.isFailure(readServerConfig({ [TURBO_SERVER_ENV.token]: "" })), true);
 	});
 
 	it("defaults the port, prefix and backend", () => {
-		expect(configOf(bootable)).toEqual({
+		assert.deepStrictEqual(configOf(bootable), {
 			port: DEFAULT_TURBO_SERVER_PORT,
 			prefix: "",
 			token: "run-token",
@@ -62,8 +62,8 @@ describe("readServerConfig", () => {
 			[TURBO_SERVER_ENV.prefix]: "team-a/",
 		});
 
-		expect(config.port).toBe(45_000);
-		expect(config.prefix).toBe("team-a/");
+		assert.strictEqual(config.port, 45_000);
+		assert.strictEqual(config.prefix, "team-a/");
 	});
 
 	it.each([
@@ -79,22 +79,22 @@ describe("readServerConfig", () => {
 		// ever writes the one port this action uses, so anything else means
 		// something foreign set it — binding the known port keeps the server where
 		// the action is about to look for it.
-		expect(configOf({ ...bootable, [TURBO_SERVER_ENV.port]: port }).port).toBe(DEFAULT_TURBO_SERVER_PORT);
+		assert.strictEqual(configOf({ ...bootable, [TURBO_SERVER_ENV.port]: port }).port, DEFAULT_TURBO_SERVER_PORT);
 	});
 
 	it("keeps the last valid port", () => {
-		expect(configOf({ ...bootable, [TURBO_SERVER_ENV.port]: "65535" }).port).toBe(65_535);
+		assert.strictEqual(configOf({ ...bootable, [TURBO_SERVER_ENV.port]: "65535" }).port, 65_535);
 	});
 
 	it("reads the s3 backend", () => {
 		const config = configOf(s3Environment);
 
-		expect(config.backend).toBe("s3");
+		assert.strictEqual(config.backend, "s3");
 		if (config.backend !== "s3") return;
-		expect(config.s3.bucket).toBe("turbo-cache");
-		expect(config.s3.region).toBe("us-east-1");
-		expect(config.s3.accessKeyId).toBe("minioadmin");
-		expect(Redacted.value(config.s3.secretAccessKey)).toBe("minioadmin-secret");
+		assert.strictEqual(config.s3.bucket, "turbo-cache");
+		assert.strictEqual(config.s3.region, "us-east-1");
+		assert.strictEqual(config.s3.accessKeyId, "minioadmin");
+		assert.strictEqual(Redacted.value(config.s3.secretAccessKey), "minioadmin-secret");
 	});
 
 	it("omits the optional s3 fields when they are unset", () => {
@@ -103,9 +103,9 @@ describe("readServerConfig", () => {
 		// empty prefix would namespace every key under a leading separator.
 		const config = configOf(s3Environment);
 
-		expect(config.backend === "s3" && "endpoint" in config.s3).toBe(false);
-		expect(config.backend === "s3" && "sessionToken" in config.s3).toBe(false);
-		expect(config.backend === "s3" && "prefix" in config.s3).toBe(false);
+		assert.strictEqual(config.backend === "s3" && "endpoint" in config.s3, false);
+		assert.strictEqual(config.backend === "s3" && "sessionToken" in config.s3, false);
+		assert.strictEqual(config.backend === "s3" && "prefix" in config.s3, false);
 	});
 
 	it("omits the optional s3 fields when they are empty", () => {
@@ -116,9 +116,9 @@ describe("readServerConfig", () => {
 			[TURBO_SERVER_ENV.s3Prefix]: "",
 		});
 
-		expect(config.backend === "s3" && "endpoint" in config.s3).toBe(false);
-		expect(config.backend === "s3" && "sessionToken" in config.s3).toBe(false);
-		expect(config.backend === "s3" && "prefix" in config.s3).toBe(false);
+		assert.strictEqual(config.backend === "s3" && "endpoint" in config.s3, false);
+		assert.strictEqual(config.backend === "s3" && "sessionToken" in config.s3, false);
+		assert.strictEqual(config.backend === "s3" && "prefix" in config.s3, false);
 	});
 
 	it("carries the optional s3 fields when they are set", () => {
@@ -129,11 +129,11 @@ describe("readServerConfig", () => {
 			[TURBO_SERVER_ENV.s3Prefix]: "cache/",
 		});
 
-		expect(config.backend).toBe("s3");
+		assert.strictEqual(config.backend, "s3");
 		if (config.backend !== "s3") return;
-		expect(config.s3.endpoint).toBe("http://127.0.0.1:9000");
-		expect(config.s3.prefix).toBe("cache/");
-		expect(config.s3.sessionToken === undefined ? "" : Redacted.value(config.s3.sessionToken)).toBe("session");
+		assert.strictEqual(config.s3.endpoint, "http://127.0.0.1:9000");
+		assert.strictEqual(config.s3.prefix, "cache/");
+		assert.strictEqual(config.s3.sessionToken === undefined ? "" : Redacted.value(config.s3.sessionToken), "session");
 	});
 
 	it("reads an absent s3 credential as empty rather than failing", () => {
@@ -142,14 +142,14 @@ describe("readServerConfig", () => {
 		// backend that a workflow may have configured through some other means.
 		const config = configOf({ ...bootable, [TURBO_SERVER_ENV.backend]: "s3" });
 
-		expect(config.backend).toBe("s3");
+		assert.strictEqual(config.backend, "s3");
 		if (config.backend !== "s3") return;
-		expect(config.s3.bucket).toBe("");
-		expect(Redacted.value(config.s3.secretAccessKey)).toBe("");
+		assert.strictEqual(config.s3.bucket, "");
+		assert.strictEqual(Redacted.value(config.s3.secretAccessKey), "");
 	});
 
 	it("treats any other backend name as github", () => {
-		expect(configOf({ ...bootable, [TURBO_SERVER_ENV.backend]: "azure" }).backend).toBe("github");
+		assert.strictEqual(configOf({ ...bootable, [TURBO_SERVER_ENV.backend]: "azure" }).backend, "github");
 	});
 });
 
@@ -164,11 +164,11 @@ describe("serverBlobStoreLayer", () => {
 		);
 
 	it("builds the github backend", async () => {
-		expect(await build(bootable)).toEqual(["function", "function", "function"]);
+		assert.deepStrictEqual(await build(bootable), ["function", "function", "function"]);
 	});
 
 	it("builds the s3 backend", async () => {
-		expect(await build(s3Environment)).toEqual(["function", "function", "function"]);
+		assert.deepStrictEqual(await build(s3Environment), ["function", "function", "function"]);
 	});
 
 	it("never writes the s3 credentials to this process's log", async () => {
@@ -193,30 +193,30 @@ describe("serverBlobStoreLayer", () => {
 			console.log = original;
 		}
 
-		expect(said.join("\n")).not.toContain(secret);
-		expect(said.join("\n")).not.toContain(session);
-		expect(said.join("\n")).not.toContain("add-mask");
+		assert.notInclude(said.join("\n"), secret);
+		assert.notInclude(said.join("\n"), session);
+		assert.notInclude(said.join("\n"), "add-mask");
 	});
 });
 
 describe("isAuthShapedFailure", () => {
 	it("is true for a 401", () => {
-		expect(isAuthShapedFailure(new BlobStoreError({ reason: "unreachable", status: 401 }))).toBe(true);
+		assert.strictEqual(isAuthShapedFailure(new BlobStoreError({ reason: "unreachable", status: 401 })), true);
 	});
 
 	it("is true for a refusal", () => {
-		expect(isAuthShapedFailure(new BlobStoreError({ reason: "refused" }))).toBe(true);
+		assert.strictEqual(isAuthShapedFailure(new BlobStoreError({ reason: "refused" })), true);
 	});
 
 	it("is false for an unreachable store", () => {
-		expect(isAuthShapedFailure(new BlobStoreError({ reason: "unreachable" }))).toBe(false);
+		assert.strictEqual(isAuthShapedFailure(new BlobStoreError({ reason: "unreachable" })), false);
 	});
 
 	it("is false for a misconfigured store", () => {
-		expect(isAuthShapedFailure(new BlobStoreError({ reason: "misconfigured" }))).toBe(false);
+		assert.strictEqual(isAuthShapedFailure(new BlobStoreError({ reason: "misconfigured" })), false);
 	});
 
 	it("is false for an envelope failure", () => {
-		expect(isAuthShapedFailure(new TruncatedBlobEnvelopeError({}))).toBe(false);
+		assert.strictEqual(isAuthShapedFailure(new TruncatedBlobEnvelopeError({})), false);
 	});
 });

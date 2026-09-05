@@ -1,7 +1,9 @@
 import { delimiter } from "node:path";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { ActionLogger } from "@effected/github-actions";
-import { Effect, FileSystem, Layer, Logger, Option, PlatformError, Sink, Stream } from "effect";
+import { MemoryFileSystem } from "@effected/memfs";
+import type { FileSystem } from "effect";
+import { Effect, Layer, Logger, Option, PlatformError, Sink, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import type { PackageManagerName } from "../../../src/schema/domain.js";
@@ -105,25 +107,32 @@ const spawnerRecording = (log: Recorder, outcome: Outcome = {}): Layer.Layer<Chi
 		string: () => Effect.die(new Error("ChildProcessSpawner.string not stubbed")),
 	});
 
-/** A `FileSystem` in which exactly `present` exists, recording every probe. */
+/**
+ * A volume in which exactly `present` exists, wrapped in a probe recorder.
+ *
+ * @remarks
+ * The handler records the path and returns `undefined`, so the answer comes
+ * from the volume rather than from an `includes` check the double performs on
+ * its own behalf.
+ */
 const fsWith = (log: Recorder, present: ReadonlyArray<string>): Layer.Layer<FileSystem.FileSystem> =>
-	FileSystem.layerNoop({
+	MemoryFileSystem.layerFaulty({
 		exists: (path) => {
 			log.probed.push(path);
-			return Effect.succeed(present.includes(path));
+			return undefined;
 		},
-	});
+	}).pipe(Layer.provide(MemoryFileSystem.layerWith(Object.fromEntries(present.map((name) => [`/${name}`, ""])))));
 
-/** A `FileSystem` whose every probe fails, as an unreadable working tree would. */
+/** A volume whose every probe fails, as an unreadable working tree would. */
 const fsFailing = (log: Recorder): Layer.Layer<FileSystem.FileSystem> =>
-	FileSystem.layerNoop({
+	MemoryFileSystem.layerFaulty({
 		exists: (path) => {
 			log.probed.push(path);
 			return Effect.fail(
 				PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "exists" }),
 			);
 		},
-	});
+	}).pipe(Layer.provide(MemoryFileSystem.layer));
 
 const layerFor = (
 	log: Recorder,
@@ -165,10 +174,10 @@ describe("installDependencies", () => {
 			const log = recorder();
 			const result = yield* run(log, activated("npm"), { present: ["package-lock.json"] });
 
-			expect(log.spawns).toHaveLength(1);
-			expect(log.spawns[0]?.command).toBe("npm");
-			expect(log.spawns[0]?.args).toEqual(["ci"]);
-			expect(result).toEqual({ ran: true });
+			assert.lengthOf(log.spawns, 1);
+			assert.strictEqual(log.spawns[0]?.command, "npm");
+			assert.deepStrictEqual(log.spawns[0]?.args, ["ci"]);
+			assert.deepStrictEqual(result, { ran: true });
 		}),
 	);
 
@@ -177,7 +186,7 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("npm"));
 
-			expect(log.spawns[0]?.args).toEqual(["install"]);
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install"]);
 		}),
 	);
 
@@ -186,8 +195,8 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"] });
 
-			expect(log.spawns[0]?.command).toBe("pnpm");
-			expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
+			assert.strictEqual(log.spawns[0]?.command, "pnpm");
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
 		}),
 	);
 
@@ -196,7 +205,7 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("pnpm"));
 
-			expect(log.spawns[0]?.args).toEqual(["install"]);
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install"]);
 		}),
 	);
 
@@ -206,7 +215,7 @@ describe("installDependencies", () => {
 				const log = recorder();
 				yield* run(log, activated("npm"), { present: ["package-lock.json"], ignoreScripts: true });
 
-				expect(log.spawns[0]?.args).toEqual(["ci", "--ignore-scripts"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["ci", "--ignore-scripts"]);
 			}),
 		);
 
@@ -215,7 +224,7 @@ describe("installDependencies", () => {
 				const log = recorder();
 				yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"], ignoreScripts: true });
 
-				expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile", "--ignore-scripts"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile", "--ignore-scripts"]);
 			}),
 		);
 
@@ -224,7 +233,7 @@ describe("installDependencies", () => {
 				const log = recorder();
 				yield* run(log, activated("pnpm"), { ignoreScripts: true });
 
-				expect(log.spawns[0]?.args).toEqual(["install", "--ignore-scripts"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--ignore-scripts"]);
 			}),
 		);
 
@@ -233,7 +242,7 @@ describe("installDependencies", () => {
 				const log = recorder();
 				yield* run(log, activated("bun"), { present: ["bun.lock"], ignoreScripts: true });
 
-				expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile", "--ignore-scripts"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile", "--ignore-scripts"]);
 			}),
 		);
 
@@ -243,7 +252,7 @@ describe("installDependencies", () => {
 				const berry: ActivatedPackageManager = { ...activated("yarn"), version: "4.6.0" };
 				yield* run(log, berry, { present: ["yarn.lock"], ignoreScripts: true });
 
-				expect(log.spawns[0]?.args).toEqual(["install", "--immutable", "--mode=skip-build"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--immutable", "--mode=skip-build"]);
 			}),
 		);
 
@@ -253,7 +262,7 @@ describe("installDependencies", () => {
 				const classic: ActivatedPackageManager = { ...activated("yarn"), version: "1.22.22" };
 				yield* run(log, classic, { present: ["yarn.lock"], ignoreScripts: true });
 
-				expect(log.spawns[0]?.args).toEqual(["install", "--immutable", "--ignore-scripts"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--immutable", "--ignore-scripts"]);
 			}),
 		);
 
@@ -262,7 +271,7 @@ describe("installDependencies", () => {
 				const log = recorder();
 				yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"], ignoreScripts: false });
 
-				expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
+				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
 			}),
 		);
 
@@ -271,8 +280,8 @@ describe("installDependencies", () => {
 				const log = recorder();
 				const result = yield* run(log, activated("deno"), { ignoreScripts: true });
 
-				expect(log.spawns).toEqual([]);
-				expect(result).toEqual({ ran: false });
+				assert.deepStrictEqual(log.spawns, []);
+				assert.deepStrictEqual(result, { ran: false });
 			}),
 		);
 
@@ -281,8 +290,8 @@ describe("installDependencies", () => {
 				const log = recorder();
 				const result = yield* run(log, activated("pnpm"), { enabled: false, ignoreScripts: true });
 
-				expect(log.spawns).toEqual([]);
-				expect(result).toEqual({ ran: false });
+				assert.deepStrictEqual(log.spawns, []);
+				assert.deepStrictEqual(result, { ran: false });
 			}),
 		);
 	});
@@ -292,8 +301,8 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("yarn"), { present: ["yarn.lock"] });
 
-			expect(log.spawns[0]?.command).toBe("yarn");
-			expect(log.spawns[0]?.args).toEqual(["install", "--immutable"]);
+			assert.strictEqual(log.spawns[0]?.command, "yarn");
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--immutable"]);
 		}),
 	);
 
@@ -305,7 +314,7 @@ describe("installDependencies", () => {
 			// The one manager that *adds* a flag in the absent case, and the one
 			// install this action performs that may rewrite a lockfile in CI
 			// (oracle 8). Ported deliberately.
-			expect(log.spawns[0]?.args).toEqual(["install", "--no-immutable"]);
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--no-immutable"]);
 		}),
 	);
 
@@ -314,11 +323,11 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("bun"), { present: ["bun.lock"] });
 
-			expect(log.spawns[0]?.command).toBe("bun");
-			expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
+			assert.strictEqual(log.spawns[0]?.command, "bun");
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
 			// The first probe answered, so the legacy format is never looked for:
 			// the two probes short-circuit rather than both running unconditionally.
-			expect(log.probed).toEqual(["bun.lock"]);
+			assert.deepStrictEqual(log.probed, ["bun.lock"]);
 		}),
 	);
 
@@ -328,8 +337,8 @@ describe("installDependencies", () => {
 			// The probe legacy performed and never tested (oracle 9, 25).
 			yield* run(log, activated("bun"), { present: ["bun.lockb"] });
 
-			expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
-			expect(log.probed).toEqual(["bun.lock", "bun.lockb"]);
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
+			assert.deepStrictEqual(log.probed, ["bun.lock", "bun.lockb"]);
 		}),
 	);
 
@@ -338,7 +347,7 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("bun"));
 
-			expect(log.spawns[0]?.args).toEqual(["install"]);
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install"]);
 		}),
 	);
 
@@ -349,7 +358,7 @@ describe("installDependencies", () => {
 
 			// Relative, exactly as legacy probed (oracle 2): the action runs in the
 			// checkout, and an absolute path would have to invent a root.
-			expect(log.probed).toEqual(["pnpm-lock.yaml"]);
+			assert.deepStrictEqual(log.probed, ["pnpm-lock.yaml"]);
 		}),
 	);
 
@@ -360,7 +369,7 @@ describe("installDependencies", () => {
 
 			// Any probe failure is `false` (oracle 2). Installing without `ci` is the
 			// recoverable answer; failing the step over a stat is not.
-			expect(log.spawns[0]?.args).toEqual(["install"]);
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install"]);
 		}),
 	);
 
@@ -369,12 +378,12 @@ describe("installDependencies", () => {
 			const log = recorder();
 			const result = yield* run(log, activated("deno"), { present: ["deno.lock"] });
 
-			expect(log.logs).toContain("Deno caches dependencies automatically, skipping install step");
-			expect(log.probed).toEqual([]);
-			expect(log.spawns).toEqual([]);
+			assert.include(log.logs, "Deno caches dependencies automatically, skipping install step");
+			assert.deepStrictEqual(log.probed, []);
+			assert.deepStrictEqual(log.spawns, []);
 			// Truthful, unlike legacy's summary row, which mirrored the raw input and
 			// reported deno's skipped install as done (oracle 17, 33).
-			expect(result).toEqual({ ran: false });
+			assert.deepStrictEqual(result, { ran: false });
 		}),
 	);
 
@@ -383,10 +392,10 @@ describe("installDependencies", () => {
 			const log = recorder();
 			const result = yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"], enabled: false });
 
-			expect(log.probed).toEqual([]);
-			expect(log.spawns).toEqual([]);
-			expect(result).toEqual({ ran: false });
-			expect(log.logs).not.toContain("Dependencies installed successfully");
+			assert.deepStrictEqual(log.probed, []);
+			assert.deepStrictEqual(log.spawns, []);
+			assert.deepStrictEqual(result, { ran: false });
+			assert.notInclude(log.logs, "Dependencies installed successfully");
 		}),
 	);
 
@@ -395,7 +404,7 @@ describe("installDependencies", () => {
 			const log = recorder();
 			yield* run(log, activated("pnpm"), { present: ["pnpm-lock.yaml"] });
 
-			expect(log.logs).toContain("Dependencies installed successfully");
+			assert.include(log.logs, "Dependencies installed successfully");
 		}),
 	);
 
@@ -417,10 +426,10 @@ describe("installDependencies", () => {
 			// process, so the child has to be told where the manager landed. Bare
 			// name plus PATH rather than an absolute path so that lifecycle scripts
 			// the manager itself spawns resolve it too.
-			expect(log.spawns[0]?.command).toBe("pnpm");
-			expect(log.spawns[0]?.env).toEqual({ PATH: `/opt/toolcache/pnpm/10.20.0/.bin${delimiter}/usr/bin` });
+			assert.strictEqual(log.spawns[0]?.command, "pnpm");
+			assert.deepStrictEqual(log.spawns[0]?.env, { PATH: `/opt/toolcache/pnpm/10.20.0/.bin${delimiter}/usr/bin` });
 			// Without this the child would run with *only* PATH set.
-			expect(log.spawns[0]?.extendEnv).toBe(true);
+			assert.strictEqual(log.spawns[0]?.extendEnv, true);
 		}),
 	);
 
@@ -450,7 +459,7 @@ describe("installDependencies", () => {
 			//
 			// One value, one delimiter, manager first: its shims win a name collision
 			// with a same-named runtime.
-			expect(log.spawns[0]?.env).toEqual({
+			assert.deepStrictEqual(log.spawns[0]?.env, {
 				PATH: [
 					"/opt/toolcache/pnpm/10.20.0/.bin",
 					"/opt/toolcache/node/24.11.0/bin",
@@ -459,7 +468,7 @@ describe("installDependencies", () => {
 					"/usr/bin",
 				].join(delimiter),
 			});
-			expect(log.spawns[0]?.extendEnv).toBe(true);
+			assert.strictEqual(log.spawns[0]?.extendEnv, true);
 		}),
 	);
 
@@ -481,7 +490,7 @@ describe("installDependencies", () => {
 				if (previous !== undefined) process.env.PATH = previous;
 			}
 
-			expect(log.spawns[0]?.env).toEqual({ Path: `/tool/.bin${delimiter}C:\\bin` });
+			assert.deepStrictEqual(log.spawns[0]?.env, { Path: `/tool/.bin${delimiter}C:\\bin` });
 		}),
 	);
 
@@ -493,8 +502,8 @@ describe("installDependencies", () => {
 			// untouched rather than getting a PATH that only restates it.
 			yield* run(log, activated("npm"), { prepends: [] });
 
-			expect(log.spawns[0]?.env).toBeUndefined();
-			expect(log.spawns[0]?.extendEnv).toBeUndefined();
+			assert.isUndefined(log.spawns[0]?.env);
+			assert.isUndefined(log.spawns[0]?.extendEnv);
 		}),
 	);
 
@@ -506,7 +515,7 @@ describe("installDependencies", () => {
 			// Legacy streamed install output live. Inheriting stdout is what keeps
 			// that true, and it is also what keeps a chatty install from filling a
 			// pipe nobody drains.
-			expect(log.spawns[0]?.stdout).toBe("inherit");
+			assert.strictEqual(log.spawns[0]?.stdout, "inherit");
 		}),
 	);
 
@@ -523,10 +532,10 @@ describe("installDependencies", () => {
 			// CreateProcess cannot execute one, and since CVE-2024-27980 Node will
 			// not even hand it over without a shell — a direct spawn died at launch
 			// with `NotFound: ChildProcess.spawn`, before the install ran.
-			expect(log.spawns[0]?.shell).toBe(true);
+			assert.strictEqual(log.spawns[0]?.shell, true);
 			// The bare name and the argv are untouched by the shell.
-			expect(log.spawns[0]?.command).toBe("pnpm");
-			expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
+			assert.strictEqual(log.spawns[0]?.command, "pnpm");
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
 			// And so is the PATH the child gets: `cmd.exe` resolves the bare name
 			// off the *child's* environment, so the prepends are what make the
 			// manager findable at all under a shell. Keyed by whatever spelling
@@ -537,8 +546,8 @@ describe("installDependencies", () => {
 			// read of the host's `node:path`. Production never told the two apart —
 			// the platform is always the runner's — but a POSIX host driving the
 			// win32 branch did, and it silently joined a Windows PATH with `:`.
-			expect(log.spawns[0]?.env).toEqual({ [pathKey]: `C:\\tool\\.bin;${process.env[pathKey] ?? ""}` });
-			expect(log.spawns[0]?.extendEnv).toBe(true);
+			assert.deepStrictEqual(log.spawns[0]?.env, { [pathKey]: `C:\\tool\\.bin;${process.env[pathKey] ?? ""}` });
+			assert.strictEqual(log.spawns[0]?.extendEnv, true);
 		}),
 	);
 
@@ -557,9 +566,9 @@ describe("installDependencies", () => {
 			// `bun` through PATHEXT, where `.EXE` precedes `.CMD`, so it finds the
 			// same executable in the same prepended directory. One launch path for
 			// all four managers, at no cost to the one that was already fine.
-			expect(log.spawns[0]?.shell).toBe(true);
-			expect(log.spawns[0]?.command).toBe("bun");
-			expect(log.spawns[0]?.args).toEqual(["install", "--frozen-lockfile"]);
+			assert.strictEqual(log.spawns[0]?.shell, true);
+			assert.strictEqual(log.spawns[0]?.command, "bun");
+			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
 		}),
 	);
 
@@ -571,7 +580,7 @@ describe("installDependencies", () => {
 			// POSIX behavior is unchanged by the Windows fix: no shell between this
 			// step and the manager, so nothing re-interprets the command line and
 			// the exit code arrives from the manager itself.
-			expect(log.spawns[0]?.shell).toBeUndefined();
+			assert.isUndefined(log.spawns[0]?.shell);
 		}),
 	);
 
@@ -591,10 +600,10 @@ describe("installDependencies", () => {
 				}),
 			);
 
-			expect(error._tag).toBe("InstallError");
-			expect(error.reason).toBe("spawn");
-			expect(error.message).toContain("Failed to install dependencies with pnpm: ");
-			expect(error.cause).toBeDefined();
+			assert.strictEqual(error._tag, "InstallError");
+			assert.strictEqual(error.reason, "spawn");
+			assert.include(error.message, "Failed to install dependencies with pnpm: ");
+			assert.isDefined(error.cause);
 		}),
 	);
 
@@ -608,11 +617,11 @@ describe("installDependencies", () => {
 				}),
 			);
 
-			expect(error.reason).toBe("exit-code");
-			expect(error.message).toContain("pnpm install --frozen-lockfile");
-			expect(error.message).toContain("exited with code 1");
-			expect(error.message).toContain("ERR_PNPM_OUTDATED_LOCKFILE");
-			expect(error.cause).toBeDefined();
+			assert.strictEqual(error.reason, "exit-code");
+			assert.include(error.message, "pnpm install --frozen-lockfile");
+			assert.include(error.message, "exited with code 1");
+			assert.include(error.message, "ERR_PNPM_OUTDATED_LOCKFILE");
+			assert.isDefined(error.cause);
 		}),
 	);
 
@@ -624,8 +633,8 @@ describe("installDependencies", () => {
 			// Legacy nested its own prose inside itself: the class rendered "Failed to
 			// install dependencies with yarn: Failed to install dependencies: …"
 			// (oracle 21). One prefix, ruled.
-			expect(error.message.split("Failed to install dependencies")).toHaveLength(2);
-			expect(error.message.startsWith("Failed to install dependencies with yarn: ")).toBe(true);
+			assert.lengthOf(error.message.split("Failed to install dependencies"), 2);
+			assert.strictEqual(error.message.startsWith("Failed to install dependencies with yarn: "), true);
 		}),
 	);
 
@@ -639,9 +648,9 @@ describe("installDependencies", () => {
 			// line kept and `line 29` the newest dropped. The whole point of a tail
 			// is that a failure message stays readable when the install spilled
 			// hundreds of lines, all of which the log already has.
-			expect(error.message).toContain("line 39");
-			expect(error.message).toContain("line 30");
-			expect(error.message).not.toContain("line 29");
+			assert.include(error.message, "line 39");
+			assert.include(error.message, "line 30");
+			assert.notInclude(error.message, "line 29");
 		}),
 	);
 
@@ -652,13 +661,13 @@ describe("installDependencies", () => {
 
 			// A warning on a green install is still worth seeing; the step reads
 			// stderr for the failure tail, so echoing it is what keeps it visible.
-			expect(log.logs).toContain("npm warn deprecated left-pad@1.3.0");
+			assert.include(log.logs, "npm warn deprecated left-pad@1.3.0");
 		}),
 	);
 
 	it("InstallError carries its tag and reason", () => {
 		const error = new InstallError({ reason: "spawn", message: "boom" });
-		expect(error._tag).toBe("InstallError");
-		expect(error.reason).toBe("spawn");
+		assert.strictEqual(error._tag, "InstallError");
+		assert.strictEqual(error.reason, "spawn");
 	});
 });

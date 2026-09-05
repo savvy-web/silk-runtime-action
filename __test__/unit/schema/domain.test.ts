@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import { AbsoluteVersion, ConfigError, PackageManagerName, RuntimeName } from "../../../src/schema/domain.js";
@@ -7,13 +7,13 @@ describe("AbsoluteVersion", () => {
 	it.effect("accepts an exact semver", () =>
 		Effect.gen(function* () {
 			const v = yield* Schema.decodeUnknownEffect(AbsoluteVersion)("24.11.0");
-			expect(v).toBe("24.11.0");
+			assert.strictEqual(v, "24.11.0");
 		}),
 	);
 	it.effect("accepts an exact semver with build metadata", () =>
 		Effect.gen(function* () {
 			const v = yield* Schema.decodeUnknownEffect(AbsoluteVersion)("11.17.0+sha512.cca3cea3");
-			expect(v).toBe("11.17.0+sha512.cca3cea3");
+			assert.strictEqual(v, "11.17.0+sha512.cca3cea3");
 		}),
 	);
 	// Whitespace-padded versions parse as SemVer but must not: the raw string is
@@ -42,7 +42,7 @@ describe("AbsoluteVersion", () => {
 		it.effect(`rejects "${bad}"`, () =>
 			Effect.gen(function* () {
 				const exit = yield* Effect.exit(Schema.decodeUnknownEffect(AbsoluteVersion)(bad));
-				expect(exit._tag).toBe("Failure");
+				assert.strictEqual(exit._tag, "Failure");
 			}),
 		);
 	}
@@ -53,14 +53,14 @@ describe("RuntimeName", () => {
 		it.effect(`accepts "${name}"`, () =>
 			Effect.gen(function* () {
 				const v = yield* Schema.decodeUnknownEffect(RuntimeName)(name);
-				expect(v).toBe(name);
+				assert.strictEqual(v, name);
 			}),
 		);
 	}
 	it.effect("rejects an unknown runtime name", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(Schema.decodeUnknownEffect(RuntimeName)("ruby"));
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 		}),
 	);
 });
@@ -73,14 +73,14 @@ describe("PackageManagerName", () => {
 		it.effect(`accepts "${name}"`, () =>
 			Effect.gen(function* () {
 				const v = yield* Schema.decodeUnknownEffect(PackageManagerName)(name);
-				expect(v).toBe(name);
+				assert.strictEqual(v, name);
 			}),
 		);
 	}
 	it.effect("rejects an unknown package manager name", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(Schema.decodeUnknownEffect(PackageManagerName)("bundler"));
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 		}),
 	);
 });
@@ -91,8 +91,8 @@ describe("ConfigError", () => {
 			reason: "invalid-dev-engines",
 			message: "package.json has invalid or missing devEngines field",
 		});
-		expect(error._tag).toBe("ConfigError");
-		expect(error.reason).toBe("invalid-dev-engines");
-		expect(error.message).toBe("package.json has invalid or missing devEngines field");
+		assert.strictEqual(error._tag, "ConfigError");
+		assert.strictEqual(error.reason, "invalid-dev-engines");
+		assert.strictEqual(error.message, "package.json has invalid or missing devEngines field");
 	});
 });

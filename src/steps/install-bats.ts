@@ -4,6 +4,7 @@
  * @module steps/install-bats
  */
 
+import { homedir } from "node:os";
 import { Run } from "@effected/commands";
 import type { ActionLogger, ToolInstallerError } from "@effected/github-actions";
 import { ActionOutputs, ToolInstaller } from "@effected/github-actions";
@@ -126,7 +127,14 @@ const installLibrary = (
 				),
 			),
 		);
-		yield* fs.copy(source, destination).pipe(
+		// `overwrite`, because the destination was *just* created above and a warm
+		// `~/.local/share` from an earlier invocation in the same job holds the
+		// previous install's files. Without it the copy refuses on an existing
+		// tree — `errorOnExist` is the platform default — and a second run of this
+		// action in one job fails to provision bats at all. Surfaced by the
+		// in-memory volume the tests run against, which enforces the same rule the
+		// platform does; the hand-stubbed `copy` it replaced had no opinion.
+		yield* fs.copy(source, destination, { overwrite: true }).pipe(
 			Effect.catch((cause) =>
 				Effect.fail(
 					new BatsInstallError({
@@ -179,7 +187,17 @@ const installLibrary = (
  *
  * `home` is a parameter for the same reason the runtime steps take a `Host`: it
  * is what lets a test exercise the layout without an `$HOME` on the machine
- * running the suite.
+ * running the suite. Its default falls back to `os.homedir()` rather than `""`,
+ * and the resolved library root is then **checked absolute before anything is
+ * installed under it**. Both halves are load-bearing: with `$HOME` unset — a
+ * container entrypoint, `env -i`, a self-hosted runner service account —
+ * `join("", ".local", "share")` is the *relative* path `.local/share`, and the
+ * action then happily installed four libraries into the checkout and exported
+ * `BATS_LIB_PATH=.local/share`. `bats_load_library` resolves a relative entry
+ * against whatever the test's working directory happens to be, so every
+ * `bats_load_library bats-support` in the consuming repository failed with
+ * nothing in the log pointing at the cause. Failing here instead says which
+ * variable is missing, once, before any files move.
  *
  * The `jq` probe is a warning, never a failure: `jq` is preinstalled on
  * GitHub-hosted runners, and `Run.succeeds` already collapses a spawn failure
@@ -188,7 +206,7 @@ const installLibrary = (
  */
 export const installBats = (
 	install: boolean,
-	home: string = process.env.HOME ?? "",
+	home: string = process.env.HOME ?? homedir(),
 ): Effect.Effect<
 	Option.Option<InstalledBats>,
 	BatsInstallError,
@@ -202,6 +220,20 @@ export const installBats = (
 	Effect.gen(function* () {
 		if (!install) return Option.none();
 
+		const path = yield* Path.Path;
+		// Before the first download, not after: a run with no `$HOME` cannot end
+		// anywhere but here, so there is no reason to spend five archive fetches
+		// finding that out.
+		const libRoot = path.join(home, ".local", "share");
+		if (!path.isAbsolute(libRoot)) {
+			return yield* Effect.fail(
+				new BatsInstallError({
+					reason: "install",
+					message: `BATS libraries need an absolute home directory, but resolved ${libRoot} — set $HOME on the runner`,
+				}),
+			);
+		}
+
 		const jqPresent = yield* Run.succeeds(ChildProcess.make("jq", ["--version"]));
 		if (!jqPresent) {
 			yield* Effect.logWarning("jq was not found on PATH — vitest-bats mock recording requires it");
@@ -209,7 +241,6 @@ export const installBats = (
 
 		const installer = yield* ToolInstaller;
 		const outputs = yield* ActionOutputs;
-		const path = yield* Path.Path;
 		const core = batsCorePlan();
 
 		const archive = yield* installer.download(core.url).pipe(Effect.catch(fail));
@@ -219,7 +250,6 @@ export const installBats = (
 			.pipe(Effect.catch(fail));
 		const binDir = path.join(cached, core.binSubPath);
 
-		const libRoot = path.join(home, ".local", "share");
 		const libraries = batsLibraryPlans();
 		for (const lib of libraries) {
 			yield* installLibrary(lib, libRoot);

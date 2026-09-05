@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: architecture
 created: 2026-03-21
-updated: 2026-08-20
-last-synced: 2026-08-20
+updated: 2026-09-04
+last-synced: 2026-09-04
 completeness: 95
 related:
   - ./effect-service-model.md
@@ -36,7 +36,7 @@ Top-level architecture of the Effect-based GitHub Action that sets up JavaScript
 
 The action is a compiled Node.js GitHub Action (`node24` runtime) that reads runtime and package manager configuration exclusively from the `devEngines` field in `package.json`. It supports Node.js, Bun and Deno with automatic dependency caching, optional Biome CLI installation, an optional BATS shell-testing toolchain with kcov coverage, Turborepo detection and an embedded Turborepo remote cache (see [turbo remote cache](./turbo-remote-cache.md)).
 
-Built on Effect v4 (`effect@4.0.0-rc.109` via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `@effected/npm`, `@effected/semver` and `@effected/jsonc`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
+Built on Effect v4 (via `catalog:effect`) over the `@effected/*` suite — `@effected/github-actions` for every GitHub Actions runtime interaction, plus `npm`, `semver`, `jsonc`, `lockfiles`, `workspaces` and `commands`. The kit implements the runner protocol natively, so the action has zero `@actions/*` direct or transitive dependencies. In Effect v4 the former `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient` all import from `effect`); only Node platform layers ship separately in `@effect/platform-node`.
 
 **Design principles:**
 
@@ -44,7 +44,7 @@ Built on Effect v4 (`effect@4.0.0-rc.109` via `catalog:effect`) over the `@effec
 - Every side effect flows through a kit service, for typed errors, injection and testability.
 - One module per pipeline step, each with a frozen four-part contract (result type, tagged error, explicit `R`, no inferred requirements). See [effect service model](./effect-service-model.md).
 - Optional work — cache restore, Biome install, the BATS toolchain, kcov, turbo cache, the job summary, the whole post phase — degrades to a warning rather than failing the workflow.
-- `main.ts` is a one-call entry. The pipeline lives in `program.ts` and layer composition in `layers/app.ts`, so tests can import `program` without triggering `Action.run`.
+- `main.ts` is a one-call entry, behind the same `GITHUB_ACTIONS` guard `post.ts` uses. The pipeline lives in `program.ts` and layer composition in `layers/app.ts`, so tests can import `program` without triggering `Action.run`.
 
 **When to load this doc:**
 
@@ -66,7 +66,9 @@ Built on Effect v4 (`effect@4.0.0-rc.109` via `catalog:effect`) over the `@effec
 
 `turbo-server.js` is **not** a lifecycle hook — `action.yml` names only `main` and `post`. Main spawns it as a detached child. See [turbo remote cache](./turbo-remote-cache.md).
 
-`post.ts` guards its own `Action.run` behind `process.env.GITHUB_ACTIONS`, so importing the module in a test does not start the post phase. It exports `post` (the value the entry runs) and `makePost(reap)`, which is the same effect over an injectable teardown seam.
+**Both entries guard `Action.run` behind `process.env.GITHUB_ACTIONS`** — one idiom on every entry, not one for main and another for post — so importing either module never executes the action. `main.ts` acquired the guard in the #348 canon pass; until then it was asymmetric, and the asymmetry was invisible precisely because no test imported `main.ts`. `post.ts` additionally exports `post` (the value the entry runs) and `makePost(reap)`, the same effect over an injectable teardown seam.
+
+The guard is only honest while the *test* process does not itself look like a runner, and under `pnpm ci:test` on GitHub Actions it does. `vitest.setup.ts`, wired as `globalSetup`, strips `GITHUB_ACTIONS` plus every `INPUT_*` and `STATE_*` variable in the main vitest process **before the fork pool is created**, so the stripped environment is what every worker inherits — and so a fixture that forgets to seed its own inputs reads nothing rather than silently inheriting the host workflow's inputs or saved state. `__test__/unit/environment.test.ts` asserts that from inside a worker, because a setup file that quietly stopped being wired up would otherwise be invisible.
 
 ### Source module map
 
@@ -389,7 +391,7 @@ The reap runs first and unconditionally, ahead of every branch that can return e
 
 `@effected/commands` is the newest arrival and the only place this action shells out to a **system** package manager (apt or Homebrew, on kcov's cache-miss path). `Run.collect` rather than `Run.text` for the build steps is deliberate: a non-zero exit is a *result* on `collect`, so the failing command's `stderr` reaches the warning, where `text` would fail the effect and leave a reader with "the build failed" and no cmake or apt diagnostic.
 
-Several `@effected/*` packages are declared in `package.json` but not imported by `src/` today (`git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`). Notably, lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`, so `@effected/glob` is no longer a code dependency of the cache path.
+Two `@effected/*` imports are missing from the table above because they sit behind `restore-cache`: `WorkspaceRoot` / `WorkspaceDiscovery` (`@effected/workspaces`) and `filenamesFor` (`@effected/lockfiles`). Everything else declared in `package.json` is imported — the seven never-imported entries were deleted in the #348 canon pass, leaving `@effected/yaml` as the sole declared-but-unimported package, and only because `@effected/lockfiles` requires it as a peer. See [build and distribution](./build-and-distribution.md#dependency-topology).
 
 ### Core `effect` platform services
 

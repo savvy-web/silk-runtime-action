@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { ActionOutputError } from "@effected/github-actions";
 import { ActionLogger, ActionOutputs, RunnerFileWriteError } from "@effected/github-actions";
 import { Cause, Effect, Exit, Layer, Logger, Option } from "effect";
@@ -68,16 +68,16 @@ describe("writeSummary", () => {
 		const { panels, layer } = harness();
 		return Effect.gen(function* () {
 			yield* writeSummary(facts());
-			expect(panels).toHaveLength(1);
-			expect(panels[0]).toContain("## 🚀 Runtime Setup");
-			expect(panels[0]).toContain("| Runtime(s) | node 26.3.1 |");
-			expect(panels[0]).toContain("| Package manager | pnpm 11.8.0 |");
-			expect(panels[0]).toContain("| Biome | 2.4.16 |");
-			expect(panels[0]).toContain("| Turbo cache | github · server ready (:41230) |");
-			expect(panels[0]).toContain("| Dependency cache | ✅ exact hit |");
-			expect(panels[0]).toContain("| Dependencies | installed |");
-			expect(panels[0]).toContain("- Cache key: `silk-linux-x64-abc`");
-			expect(panels[0]).toContain("- Lockfiles: `pnpm-lock.yaml`");
+			assert.lengthOf(panels, 1);
+			assert.include(panels[0], "## 🚀 Runtime Setup");
+			assert.include(panels[0], "| Runtime(s) | node 26.3.1 |");
+			assert.include(panels[0], "| Package manager | pnpm 11.8.0 |");
+			assert.include(panels[0], "| Biome | 2.4.16 |");
+			assert.include(panels[0], "| Turbo cache | github · server ready (:41230) |");
+			assert.include(panels[0], "| Dependency cache | ✅ exact hit |");
+			assert.include(panels[0], "| Dependencies | installed |");
+			assert.include(panels[0], "- Cache key: `silk-linux-x64-abc`");
+			assert.include(panels[0], "- Lockfiles: `pnpm-lock.yaml`");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -92,10 +92,10 @@ describe("writeSummary", () => {
 					],
 				}),
 			);
-			expect(groups).toContain("Runtime Setup Complete");
+			assert.include(groups, "Runtime Setup Complete");
 			// Ruling 50: the installed lines only — v1 printed the *requested* set
 			// first and then repeated it tool by tool.
-			expect(logs).toEqual([
+			assert.deepStrictEqual(logs, [
 				"node: 26.3.1",
 				"bun: 1.3.3",
 				"pnpm: 11.8.0",
@@ -119,9 +119,9 @@ describe("writeSummary", () => {
 			);
 			// Ruling 36's wording, replacing v1's "not installed" — which was wrong
 			// for the case it was printed in.
-			expect(logs).toContain("Biome: not detected");
-			expect(logs).toContain("Turbo: disabled");
-			expect(logs).toContain("Dependencies: skipped");
+			assert.include(logs, "Biome: not detected");
+			assert.include(logs, "Turbo: disabled");
+			assert.include(logs, "Dependencies: skipped");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -133,11 +133,11 @@ describe("writeSummary", () => {
 			// "not detected" would be wrong in the same direction v1's "not
 			// installed" was — it names the wrong step.
 			yield* writeSummary(facts({ biome: Option.none(), biomeDetected: Option.some("2.4.16") }));
-			expect(logs).toContain("Biome: detected, install failed");
-			expect(logs).not.toContain("Biome: not detected");
+			assert.include(logs, "Biome: detected, install failed");
+			assert.notInclude(logs, "Biome: not detected");
 			// The panel row stays omitted: it reports what this run *has*, and a
 			// failed install leaves it with nothing to name.
-			expect(panels[0]).not.toContain("| Biome |");
+			assert.notInclude(panels[0], "| Biome |");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -148,7 +148,7 @@ describe("writeSummary", () => {
 			// answered with a different build — quirk 51 says the line follows the
 			// install.
 			yield* writeSummary(facts({ biome: Option.some({ version: "2.4.9", path: "/opt/toolcache/biome/2.4.9" }) }));
-			expect(logs).toContain("Biome: v2.4.9");
+			assert.include(logs, "Biome: v2.4.9");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -167,8 +167,8 @@ describe("writeSummary", () => {
 					kcovRequested: true,
 				}),
 			);
-			expect(panels[0]).toContain("| BATS | 1.13.0 · support 0.3.0 |");
-			expect(panels[0]).toContain("| kcov | 43 · ✅ cached |");
+			assert.include(panels[0], "| BATS | 1.13.0 · support 0.3.0 |");
+			assert.include(panels[0], "| kcov | 43 · ✅ cached |");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -179,10 +179,10 @@ describe("writeSummary", () => {
 			// the decision travels beside it: a silent failure is the one this panel
 			// has to say out loud.
 			yield* writeSummary(facts({ kcov: Option.none(), kcovRequested: true }));
-			expect(panels[0]).toContain("| kcov | ⚠️ unavailable |");
+			assert.include(panels[0], "| kcov | ⚠️ unavailable |");
 
 			yield* writeSummary(facts({ kcov: Option.none(), kcovRequested: false }));
-			expect(panels[1]).not.toContain("| kcov |");
+			assert.notInclude(panels[1], "| kcov |");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -192,10 +192,10 @@ describe("writeSummary", () => {
 		});
 		return Effect.gen(function* () {
 			const exit = yield* writeSummary(facts()).pipe(Effect.exit);
-			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("Failed to write job summary: ");
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(logs.join("\n"), "Failed to write job summary: ");
 			// The panel is an extra, not a gate: the group still runs.
-			expect(logs).toContain("Dependencies: installed");
+			assert.include(logs, "Dependencies: installed");
 		}).pipe(Effect.provide(layer));
 	});
 
@@ -211,11 +211,11 @@ describe("writeSummary", () => {
 			// case is what stops the wrapper being reinstated to "fix" it.
 			const broken = { primaryKey: "k", restoredKey: Option.none(), lockfiles: null } as unknown as CacheState;
 			const exit = yield* writeSummary(facts({ cache: broken })).pipe(Effect.exit);
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 			// A defect, not the step's typed failure: `SummaryError` no longer has an
 			// arm that could carry this.
-			expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
-			expect(panels).toHaveLength(0);
+			assert.strictEqual(Exit.isFailure(exit) && Cause.hasDies(exit.cause), true);
+			assert.lengthOf(panels, 0);
 		}).pipe(Effect.provide(layer));
 	});
 });

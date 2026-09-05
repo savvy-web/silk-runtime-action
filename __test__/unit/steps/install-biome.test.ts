@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { ProvisionFileOptions } from "@effected/github-actions";
 import {
 	ActionLogger,
@@ -7,7 +7,8 @@ import {
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
-import { Effect, FileSystem, Layer, Logger, Option, References } from "effect";
+import { MemoryFileSystem } from "@effected/memfs";
+import { Effect, Layer, Logger, Option, References } from "effect";
 
 import { installBiome } from "../../../src/steps/install-biome.js";
 
@@ -44,7 +45,7 @@ const makeLayer = (
 			},
 		}),
 		ActionOutputs.layerTest({ addPath: (path) => Effect.sync(() => void recorded.paths.push(path)) }),
-		FileSystem.layerNoop({}),
+		MemoryFileSystem.layer,
 		ActionLogger.layerTest({}),
 		Logger.layer([Logger.make(({ message }) => void recorded.logs.push(String(message)))]),
 		Layer.succeed(References.MinimumLogLevel)("Debug"),
@@ -62,9 +63,9 @@ describe("installBiome", () => {
 			const recorded = recorder();
 			const installed = yield* installBiome(Option.none(), LINUX).pipe(Effect.provide(makeLayer(recorded)));
 
-			expect(installed).toStrictEqual(Option.none());
-			expect(recorded.provisioned).toEqual([]);
-			expect(recorded.paths).toEqual([]);
+			assert.deepStrictEqual(installed, Option.none());
+			assert.deepStrictEqual(recorded.provisioned, []);
+			assert.deepStrictEqual(recorded.paths, []);
 		}),
 	);
 
@@ -73,7 +74,7 @@ describe("installBiome", () => {
 			const recorded = recorder();
 			const installed = yield* installBiome(Option.some("2.4.9"), LINUX).pipe(Effect.provide(makeLayer(recorded)));
 
-			expect(recorded.provisioned).toEqual([
+			assert.deepStrictEqual(recorded.provisioned, [
 				{
 					tool: "biome",
 					version: "2.4.9",
@@ -83,8 +84,8 @@ describe("installBiome", () => {
 			]);
 			// The cached directory holds exactly the executable, so it is what goes
 			// on the PATH — the provisioner's `binDir`, not a path derived here.
-			expect(recorded.paths).toEqual([CACHED]);
-			expect(installed).toStrictEqual(Option.some({ version: "2.4.9", path: CACHED }));
+			assert.deepStrictEqual(recorded.paths, [CACHED]);
+			assert.deepStrictEqual(installed, Option.some({ version: "2.4.9", path: CACHED }));
 		}),
 	);
 
@@ -95,10 +96,11 @@ describe("installBiome", () => {
 				Effect.provide(makeLayer(recorded)),
 			);
 
-			expect(recorded.provisioned[0]?.url).toBe(
+			assert.strictEqual(
+				recorded.provisioned[0]?.url,
 				"https://github.com/biomejs/biome/releases/download/%40biomejs%2Fbiome%402.4.9/biome-win32-x64.exe",
 			);
-			expect(recorded.provisioned[0]?.binary).toBe("biome.exe");
+			assert.strictEqual(recorded.provisioned[0]?.binary, "biome.exe");
 		}),
 	);
 
@@ -110,11 +112,11 @@ describe("installBiome", () => {
 				Effect.flip,
 			);
 
-			expect(error._tag).toBe("BiomeInstallError");
-			expect(error.reason).toBe("detect");
+			assert.strictEqual(error._tag, "BiomeInstallError");
+			assert.strictEqual(error.reason, "detect");
 			// v1's prose, verbatim.
-			expect(error.message).toBe("Unsupported platform for Biome: freebsd-x64");
-			expect(recorded.provisioned).toEqual([]);
+			assert.strictEqual(error.message, "Unsupported platform for Biome: freebsd-x64");
+			assert.deepStrictEqual(recorded.provisioned, []);
 		}),
 	);
 
@@ -137,11 +139,11 @@ describe("installBiome", () => {
 					),
 					Effect.flip,
 				);
-				expect(error.reason).toBe(expected);
+				assert.strictEqual(error.reason, expected);
 				// The provisioner's own prose is carried through rather than wrapped:
 				// the call site adds the one prefix a reader needs (oracle 28).
-				expect(error.message).toContain("biome");
-				expect(error.cause).toBeDefined();
+				assert.include(error.message, "biome");
+				assert.isDefined(error.cause);
 			}
 		}),
 	);
@@ -161,7 +163,7 @@ describe("installBiome", () => {
 						ActionOutputs.layerTest({
 							addPath: () => Effect.fail(new RunnerFileWriteError({ file: "GITHUB_PATH" })),
 						}),
-						FileSystem.layerNoop({}),
+						MemoryFileSystem.layer,
 						ActionLogger.layerTest({}),
 					),
 				),
@@ -171,8 +173,8 @@ describe("installBiome", () => {
 			// A tool in the cache that this run could not make reachable is, to a
 			// caller, the same as one that never landed — v1 swept the same failure
 			// into its single catch (oracle 32).
-			expect(error.reason).toBe("cache");
-			expect(error.message).toContain("could not be published to PATH");
+			assert.strictEqual(error.reason, "cache");
+			assert.include(error.message, "could not be published to PATH");
 		}),
 	);
 
@@ -180,7 +182,7 @@ describe("installBiome", () => {
 		Effect.gen(function* () {
 			const recorded = recorder();
 			yield* installBiome(Option.some("2.4.9"), LINUX).pipe(Effect.provide(makeLayer(recorded)));
-			expect(recorded.logs).toContain("Biome 2.4.9");
+			assert.include(recorded.logs, "Biome 2.4.9");
 		}),
 	);
 });

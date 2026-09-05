@@ -1,5 +1,5 @@
 import { delimiter, join } from "node:path";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { CacheKey } from "@effected/github-actions";
 import {
 	ActionCache,
@@ -14,8 +14,11 @@ import {
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
+import type { MemoryFileSystemFaults } from "@effected/memfs";
+import { MemoryFileSystem } from "@effected/memfs";
 import { WorkspaceDiscovery } from "@effected/workspaces";
-import { Cause, Effect, Exit, FileSystem, Layer, Logger, Option, Path, PlatformError, Sink, Stream } from "effect";
+import type { FileSystem } from "effect";
+import { Cause, Effect, Exit, Layer, Logger, Option, Path, Sink, Stream } from "effect";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
 
@@ -123,12 +126,15 @@ const provisioningToolInstallerTest = (
 	});
 
 /** The writes the BATS and kcov installs make, which no other case reaches. */
-const provisioningFileSystem = {
-	makeDirectory: () => Effect.void,
+const provisioningFileSystem: MemoryFileSystemFaults = {
+	// The only member the volume cannot answer honestly: the bats and kcov
+	// installs copy out of tarballs a stubbed `ToolInstaller.extractTar` claims
+	// to have unpacked, and nothing put those trees on the volume. Everything
+	// else those steps do — creating directories, writing the synthesized
+	// loader, chmod — runs against the volume for real, so this is one fault
+	// rather than four stubs.
 	copy: () => Effect.void,
-	writeFileString: () => Effect.void,
-	chmod: () => Effect.void,
-} as const;
+};
 
 /**
  * A `PackageManagerInstaller` double reporting the manifest's manager as already
@@ -274,64 +280,37 @@ interface WorkingDirectory {
 }
 
 /**
- * A `FileSystem` serving `package.json`, plus whatever `directory` says the
- * repository holds. Any other read dies loudly, for the same reason the spawner
- * double does: a read reaching here is a regression rather than a missing stub.
+ * A volume holding `package.json`, whatever `directory` says the repository
+ * holds, and the checkout's one lockfile.
+ *
+ * @remarks
+ * The working directory is the volume root, which is where the detectors and
+ * `loadConfig` probe; the checkout `ActionEnvironment.layerTest` names is a
+ * directory inside it. Absence needs no stub — an unseeded path fails the way
+ * the platform fails it, which is what makes "no lockfile in the working
+ * directory" and "no `*.bats` file" the *tree's* answers rather than the
+ * double's.
+ *
+ * `faults` is for the one thing a volume cannot answer honestly: see
+ * {@link provisioningFileSystem}.
  */
 const fileSystemTest = (
 	manifest: string = packageJson,
 	directory: WorkingDirectory = {},
-	extra: Parameters<typeof FileSystem.layerNoop>[0] = {},
+	faults: MemoryFileSystemFaults = {},
 ): Layer.Layer<FileSystem.FileSystem> =>
-	FileSystem.layerNoop({
-		// Spread first, not last: `provisioningFileSystem`'s members are disjoint
-		// from the base read members below, and a later caller must not be able
-		// to silently override the reads the die-loudly discipline rests on.
-		...extra,
-		// The detectors probe working-directory-relative paths; anything absent
-		// fails here exactly as it would on a real filesystem.
-		access: (path) => {
-			const present =
-				(path === "biome.jsonc" && directory.biome !== undefined) ||
-				(path === "turbo.json" && directory.turbo === true);
-			return present
-				? Effect.void
-				: Effect.fail(
-						PlatformError.systemError({
-							_tag: "NotFound",
-							module: "FileSystem",
-							method: "access",
-							pathOrDescriptor: path,
-						}),
-					);
-		},
-		readFileString: (path) => {
-			if (path === "package.json") return Effect.succeed(manifest);
-			if (path === "biome.jsonc" && directory.biome !== undefined) return Effect.succeed(directory.biome);
-			return Effect.die(new Error(`unexpected FileSystem.readFileString(${path})`));
-		},
-		// A workspace with no lockfile *in the working directory*, so the install
-		// step takes its plain-install branch. Stubbed rather than left to the noop
-		// layer's rejection, which the step would read as "absent" anyway — this
-		// says so on purpose.
-		exists: () => Effect.succeed(false),
-		// The checkout the cache restore walks, holding the one lockfile its
-		// patterns match. `ActionEnvironment.layerTest` puts the workspace at
-		// `/workspace`.
-		readDirectory: (path) => {
-			if (path === WORKSPACE) return Effect.succeed([LOCKFILE]);
-			// The working directory, as `detectBats` walks it: a `*.bats` file is
-			// one of the two signals it looks for, and its absence is what makes
-			// every other case here a bats-free run.
-			if (path === ".") return Effect.succeed(directory.bats === true ? ["setup.bats"] : []);
-			return Effect.die(new Error(`unexpected FileSystem.readDirectory(${path})`));
-		},
-		stat: () => Effect.succeed({ type: "File" } as FileSystem.File.Info),
-		readFile: (path) =>
-			path === join(WORKSPACE, LOCKFILE)
-				? Effect.succeed(new TextEncoder().encode("lockfileVersion: '9.0'"))
-				: Effect.die(new Error(`unexpected FileSystem.readFile(${path})`)),
-	});
+	MemoryFileSystem.layerFaulty(faults).pipe(
+		Layer.provide(
+			MemoryFileSystem.layerWith({
+				"/package.json": manifest,
+				...(directory.biome === undefined ? {} : { "/biome.jsonc": directory.biome }),
+				// Presence is the whole of the turbo signal; the contents are never read.
+				...(directory.turbo === true ? { "/turbo.json": "{}" } : {}),
+				...(directory.bats === true ? { "/setup.bats": "@test 'works' { true; }\n" } : {}),
+				[`${WORKSPACE}/${LOCKFILE}`]: "lockfileVersion: '9.0'",
+			}),
+		),
+	);
 
 /**
  * Every service in the program's `R` union, doubled.
@@ -359,8 +338,8 @@ const makeLayer = (
 		readonly tools?: Layer.Layer<ToolInstaller>;
 		/** Inputs the workflow supplied, as the runner would publish them. */
 		readonly inputs?: Layer.Layer<never>;
-		/** `FileSystem` members beyond the reads every run makes — the BATS and kcov installs' writes. */
-		readonly filesystem?: Parameters<typeof FileSystem.layerNoop>[0];
+		/** Faults over the volume, for a call it cannot answer — the BATS and kcov installs' copies. */
+		readonly filesystem?: MemoryFileSystemFaults;
 	} = {},
 ): Layer.Layer<
 	| ActionCache
@@ -452,7 +431,7 @@ describe("program", () => {
 	it.effect("publishes every action.yml output exactly once", () =>
 		Effect.gen(function* () {
 			const captured = yield* runProgram();
-			expect([...captured.keys()].sort()).toEqual([...OUTPUT_NAMES].sort());
+			assert.deepStrictEqual([...captured.keys()].sort(), [...OUTPUT_NAMES].sort());
 		}),
 	);
 
@@ -461,20 +440,20 @@ describe("program", () => {
 			const captured = yield* runProgram();
 			// Both values come from the served manifest's `devEngines`, through
 			// `loadConfig` and the (still echoing) package-manager stub.
-			expect(captured.get("package-manager")).toBe("pnpm");
-			expect(captured.get("package-manager-version")).toBe("10.20.0");
+			assert.strictEqual(captured.get("package-manager"), "pnpm");
+			assert.strictEqual(captured.get("package-manager-version"), "10.20.0");
 		}),
 	);
 
 	it.effect("folds every installed runtime into its version and enabled outputs", () =>
 		Effect.gen(function* () {
 			const captured = yield* runProgram(allRuntimesPackageJson);
-			expect(captured.get("node-version")).toBe("24.11.0");
-			expect(captured.get("node-enabled")).toBe("true");
-			expect(captured.get("bun-version")).toBe("1.3.3");
-			expect(captured.get("bun-enabled")).toBe("true");
-			expect(captured.get("deno-version")).toBe("2.5.6");
-			expect(captured.get("deno-enabled")).toBe("true");
+			assert.strictEqual(captured.get("node-version"), "24.11.0");
+			assert.strictEqual(captured.get("node-enabled"), "true");
+			assert.strictEqual(captured.get("bun-version"), "1.3.3");
+			assert.strictEqual(captured.get("bun-enabled"), "true");
+			assert.strictEqual(captured.get("deno-version"), "2.5.6");
+			assert.strictEqual(captured.get("deno-enabled"), "true");
 		}),
 	);
 
@@ -484,12 +463,12 @@ describe("program", () => {
 			// runtime nobody installed reports — not the version of something that
 			// was never fetched (oracle 46).
 			const captured = yield* runProgram();
-			expect(captured.get("node-version")).toBe("24.11.0");
-			expect(captured.get("node-enabled")).toBe("true");
-			expect(captured.get("bun-version")).toBe("");
-			expect(captured.get("bun-enabled")).toBe("false");
-			expect(captured.get("deno-version")).toBe("");
-			expect(captured.get("deno-enabled")).toBe("false");
+			assert.strictEqual(captured.get("node-version"), "24.11.0");
+			assert.strictEqual(captured.get("node-enabled"), "true");
+			assert.strictEqual(captured.get("bun-version"), "");
+			assert.strictEqual(captured.get("bun-enabled"), "false");
+			assert.strictEqual(captured.get("deno-version"), "");
+			assert.strictEqual(captured.get("deno-enabled"), "false");
 		}),
 	);
 
@@ -502,10 +481,10 @@ describe("program", () => {
 
 				yield* runProgram();
 
-				expect(process.env.NPM_CONFIG_UPDATE_NOTIFIER).toBe(QUIET_ENV.NPM_CONFIG_UPDATE_NOTIFIER);
-				expect(process.env.NPM_CONFIG_FUND).toBe(QUIET_ENV.NPM_CONFIG_FUND);
-				expect(process.env.HUSKY).toBe(QUIET_ENV.HUSKY);
-				expect(process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT).toBe(QUIET_ENV.COREPACK_ENABLE_DOWNLOAD_PROMPT);
+				assert.strictEqual(process.env.NPM_CONFIG_UPDATE_NOTIFIER, QUIET_ENV.NPM_CONFIG_UPDATE_NOTIFIER);
+				assert.strictEqual(process.env.NPM_CONFIG_FUND, QUIET_ENV.NPM_CONFIG_FUND);
+				assert.strictEqual(process.env.HUSKY, QUIET_ENV.HUSKY);
+				assert.strictEqual(process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT, QUIET_ENV.COREPACK_ENABLE_DOWNLOAD_PROMPT);
 				// "On this process only" is enforced by the doubles rather than
 				// asserted here: `ActionOutputs.layerTest` stubs `set` and `addPath`
 				// and nothing else, so an `exportVariable` call — which would leak
@@ -533,8 +512,8 @@ describe("program", () => {
 			// process — so without the program's join the install below would spawn
 			// a bare `bun` against whatever the runner image happens to have.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
-			expect(install?.command).toBe("bun");
-			expect(install?.env).toEqual({ PATH: `/opt/toolcache/bun/1.3.3${delimiter}/usr/bin` });
+			assert.strictEqual(install?.command, "bun");
+			assert.deepStrictEqual(install?.env, { PATH: `/opt/toolcache/bun/1.3.3${delimiter}/usr/bin` });
 		}),
 	);
 
@@ -558,19 +537,19 @@ describe("program", () => {
 			// binary off the PATH it inherited from the install child. Prepending only
 			// the manager's directory left every runner reporting `deno: not found`.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
-			expect(install?.command).toBe("pnpm");
+			assert.strictEqual(install?.command, "pnpm");
 			const entries = (install?.env?.PATH ?? "").split(delimiter);
 			// The manager leads — its shims win any name collision. The runtimes
 			// follow in `devEngines` declaration order, and each is matched by prefix
 			// because the bin subdirectory below the cached root is the descriptor's
 			// business and differs by platform.
-			expect(entries[0]).toBe("/opt/toolcache/pnpm/10.20.0/.bin");
-			expect(entries[1]?.startsWith("/opt/toolcache/node/24.11.0")).toBe(true);
-			expect(entries[2]?.startsWith("/opt/toolcache/bun/1.3.3")).toBe(true);
-			expect(entries[3]?.startsWith("/opt/toolcache/deno/2.5.6")).toBe(true);
+			assert.strictEqual(entries[0], "/opt/toolcache/pnpm/10.20.0/.bin");
+			assert.strictEqual(entries[1]?.startsWith("/opt/toolcache/node/24.11.0"), true);
+			assert.strictEqual(entries[2]?.startsWith("/opt/toolcache/bun/1.3.3"), true);
+			assert.strictEqual(entries[3]?.startsWith("/opt/toolcache/deno/2.5.6"), true);
 			// The inherited PATH stays last, and nothing else was invented.
-			expect(entries[4]).toBe("/usr/bin");
-			expect(entries).toHaveLength(5);
+			assert.strictEqual(entries[4], "/usr/bin");
+			assert.lengthOf(entries, 5);
 		}),
 	);
 
@@ -594,14 +573,14 @@ describe("program", () => {
 			// directory led and the install child ran the npm bundled with node
 			// instead. `allowAmbient: false` puts the pinned npm at the head.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
-			expect(install?.command).toBe("npm");
+			assert.strictEqual(install?.command, "npm");
 			const entries = (install?.env?.PATH ?? "").split(delimiter);
-			expect(entries[0]).toBe("/opt/toolcache/npm/11.6.2/.bin");
+			assert.strictEqual(entries[0], "/opt/toolcache/npm/11.6.2/.bin");
 			// node still follows, so a lifecycle script resolves the pinned node —
 			// but it no longer decides which npm runs.
-			expect(entries[1]?.startsWith("/opt/toolcache/node/24.11.0")).toBe(true);
-			expect(entries[2]).toBe("/usr/bin");
-			expect(entries).toHaveLength(3);
+			assert.strictEqual(entries[1]?.startsWith("/opt/toolcache/node/24.11.0"), true);
+			assert.strictEqual(entries[2], "/usr/bin");
+			assert.lengthOf(entries, 3);
 		}),
 	);
 
@@ -625,13 +604,13 @@ describe("program", () => {
 			// Without the hoist a `bun` on the runner image reachable via node's bin
 			// directory would shadow the version this run installed.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
-			expect(install?.command).toBe("bun");
+			assert.strictEqual(install?.command, "bun");
 			const entries = (install?.env?.PATH ?? "").split(delimiter);
-			expect(entries[0]).toBe("/opt/toolcache/bun/1.3.3");
-			expect(entries[1]?.startsWith("/opt/toolcache/node/24.11.0")).toBe(true);
-			expect(entries[2]).toBe("/usr/bin");
+			assert.strictEqual(entries[0], "/opt/toolcache/bun/1.3.3");
+			assert.strictEqual(entries[1]?.startsWith("/opt/toolcache/node/24.11.0"), true);
+			assert.strictEqual(entries[2], "/usr/bin");
 			// Three, not four: bun appears once despite reaching the list twice.
-			expect(entries).toHaveLength(3);
+			assert.lengthOf(entries, 3);
 		}),
 	);
 
@@ -649,16 +628,16 @@ describe("program", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 			// Which failure, not just that one happened: `Failure` alone would also
 			// be satisfied by a step further down dying on a test double it never
 			// got a chance to reach, and the assertion below would still hold if
 			// that step ran before publishing anything. The tag is what says the
 			// environment guard is the thing that stopped the run.
 			const error = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none();
-			expect(Option.getOrUndefined(error)?._tag).toBe("ActionEnvironmentError");
+			assert.strictEqual(Option.getOrUndefined(error)?._tag, "ActionEnvironmentError");
 			// The whole point of the guard: nothing downstream got to run.
-			expect(captured.size).toBe(0);
+			assert.strictEqual(captured.size, 0);
 		}),
 	);
 
@@ -679,11 +658,11 @@ describe("program", () => {
 				),
 			);
 
-			expect(captured.get("biome-enabled")).toBe("true");
-			expect(captured.get("biome-version")).toBe("2.4.9");
+			assert.strictEqual(captured.get("biome-enabled"), "true");
+			assert.strictEqual(captured.get("biome-version"), "2.4.9");
 			// Detection alone is not the claim: the outputs say Biome is installed,
 			// so it has to be on the PATH.
-			expect(paths).toContain("/opt/toolcache/biome/2.4.9");
+			assert.include(paths, "/opt/toolcache/biome/2.4.9");
 		}),
 	);
 
@@ -700,8 +679,8 @@ describe("program", () => {
 				),
 			);
 
-			expect(captured.get("biome-version")).toBe("2.3.14");
-			expect(captured.get("biome-enabled")).toBe("true");
+			assert.strictEqual(captured.get("biome-version"), "2.3.14");
+			assert.strictEqual(captured.get("biome-enabled"), "true");
 		}),
 	);
 
@@ -728,16 +707,16 @@ describe("program", () => {
 			// Non-fatal (oracle 29): the run completes and every other output is
 			// published. And the outputs are truthful — v1 set them from *detection*
 			// and reported an enabled Biome that was never installed (oracle 30).
-			expect(captured.get("biome-enabled")).toBe("false");
-			expect(captured.get("biome-version")).toBe("");
-			expect(captured.get("node-enabled")).toBe("true");
+			assert.strictEqual(captured.get("biome-enabled"), "false");
+			assert.strictEqual(captured.get("biome-version"), "");
+			assert.strictEqual(captured.get("node-enabled"), "true");
 			// v1's prose for the warning, with the typed error's own message after it
 			// rather than a stringified object.
-			expect(logs.join("\n")).toContain("Biome installation failed: ");
-			expect(logs.join("\n")).toContain("404");
+			assert.include(logs.join("\n"), "Biome installation failed: ");
+			assert.include(logs.join("\n"), "404");
 			// And the closing group names the step that failed rather than
 			// reporting a Biome that was detected as absent.
-			expect(logs).toContain("Biome: detected, install failed");
+			assert.include(logs, "Biome: detected, install failed");
 		}),
 	);
 
@@ -759,12 +738,12 @@ describe("program", () => {
 				),
 			);
 
-			expect(captured.get("turbo-enabled")).toBe("true");
+			assert.strictEqual(captured.get("turbo-enabled"), "true");
 			// Detection and the cache backend are two different answers (oracle 27):
 			// a repository with a `turbo.json` and the cache switched off reports an
 			// enabled turbo and no backend.
-			expect(captured.get("turbo-cache-backend")).toBe("none");
-			expect(captured.get("turbo-cache-port")).toBe("");
+			assert.strictEqual(captured.get("turbo-cache-backend"), "none");
+			assert.strictEqual(captured.get("turbo-cache-port"), "");
 		}),
 	);
 
@@ -779,7 +758,7 @@ describe("program", () => {
 			[{ backend: "s3", port: Option.some(41230), state: Option.none() }, "s3", "41230"],
 		];
 		for (const [started, backend, port] of rows) {
-			expect(turboCacheOutputs(started)).toEqual({ turboCacheBackend: backend, turboCachePort: port });
+			assert.deepStrictEqual(turboCacheOutputs(started), { turboCacheBackend: backend, turboCachePort: port });
 		}
 		return Effect.void;
 	});
@@ -787,12 +766,12 @@ describe("program", () => {
 	it.effect("leaves every other output at its all-disabled default", () =>
 		Effect.gen(function* () {
 			const captured = yield* runProgram();
-			expect(captured.get("biome-version")).toBe("");
-			expect(captured.get("biome-enabled")).toBe("false");
-			expect(captured.get("turbo-enabled")).toBe("false");
-			expect(captured.get("turbo-cache-backend")).toBe("none");
-			expect(captured.get("turbo-cache-port")).toBe("");
-			expect(captured.get("cache-hit")).toBe("false");
+			assert.strictEqual(captured.get("biome-version"), "");
+			assert.strictEqual(captured.get("biome-enabled"), "false");
+			assert.strictEqual(captured.get("turbo-enabled"), "false");
+			assert.strictEqual(captured.get("turbo-cache-backend"), "none");
+			assert.strictEqual(captured.get("turbo-cache-port"), "");
+			assert.strictEqual(captured.get("cache-hit"), "false");
 		}),
 	);
 
@@ -816,7 +795,7 @@ describe("program", () => {
 			// splits detection across three groups, so it is assembled and emitted
 			// after the last of them (oracle 29) — space-separated and lowercase
 			// `biome`, unlike the `@`-joined info lines above it (rulings 54, 55).
-			expect(logs).toContain("node 24.11.0 · bun 1.3.3 · deno 2.5.6 · pnpm 10.20.0 · biome 2.4.9 · turbo");
+			assert.include(logs, "node 24.11.0 · bun 1.3.3 · deno 2.5.6 · pnpm 10.20.0 · biome 2.4.9 · turbo");
 		}),
 	);
 
@@ -848,8 +827,8 @@ describe("program", () => {
 
 			// Quirk 52: v1 echoed the `install-deps` input, which defaults to true,
 			// and so reported deno's skipped install as done in both places.
-			expect(panels[0]).toContain("| Dependencies | skipped |");
-			expect(logs).toContain("Dependencies: skipped");
+			assert.include(panels[0], "| Dependencies | skipped |");
+			assert.include(logs, "Dependencies: skipped");
 		}),
 	);
 
@@ -869,19 +848,22 @@ describe("program", () => {
 				),
 			);
 
-			expect(captured.get("cache-hit")).toBe("true");
+			assert.strictEqual(captured.get("cache-hit"), "true");
 			// The store is a second entry, keyed independently, and reports its own
 			// verdict — a "false" here beside a "true" above is the shape of a job
 			// that restored its linked trees and still downloads every package.
-			expect(captured.get("store-cache-hit")).toBe("true");
+			assert.strictEqual(captured.get("store-cache-hit"), "true");
 			// The resolved file, not the pattern that found it.
-			expect(captured.get("lockfiles")).toBe(join(WORKSPACE, LOCKFILE));
+			assert.strictEqual(captured.get("lockfiles"), join(WORKSPACE, LOCKFILE));
 			const paths = (captured.get("cache-paths") ?? "").split(",");
-			expect(paths).toContain("node_modules");
-			expect(paths).toContain(join("/opt/hostedtoolcache", "node", "24.11.0"));
+			assert.include(paths, "node_modules");
+			assert.include(paths, join("/opt/hostedtoolcache", "node", "24.11.0"));
 			// Both archives' paths, so a consumer reading the output back can see
 			// whether their store was covered.
-			expect(paths.some((path) => path.includes("pnpm/store"))).toBe(true);
+			assert.strictEqual(
+				paths.some((path) => path.includes("pnpm/store")),
+				true,
+			);
 		}),
 	);
 
@@ -901,7 +883,7 @@ describe("program", () => {
 
 			// A rung of the ladder matched, so the archive is close but not this
 			// run's — which is what post needs to know to save again.
-			expect(captured.get("cache-hit")).toBe("partial");
+			assert.strictEqual(captured.get("cache-hit"), "partial");
 		}),
 	);
 
@@ -911,12 +893,12 @@ describe("program", () => {
 			// directory and no `vitest-bats` in the manifest. Nothing is installed,
 			// and the outputs say so rather than reporting a lib path nobody wrote.
 			const captured = yield* runProgram();
-			expect(captured.get("bats-enabled")).toBe("false");
-			expect(captured.get("bats-version")).toBe("");
-			expect(captured.get("bats-lib-path")).toBe("");
-			expect(captured.get("kcov-enabled")).toBe("false");
-			expect(captured.get("kcov-version")).toBe("");
-			expect(captured.get("kcov-cache-hit")).toBe("false");
+			assert.strictEqual(captured.get("bats-enabled"), "false");
+			assert.strictEqual(captured.get("bats-version"), "");
+			assert.strictEqual(captured.get("bats-lib-path"), "");
+			assert.strictEqual(captured.get("kcov-enabled"), "false");
+			assert.strictEqual(captured.get("kcov-version"), "");
+			assert.strictEqual(captured.get("kcov-cache-hit"), "false");
 		}),
 	);
 
@@ -945,19 +927,19 @@ describe("program", () => {
 				),
 			);
 
-			expect(captured.get("bats-enabled")).toBe("true");
-			expect(captured.get("bats-version")).toBe(BATS_CORE_VERSION);
+			assert.strictEqual(captured.get("bats-enabled"), "true");
+			assert.strictEqual(captured.get("bats-version"), BATS_CORE_VERSION);
 			// The library root the install exported, not a per-library directory.
-			expect(captured.get("bats-lib-path")).toBe(exported.find(([name]) => name === "BATS_LIB_PATH")?.[1]);
+			assert.strictEqual(captured.get("bats-lib-path"), exported.find(([name]) => name === "BATS_LIB_PATH")?.[1]);
 			// Enabled is a claim about the runner: the toolchain has to be on the PATH.
-			expect(paths).toContain(`/opt/toolcache/bats/${BATS_CORE_VERSION}/bin`);
+			assert.include(paths, `/opt/toolcache/bats/${BATS_CORE_VERSION}/bin`);
 			// kcov followed bats, and nothing restored it, so it reports a build.
-			expect(captured.get("kcov-enabled")).toBe("true");
-			expect(captured.get("kcov-version")).toBe(KCOV_VERSION);
-			expect(captured.get("kcov-cache-hit")).toBe("false");
+			assert.strictEqual(captured.get("kcov-enabled"), "true");
+			assert.strictEqual(captured.get("kcov-version"), KCOV_VERSION);
+			assert.strictEqual(captured.get("kcov-cache-hit"), "false");
 			// And the panel carries both rows, from the same install results.
-			expect(panels[0]).toContain(`| BATS | ${BATS_CORE_VERSION} · `);
-			expect(panels[0]).toContain(`| kcov | ${KCOV_VERSION} · ⬜ built |`);
+			assert.include(panels[0], `| BATS | ${BATS_CORE_VERSION} · `);
+			assert.include(panels[0], `| kcov | ${KCOV_VERSION} · ⬜ built |`);
 		}),
 	);
 
@@ -981,17 +963,20 @@ describe("program", () => {
 
 			// Detection said yes and the fetch said no, so the outputs say no
 			// (oracle 30) — the defect v1 shipped for Biome, in the other direction.
-			expect(captured.get("bats-enabled")).toBe("false");
-			expect(captured.get("bats-version")).toBe("");
-			expect(captured.get("bats-lib-path")).toBe("");
+			assert.strictEqual(captured.get("bats-enabled"), "false");
+			assert.strictEqual(captured.get("bats-version"), "");
+			assert.strictEqual(captured.get("bats-lib-path"), "");
 			// And the run carried on: everything else is still published.
-			expect(captured.get("package-manager")).toBe("pnpm");
-			expect(captured.get("node-enabled")).toBe("true");
-			expect(logs.join("\n")).toContain("BATS installation failed: ");
+			assert.strictEqual(captured.get("package-manager"), "pnpm");
+			assert.strictEqual(captured.get("node-enabled"), "true");
+			assert.include(logs.join("\n"), "BATS installation failed: ");
 			// kcov is gated on bats having *landed*: a coverage tool for a toolchain
 			// that never installed has nothing to cover, so it was never fetched.
-			expect(captured.get("kcov-enabled")).toBe("false");
-			expect(downloads.some((url) => url.includes("kcov"))).toBe(false);
+			assert.strictEqual(captured.get("kcov-enabled"), "false");
+			assert.strictEqual(
+				downloads.some((url) => url.includes("kcov")),
+				false,
+			);
 		}),
 	);
 
@@ -1024,15 +1009,15 @@ describe("program", () => {
 
 			// Neither install can fail the job, and one failing does not take the
 			// other with it.
-			expect(captured.get("bats-enabled")).toBe("true");
-			expect(captured.get("kcov-enabled")).toBe("false");
-			expect(captured.get("kcov-version")).toBe("");
-			expect(logs.join("\n")).toContain("kcov installation failed: ");
+			assert.strictEqual(captured.get("bats-enabled"), "true");
+			assert.strictEqual(captured.get("kcov-enabled"), "false");
+			assert.strictEqual(captured.get("kcov-version"), "");
+			assert.include(logs.join("\n"), "kcov installation failed: ");
 			// The one row that reports a failure out loud: a kcov nobody asked for is
 			// omitted, and this one was asked for. The outputs cannot tell those
 			// apart, which is why the decision travels to the summary beside the
 			// install result.
-			expect(panels[0]).toContain("| kcov | ⚠️ unavailable |");
+			assert.include(panels[0], "| kcov | ⚠️ unavailable |");
 		}),
 	);
 });

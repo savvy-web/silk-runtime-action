@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { ActionEnvironment, ActionOutputs, ActionState, ProcessId } from "@effected/github-actions";
 import { Effect, FileSystem, Layer, Option, Schema } from "effect";
 
@@ -83,14 +83,14 @@ describe("CacheState", () => {
 
 			const { restored, published } = yield* acrossPhases(STATE_KEYS.cache, value, CacheState);
 
-			expect(restored.paths).toEqual(value.paths);
-			expect(restored.primaryKey).toBe("cache-key-1");
-			expect(restored.lockfiles).toEqual(value.lockfiles);
-			expect(Option.getOrThrow(restored.restoredKey)).toBe("cache-key-1");
+			assert.deepStrictEqual(restored.paths, value.paths);
+			assert.strictEqual(restored.primaryKey, "cache-key-1");
+			assert.deepStrictEqual(restored.lockfiles, value.lockfiles);
+			assert.strictEqual(Option.getOrThrow(restored.restoredKey), "cache-key-1");
 			// The published text is the contract with the runner: JSON, one line,
 			// and no `Option` internals ("_id") that only decode back to themselves.
-			expect(published).not.toContain("_id");
-			expect(published).not.toContain("\n");
+			assert.notInclude(published, "_id");
+			assert.notInclude(published, "\n");
 		}),
 	);
 
@@ -105,9 +105,9 @@ describe("CacheState", () => {
 
 			const { restored } = yield* acrossPhases(STATE_KEYS.cache, value, CacheState);
 
-			expect(restored.primaryKey).toBe("deps-abc123");
-			expect(Option.getOrThrow(restored.restoredKey)).toBe("deps-abc122");
-			expect(Option.getOrThrow(restored.restoredKey)).not.toBe(restored.primaryKey);
+			assert.strictEqual(restored.primaryKey, "deps-abc123");
+			assert.strictEqual(Option.getOrThrow(restored.restoredKey), "deps-abc122");
+			assert.notStrictEqual(Option.getOrThrow(restored.restoredKey), restored.primaryKey);
 		}),
 	);
 
@@ -122,8 +122,8 @@ describe("CacheState", () => {
 
 			const { restored, published } = yield* acrossPhases(STATE_KEYS.cache, value, CacheState);
 
-			expect(Option.isNone(restored.restoredKey)).toBe(true);
-			expect(published).toContain('"restoredKey":null');
+			assert.strictEqual(Option.isNone(restored.restoredKey), true);
+			assert.include(published, '"restoredKey":null');
 		}),
 	);
 
@@ -131,7 +131,7 @@ describe("CacheState", () => {
 		Effect.gen(function* () {
 			const state = yield* ActionState;
 			const restored = yield* state.getOptional(STATE_KEYS.cache, CacheState);
-			expect(Option.isNone(restored)).toBe(true);
+			assert.strictEqual(Option.isNone(restored), true);
 		}).pipe(Effect.provide(realState({}))),
 	);
 });
@@ -148,7 +148,7 @@ describe("TurboServerState", () => {
 
 			const { restored } = yield* acrossPhases(STATE_KEYS.turboServer, value, TurboServerState);
 
-			expect(restored).toEqual(value);
+			assert.deepStrictEqual(restored, value);
 		}),
 	);
 
@@ -162,7 +162,7 @@ describe("TurboServerState", () => {
 					logFile: "/tmp/silk-turbo-server.log",
 				}),
 			);
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 		}),
 	);
 
@@ -176,7 +176,7 @@ describe("TurboServerState", () => {
 					logFile: "/tmp/silk-turbo-server.log",
 				}),
 			);
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 		}),
 	);
 });

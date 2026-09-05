@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { Option, Redacted } from "effect";
 
 import type { Inputs } from "../../../src/schema/inputs.js";
@@ -55,33 +55,37 @@ const s3Settings = {
 
 describe("resolveTurboCache", () => {
 	it("is off when turbo is not detected", () => {
-		expect(resolveTurboCache({ turboDetected: false, inputs: baseInputs })).toEqual({ mode: "off" });
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: false, inputs: baseInputs }), { mode: "off" });
 	});
 
 	it("is off when turbo is not detected even with every credential set", () => {
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({
 				turboDetected: false,
 				inputs: inputs({ ...passthroughCredentials, ...s3Credentials }),
 			}),
-		).toEqual({ mode: "off" });
+			{ mode: "off" },
+		);
 	});
 
 	it("is off when the mode input says off", () => {
-		expect(resolveTurboCache({ turboDetected: true, inputs: inputs({ turboCache: "off" }) })).toEqual({ mode: "off" });
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: inputs({ turboCache: "off" }) }), {
+			mode: "off",
+		});
 	});
 
 	it("is off when the mode input says off even with every credential set", () => {
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({
 				turboDetected: true,
 				inputs: inputs({ turboCache: "off", ...passthroughCredentials, ...s3Credentials }),
 			}),
-		).toEqual({ mode: "off" });
+			{ mode: "off" },
+		);
 	});
 
 	it("is passthrough when token and team are both present", () => {
-		expect(resolveTurboCache({ turboDetected: true, inputs: inputs(passthroughCredentials) })).toEqual({
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: inputs(passthroughCredentials) }), {
 			mode: "passthrough",
 			token: Redacted.make("vercel-token"),
 			team: "my-team",
@@ -89,13 +93,14 @@ describe("resolveTurboCache", () => {
 	});
 
 	it("prefers passthrough over s3 when both are configured", () => {
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({ turboDetected: true, inputs: inputs({ ...passthroughCredentials, ...s3Credentials }) }),
-		).toEqual({ mode: "passthrough", token: Redacted.make("vercel-token"), team: "my-team" });
+			{ mode: "passthrough", token: Redacted.make("vercel-token"), team: "my-team" },
+		);
 	});
 
 	it("is embedded s3 when a bucket is present and no external credentials are", () => {
-		expect(resolveTurboCache({ turboDetected: true, inputs: inputs(s3Credentials) })).toEqual({
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: inputs(s3Credentials) }), {
 			mode: "embedded",
 			backend: "s3",
 			s3: s3Settings,
@@ -115,7 +120,7 @@ describe("resolveTurboCache", () => {
 			}),
 		});
 
-		expect(resolution).toEqual({
+		assert.deepStrictEqual(resolution, {
 			mode: "embedded",
 			backend: "s3",
 			s3: {
@@ -131,7 +136,7 @@ describe("resolveTurboCache", () => {
 	});
 
 	it("is embedded github when nothing at all is configured", () => {
-		expect(resolveTurboCache({ turboDetected: true, inputs: baseInputs })).toEqual({
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: baseInputs }), {
 			mode: "embedded",
 			backend: "github",
 		});
@@ -141,30 +146,33 @@ describe("resolveTurboCache", () => {
 		// Quirk 77: partial passthrough credentials are not an error and not a
 		// passthrough — R2 needs both, so the resolution walks on. Ruling 77 adds a
 		// warning at the call site; the table itself is unchanged.
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({ turboDetected: true, inputs: inputs({ turboToken: passthroughCredentials.turboToken }) }),
-		).toEqual({ mode: "embedded", backend: "github" });
+			{ mode: "embedded", backend: "github" },
+		);
 	});
 
 	it("falls through to embedded github when only the team is set", () => {
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({ turboDetected: true, inputs: inputs({ turboTeam: passthroughCredentials.turboTeam }) }),
-		).toEqual({ mode: "embedded", backend: "github" });
+			{ mode: "embedded", backend: "github" },
+		);
 	});
 
 	it("falls through to embedded s3 when passthrough credentials are partial and a bucket is set", () => {
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({
 				turboDetected: true,
 				inputs: inputs({ turboTeam: passthroughCredentials.turboTeam, ...s3Credentials }),
 			}),
-		).toEqual({ mode: "embedded", backend: "s3", s3: s3Settings });
+			{ mode: "embedded", backend: "s3", s3: s3Settings },
+		);
 	});
 
 	it("probes only the bucket, never the other s3 fields", () => {
 		// Rule R3 reads `bucket` and nothing else (oracle 3): S3 credentials with no
 		// bucket are the github backend, not a misconfigured S3 one.
-		expect(
+		assert.deepStrictEqual(
 			resolveTurboCache({
 				turboDetected: true,
 				inputs: inputs({
@@ -173,24 +181,28 @@ describe("resolveTurboCache", () => {
 					turboS3SecretAccessKey: Option.some(Redacted.make("secret")),
 				}),
 			}),
-		).toEqual({ mode: "embedded", backend: "github" });
+			{ mode: "embedded", backend: "github" },
+		);
 	});
 });
 
 describe("hasPartialPassthroughCredentials", () => {
 	it("is true when only the token is set", () => {
-		expect(hasPartialPassthroughCredentials(inputs({ turboToken: passthroughCredentials.turboToken }))).toBe(true);
+		assert.strictEqual(
+			hasPartialPassthroughCredentials(inputs({ turboToken: passthroughCredentials.turboToken })),
+			true,
+		);
 	});
 
 	it("is true when only the team is set", () => {
-		expect(hasPartialPassthroughCredentials(inputs({ turboTeam: passthroughCredentials.turboTeam }))).toBe(true);
+		assert.strictEqual(hasPartialPassthroughCredentials(inputs({ turboTeam: passthroughCredentials.turboTeam })), true);
 	});
 
 	it("is false when both are set", () => {
-		expect(hasPartialPassthroughCredentials(inputs(passthroughCredentials))).toBe(false);
+		assert.strictEqual(hasPartialPassthroughCredentials(inputs(passthroughCredentials)), false);
 	});
 
 	it("is false when neither is set", () => {
-		expect(hasPartialPassthroughCredentials(baseInputs)).toBe(false);
+		assert.strictEqual(hasPartialPassthroughCredentials(baseInputs), false);
 	});
 });

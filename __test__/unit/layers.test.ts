@@ -1,6 +1,8 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { ActionCache, ActionEnvironment, PackageManagerInstaller, ToolInstaller } from "@effected/github-actions";
-import { Effect, FileSystem, Layer, Path } from "effect";
+import { MemoryFileSystem } from "@effected/memfs";
+import type { FileSystem } from "effect";
+import { Effect, Layer, Path } from "effect";
 import type { HttpClient } from "effect/unstable/http";
 import { FetchHttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
@@ -26,7 +28,9 @@ const actionServicesTest: Layer.Layer<
 	| ChildProcessSpawnerNS.ChildProcessSpawner
 > = Layer.mergeAll(
 	ActionEnvironment.layerTest(),
-	FileSystem.layerNoop({}),
+	// An empty in-memory volume: the layers only need the service present, and a
+	// real volume fails honestly if one of them ever starts reading.
+	MemoryFileSystem.layer,
 	Path.layer,
 	// No request is ever issued — the layers only need the service present.
 	FetchHttpClient.layer,
@@ -43,7 +47,7 @@ describe("MainLive", () => {
 				Effect.all([ActionCache, PackageManagerInstaller, ToolInstaller]),
 				Layer.provide(MainLive, actionServicesTest),
 			);
-			expect(services).toHaveLength(3);
+			assert.lengthOf(services, 3);
 		}),
 	);
 });
@@ -52,7 +56,7 @@ describe("PostLive", () => {
 	it.effect("builds only the runner cache", () =>
 		Effect.gen(function* () {
 			const cache = yield* Effect.provide(ActionCache, Layer.provide(PostLive, actionServicesTest));
-			expect(cache).toBeDefined();
+			assert.isDefined(cache);
 		}),
 	);
 });

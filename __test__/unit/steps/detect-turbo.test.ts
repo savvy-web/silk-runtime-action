@@ -1,5 +1,7 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, Logger, PlatformError, References } from "effect";
+import { assert, describe, it } from "@effect/vitest";
+import { MemoryFileSystem } from "@effected/memfs";
+import type { FileSystem } from "effect";
+import { Effect, Layer, Logger, PlatformError, References } from "effect";
 
 import { detectTurbo } from "../../../src/steps/detect-turbo.js";
 
@@ -7,22 +9,28 @@ import { detectTurbo } from "../../../src/steps/detect-turbo.js";
 const TURBO_JSON = "turbo.json";
 
 /**
- * A `FileSystem` where `present` names the files that exist.
+ * A volume seeded with `present`, wrapped in a recorder over `access`.
  *
  * @remarks
- * `access` alone is stubbed: the step must never read or parse the file, so a
- * step that does fails here rather than passing on a served body.
+ * The volume answers presence, so an absent file fails `NotFound` on its own
+ * rather than through a stub deciding what absence looks like. The handler
+ * records the probed path and returns `undefined` — delegate — except when a
+ * `failure` other than `NotFound` is asked for, which is how the
+ * permission-denied case is reached on a volume that has no permissions model.
+ *
+ * Contents are never seeded as anything but an empty file: the step must not
+ * read or parse `turbo.json`, and a step that starts to would find nothing.
  */
 const fileSystemTest = (
 	present: ReadonlySet<string>,
 	accessed: Array<string> = [],
 	failure: PlatformError.SystemErrorTag = "NotFound",
 ): Layer.Layer<FileSystem.FileSystem> =>
-	FileSystem.layerNoop({
+	MemoryFileSystem.layerFaulty({
 		access: (path) => {
 			accessed.push(path);
-			return present.has(path)
-				? Effect.void
+			return failure === "NotFound"
+				? undefined
 				: Effect.fail(
 						PlatformError.systemError({
 							_tag: failure,
@@ -32,7 +40,7 @@ const fileSystemTest = (
 						}),
 					);
 		},
-	});
+	}).pipe(Layer.provide(MemoryFileSystem.layerWith(Object.fromEntries([...present].map((name) => [`/${name}`, ""])))));
 
 describe("detectTurbo", () => {
 	it.effect("reports turbo when turbo.json is there", () =>
@@ -40,17 +48,17 @@ describe("detectTurbo", () => {
 			const accessed: Array<string> = [];
 			const turbo = yield* detectTurbo.pipe(Effect.provide(fileSystemTest(new Set([TURBO_JSON]), accessed)));
 
-			expect(turbo).toEqual({ enabled: true });
+			assert.deepStrictEqual(turbo, { enabled: true });
 			// Presence is the whole test (oracle 24): the contents are never read, so
 			// an invalid turbo.json still counts.
-			expect(accessed).toEqual([TURBO_JSON]);
+			assert.deepStrictEqual(accessed, [TURBO_JSON]);
 		}),
 	);
 
 	it.effect("reports no turbo when turbo.json is absent", () =>
 		Effect.gen(function* () {
 			const turbo = yield* detectTurbo.pipe(Effect.provide(fileSystemTest(new Set())));
-			expect(turbo).toEqual({ enabled: false });
+			assert.deepStrictEqual(turbo, { enabled: false });
 		}),
 	);
 
@@ -60,7 +68,7 @@ describe("detectTurbo", () => {
 			// could answer and nothing a workflow could do with the distinction —
 			// v1 collapsed every probe failure to false and so does this.
 			const turbo = yield* detectTurbo.pipe(Effect.provide(fileSystemTest(new Set(), [], "PermissionDenied")));
-			expect(turbo).toEqual({ enabled: false });
+			assert.deepStrictEqual(turbo, { enabled: false });
 		}),
 	);
 
@@ -71,8 +79,8 @@ describe("detectTurbo", () => {
 			const accessed: Array<string> = [];
 			const turbo = yield* detectTurbo.pipe(Effect.provide(fileSystemTest(new Set(["turbo.jsonc"]), accessed)));
 
-			expect(turbo).toEqual({ enabled: false });
-			expect(accessed).toEqual([TURBO_JSON]);
+			assert.deepStrictEqual(turbo, { enabled: false });
+			assert.deepStrictEqual(accessed, [TURBO_JSON]);
 		}),
 	);
 
@@ -86,7 +94,7 @@ describe("detectTurbo", () => {
 			yield* detectTurbo.pipe(Effect.provide(Layer.mergeAll(fileSystemTest(new Set([TURBO_JSON])), logger)));
 
 			// v1's line, verbatim (oracle 26).
-			expect(logs).toContain("Detected Turbo configuration");
+			assert.include(logs, "Detected Turbo configuration");
 
 			const quiet: Array<string> = [];
 			yield* detectTurbo.pipe(
@@ -98,7 +106,7 @@ describe("detectTurbo", () => {
 					),
 				),
 			);
-			expect(quiet).not.toContain("Detected Turbo configuration");
+			assert.notInclude(quiet, "Detected Turbo configuration");
 		}),
 	);
 });

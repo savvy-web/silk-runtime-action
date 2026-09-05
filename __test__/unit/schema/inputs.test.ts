@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { ActionInput } from "@effected/github-actions";
 import { Effect, Option } from "effect";
 
@@ -59,18 +59,18 @@ describe("loadInputs", () => {
 	it.effect("applies action.yml defaults when everything is absent", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.turboCache).toBe("auto");
-			expect(inputs.installDeps).toBe(true);
-			expect(inputs.cacheBust).toEqual(Option.none());
-			expect(inputs.biomeVersion).toEqual(Option.none());
-			expect(inputs.additionalLockfiles).toEqual([]);
+			assert.strictEqual(inputs.turboCache, "auto");
+			assert.strictEqual(inputs.installDeps, true);
+			assert.deepStrictEqual(inputs.cacheBust, Option.none());
+			assert.deepStrictEqual(inputs.biomeVersion, Option.none());
+			assert.deepStrictEqual(inputs.additionalLockfiles, []);
 		}).pipe(Effect.provide(ActionInput.layer({}))),
 	);
 	it.effect("parses multiline additional-lockfiles and s3 fields", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.additionalLockfiles).toEqual(["deno.lock", "**/yarn.lock"]);
-			expect(Option.isSome(inputs.turboS3Bucket)).toBe(true);
+			assert.deepStrictEqual(inputs.additionalLockfiles, ["deno.lock", "**/yarn.lock"]);
+			assert.strictEqual(Option.isSome(inputs.turboS3Bucket), true);
 		}).pipe(
 			Effect.provide(
 				ActionInput.layer({
@@ -83,31 +83,31 @@ describe("loadInputs", () => {
 	it.effect("normalizes turbo-cache to off only for the literal value 'off'", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.turboCache).toBe("off");
+			assert.strictEqual(inputs.turboCache, "off");
 		}).pipe(Effect.provide(ActionInput.layer({ "turbo-cache": "off" }))),
 	);
 	it.effect("normalizes cache-bust literal 'false' to Option.none()", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.cacheBust).toEqual(Option.none());
+			assert.deepStrictEqual(inputs.cacheBust, Option.none());
 		}).pipe(Effect.provide(ActionInput.layer({ "cache-bust": "false" }))),
 	);
 	it.effect("keeps a real cache-bust value", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.cacheBust).toEqual(Option.some("run-123"));
+			assert.deepStrictEqual(inputs.cacheBust, Option.some("run-123"));
 		}).pipe(Effect.provide(ActionInput.layer({ "cache-bust": "run-123" }))),
 	);
 	it.effect("keeps redacted secrets redacted", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(Option.isSome(inputs.turboToken)).toBe(true);
+			assert.strictEqual(Option.isSome(inputs.turboToken), true);
 		}).pipe(Effect.provide(ActionInput.layer({ "turbo-token": "secret-value" }))),
 	);
 	it.effect("fails rather than silently defaulting on a malformed install-deps value", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(loadInputs);
-			expect(exit._tag).toBe("Failure");
+			assert.strictEqual(exit._tag, "Failure");
 		}).pipe(Effect.provide(ActionInput.layer({ "install-deps": "yes" }))),
 	);
 });
@@ -116,37 +116,37 @@ describe("bats and kcov inputs", () => {
 	it.effect("defaults both to auto when unset", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.bats).toBe("auto");
-			expect(inputs.kcov).toBe("auto");
+			assert.strictEqual(inputs.bats, "auto");
+			assert.strictEqual(inputs.kcov, "auto");
 		}).pipe(Effect.provide(ActionInput.layer({}))),
 	);
 
 	it.effect("normalizes true to on and false to off", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.bats).toBe("on");
-			expect(inputs.kcov).toBe("off");
+			assert.strictEqual(inputs.bats, "on");
+			assert.strictEqual(inputs.kcov, "off");
 		}).pipe(Effect.provide(ActionInput.layer({ bats: "true", kcov: "false" }))),
 	);
 
 	it.effect("normalizes any unrecognized value to auto", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			expect(inputs.bats).toBe("auto");
+			assert.strictEqual(inputs.bats, "auto");
 		}).pipe(Effect.provide(ActionInput.layer({ bats: "yes-please" }))),
 	);
 });
 
 describe("INPUT_NAMES", () => {
 	it("matches the inputs action.yml declares", () => {
-		expect([...INPUT_NAMES].sort()).toEqual([...declaredInputNames()].sort());
+		assert.deepStrictEqual([...INPUT_NAMES].sort(), [...declaredInputNames()].sort());
 	});
 
 	it.effect("is exactly the set loadInputs reads", () =>
 		Effect.gen(function* () {
 			const seen = new Set<string>();
 			yield* loadInputs.pipe(Effect.provide(ActionInput.layer(recordingEnv(seen))));
-			expect([...seen].sort()).toEqual([...INPUT_NAMES].sort());
+			assert.deepStrictEqual([...seen].sort(), [...INPUT_NAMES].sort());
 		}),
 	);
 });
