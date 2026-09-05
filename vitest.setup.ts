@@ -15,7 +15,7 @@
  * silently inheriting the *host* workflow's inputs or saved state.
  *
  * This runs in the main vitest process **before** the fork pool is created, so
- * the stripped environment is what every worker inherits. `__test__/unit/env.test.ts`
+ * the stripped environment is what every worker inherits. `__test__/unit/environment.test.ts`
  * asserts that from inside a worker, because a setup file that quietly stopped
  * being wired up would otherwise be invisible.
  *
