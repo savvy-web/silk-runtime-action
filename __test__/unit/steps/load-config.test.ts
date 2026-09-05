@@ -1,22 +1,34 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, Logger, Path } from "effect";
+import { assert, describe, it } from "@effect/vitest";
+import { MemoryFileSystem } from "@effected/memfs";
+import type { FileSystem } from "effect";
+import { Effect, Layer, Logger, Path } from "effect";
 
 import type { ConfigError } from "../../../src/schema/domain.js";
 import { loadConfig } from "../../../src/steps/load-config.js";
 
 /**
- * A `FileSystem` serving `content` for every `readFileString`, recording each
- * requested path into `seen` so tests can assert the literal, cwd-relative
- * `"package.json"` lookup (oracle 15/39).
+ * A real in-memory volume holding one `package.json` whose contents are
+ * `content`, wrapped in a recorder that pushes each requested path into `seen`.
+ *
+ * @remarks
+ * The recorder is a `layerFaulty` handler that returns `undefined` — the
+ * delegate-by-default form — so the read still goes to the volume and only the
+ * path is observed. That is what lets a test assert the literal, cwd-relative
+ * `"package.json"` lookup (oracle 15/39) without the double also having to
+ * decide what a read answers.
+ *
+ * A volume rather than a hand-stubbed `readFileString` matters for the failure
+ * half of this suite: an unseeded path fails `NotFound` the way the real
+ * filesystem does, instead of whatever a stub's author remembered to write.
  */
 const fsServing = (content: string, seen: string[] = []): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
 	Layer.mergeAll(
-		FileSystem.layerNoop({
+		MemoryFileSystem.layerFaulty({
 			readFileString: (path) => {
 				seen.push(path);
-				return Effect.succeed(content);
+				return undefined;
 			},
-		}),
+		}).pipe(Layer.provide(MemoryFileSystem.layerWith({ "/package.json": content }))),
 		Path.layer,
 	);
 
@@ -24,7 +36,7 @@ const fsServing = (content: string, seen: string[] = []): Layer.Layer<FileSystem
 const load = (json: string, seen?: string[]) => loadConfig.pipe(Effect.provide(fsServing(json, seen)));
 
 /** `loadConfig` against a workspace with no readable `package.json` at all. */
-const loadMissing = loadConfig.pipe(Effect.provide(Layer.mergeAll(FileSystem.layerNoop({}), Path.layer)));
+const loadMissing = loadConfig.pipe(Effect.provide(Layer.mergeAll(MemoryFileSystem.layer, Path.layer)));
 
 /** Runs `effect` expecting failure, and yields the `ConfigError` it failed with. */
 const failureOf = <A>(effect: Effect.Effect<A, ConfigError, never>): Effect.Effect<ConfigError, A> =>
@@ -49,9 +61,15 @@ describe("loadConfig", () => {
 				}),
 				seen,
 			);
-			expect(seen).toEqual(["package.json"]);
-			expect(config.packageManager).toMatchObject({ name: "pnpm", version: "10.20.0" });
-			expect(config.runtimes).toEqual([{ name: "node", version: "24.11.0" }]);
+			assert.deepStrictEqual(seen, ["package.json"]);
+			assert.strictEqual(config.packageManager.name, "pnpm");
+			assert.strictEqual(config.packageManager.version, "10.20.0");
+			// Field-by-field rather than a deep compare against an object literal:
+			// `runtimes` holds decoded `RuntimeSpec` instances, and `assert.*` compares
+			// prototypes where `expect(...).toEqual` did not.
+			assert.lengthOf(config.runtimes, 1);
+			assert.strictEqual(config.runtimes[0].name, "node");
+			assert.strictEqual(config.runtimes[0].version, "24.11.0");
 		}),
 	);
 
@@ -65,8 +83,9 @@ describe("loadConfig", () => {
 					},
 				}),
 			);
-			expect(config.runtimes).toHaveLength(1);
-			expect(config.runtimes[0]).toMatchObject({ name: "bun", version: "1.3.3" });
+			assert.lengthOf(config.runtimes, 1);
+			assert.strictEqual(config.runtimes[0].name, "bun");
+			assert.strictEqual(config.runtimes[0].version, "1.3.3");
 		}),
 	);
 
@@ -84,8 +103,14 @@ describe("loadConfig", () => {
 					},
 				}),
 			);
-			expect(config.runtimes.map((r) => r.name)).toEqual(["deno", "node", "bun"]);
-			expect(config.runtimes.map((r) => r.version)).toEqual(["2.5.6", "24.11.0", "1.3.3"]);
+			assert.deepStrictEqual(
+				config.runtimes.map((r) => r.name),
+				["deno", "node", "bun"],
+			);
+			assert.deepStrictEqual(
+				config.runtimes.map((r) => r.version),
+				["2.5.6", "24.11.0", "1.3.3"],
+			);
 		}),
 	);
 
@@ -103,7 +128,7 @@ describe("loadConfig", () => {
 					},
 				}),
 			);
-			expect(config.packageManager.name).toBe("pnpm");
+			assert.strictEqual(config.packageManager.name, "pnpm");
 		}),
 	);
 
@@ -118,7 +143,8 @@ describe("loadConfig", () => {
 					},
 				}),
 			);
-			expect(config.packageManager).toMatchObject({ name: "pnpm", version: "10.20.0" });
+			assert.strictEqual(config.packageManager.name, "pnpm");
+			assert.strictEqual(config.packageManager.version, "10.20.0");
 		}),
 	);
 
@@ -132,8 +158,8 @@ describe("loadConfig", () => {
 					},
 				}),
 			);
-			expect(config.packageManager.onFail).toBe("error");
-			expect(config.runtimes[0].onFail).toBe("ignore");
+			assert.strictEqual(config.packageManager.onFail, "error");
+			assert.strictEqual(config.runtimes[0].onFail, "ignore");
 		}),
 	);
 
@@ -147,7 +173,7 @@ describe("loadConfig", () => {
 					},
 				}),
 			);
-			expect(config.packageManager.version).toBe("11.8.0+sha512.c1f5eaa1");
+			assert.strictEqual(config.packageManager.version, "11.8.0+sha512.c1f5eaa1");
 		}),
 	);
 });
@@ -156,50 +182,54 @@ describe("loadConfig — failures", () => {
 	it.effect("fails with missing-package-json when no manifest can be read", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(loadMissing);
-			expect(error._tag).toBe("ConfigError");
-			expect(error.reason).toBe("missing-package-json");
-			expect(error.message).toBe(
+			assert.strictEqual(error._tag, "ConfigError");
+			assert.strictEqual(error.reason, "missing-package-json");
+			assert.strictEqual(
+				error.message,
 				"package.json not found. This action requires a package.json with devEngines.packageManager and devEngines.runtime fields.",
 			);
 			// The cause is the untouched filesystem failure — the point of keeping
 			// it is that it still says which read failed, and on what.
 			const cause = error.cause as { _tag: string; reason: { _tag: string; method: string; pathOrDescriptor: string } };
-			expect(cause._tag).toBe("PlatformError");
-			expect(cause.reason._tag).toBe("NotFound");
-			expect(cause.reason.method).toBe("readFileString");
-			expect(cause.reason.pathOrDescriptor).toBe("package.json");
+			assert.strictEqual(cause._tag, "PlatformError");
+			assert.strictEqual(cause.reason._tag, "NotFound");
+			// `readFile`, not `readFileString`: the volume derives the string form from
+			// the byte read, so the error names the primitive that actually missed —
+			// which is also what the real Node filesystem reports.
+			assert.strictEqual(cause.reason.method, "readFile");
+			assert.strictEqual(cause.reason.pathOrDescriptor, "package.json");
 		}),
 	);
 
 	it.effect("fails with malformed-json when package.json is not valid JSON", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load("{ not json"));
-			expect(error.reason).toBe("malformed-json");
-			expect(error.message).toBe("Failed to parse package.json: Invalid JSON");
+			assert.strictEqual(error.reason, "malformed-json");
+			assert.strictEqual(error.message, "Failed to parse package.json: Invalid JSON");
 			// Whatever JSON.parse threw, verbatim — the collapsed message says
 			// nothing about where the JSON went wrong, so the cause must.
-			expect(error.cause).toBeInstanceOf(SyntaxError);
+			assert.instanceOf(error.cause, SyntaxError);
 		}),
 	);
 
 	it.effect("rejects JSONC — comments are not stripped before parsing", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(`{\n\t// a comment\n\t"devEngines": {}\n}`));
-			expect(error.reason).toBe("malformed-json");
+			assert.strictEqual(error.reason, "malformed-json");
 		}),
 	);
 
 	it.effect("fails with invalid-dev-engines when devEngines is absent", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(JSON.stringify({ name: "my-project" })));
-			expect(error.reason).toBe("invalid-dev-engines");
-			expect(error.message).toBe("package.json has invalid or missing devEngines field");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
+			assert.strictEqual(error.message, "package.json has invalid or missing devEngines field");
 			// The message is deliberately field-blind (oracle 45), so the schema
 			// issue riding in `cause` is the only thing that can say what broke.
 			const cause = error.cause as { _tag: string; issue: unknown; message: string };
-			expect(cause._tag).toBe("SchemaError");
-			expect(cause.issue).toBeDefined();
-			expect(cause.message).toContain("devEngines");
+			assert.strictEqual(cause._tag, "SchemaError");
+			assert.isDefined(cause.issue);
+			assert.include(cause.message, "devEngines");
 		}),
 	);
 
@@ -213,21 +243,21 @@ describe("loadConfig — failures", () => {
 					}),
 				),
 			);
-			expect(deep.reason).toBe("invalid-dev-engines");
-			expect(deep.message).toBe(absent.message);
+			assert.strictEqual(deep.reason, "invalid-dev-engines");
+			assert.strictEqual(deep.message, absent.message);
 			// Same collapsed message, different cause: the diagnostic detail the
 			// message drops is not lost, only relocated.
 			const cause = deep.cause as { _tag: string; message: string };
-			expect(cause._tag).toBe("SchemaError");
-			expect(cause.message).toContain("version");
-			expect(cause.message).not.toBe((absent.cause as { message: string }).message);
+			assert.strictEqual(cause._tag, "SchemaError");
+			assert.include(cause.message, "version");
+			assert.notStrictEqual(cause.message, (absent.cause as { message: string }).message);
 		}),
 	);
 
 	it.effect("rejects a devEngines block with no packageManager", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(JSON.stringify({ devEngines: { runtime: validDevEngines.runtime } })));
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
@@ -236,14 +266,14 @@ describe("loadConfig — failures", () => {
 			const error = yield* failureOf(
 				load(JSON.stringify({ devEngines: { packageManager: validDevEngines.packageManager } })),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
 	it.effect("rejects an empty runtime array", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: [] } })));
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
@@ -253,7 +283,7 @@ describe("loadConfig — failures", () => {
 				const error = yield* failureOf(
 					load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: { name: "node", version: range } } })),
 				);
-				expect(error.reason).toBe("invalid-dev-engines");
+				assert.strictEqual(error.reason, "invalid-dev-engines");
 			}),
 		);
 
@@ -264,7 +294,7 @@ describe("loadConfig — failures", () => {
 						JSON.stringify({ devEngines: { ...validDevEngines, packageManager: { name: "pnpm", version: range } } }),
 					),
 				);
-				expect(error.reason).toBe("invalid-dev-engines");
+				assert.strictEqual(error.reason, "invalid-dev-engines");
 			}),
 		);
 	}
@@ -274,7 +304,7 @@ describe("loadConfig — failures", () => {
 			const error = yield* failureOf(
 				load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: { name: "ruby", version: "3.4.1" } } })),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
@@ -285,7 +315,7 @@ describe("loadConfig — failures", () => {
 					JSON.stringify({ devEngines: { ...validDevEngines, packageManager: { name: "bundler", version: "2.5.0" } } }),
 				),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
@@ -294,7 +324,7 @@ describe("loadConfig — failures", () => {
 			const error = yield* failureOf(
 				load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: { version: "24.11.0" } } })),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
@@ -303,14 +333,14 @@ describe("loadConfig — failures", () => {
 			const error = yield* failureOf(
 				load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: { name: "node" } } })),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
 	it.effect("rejects a non-object runtime entry", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: "node@24" } })));
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 });
@@ -330,8 +360,11 @@ describe("loadConfig — normalization edges", () => {
 					},
 				}),
 			);
-			expect(config.runtimes).toHaveLength(3);
-			expect(config.runtimes.map((r) => r.version)).toEqual(["24.11.0", "24.11.0", "22.0.0"]);
+			assert.lengthOf(config.runtimes, 3);
+			assert.deepStrictEqual(
+				config.runtimes.map((r) => r.version),
+				["24.11.0", "24.11.0", "22.0.0"],
+			);
 		}),
 	);
 
@@ -341,7 +374,7 @@ describe("loadConfig — normalization edges", () => {
 				const error = yield* failureOf(
 					load(JSON.stringify({ devEngines: { ...validDevEngines, runtime: { name, version: "24.11.0" } } })),
 				);
-				expect(error.reason).toBe("invalid-dev-engines");
+				assert.strictEqual(error.reason, "invalid-dev-engines");
 			}),
 		);
 	}
@@ -353,14 +386,14 @@ describe("loadConfig — normalization edges", () => {
 					JSON.stringify({ devEngines: { ...validDevEngines, packageManager: { name: "PNPM", version: "10.20.0" } } }),
 				),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
 	it.effect("applies no defaults — an empty devEngines block is a failure, not node/npm", () =>
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(JSON.stringify({ devEngines: {} })));
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
@@ -377,15 +410,15 @@ describe("loadConfig — normalization edges", () => {
 					}),
 				),
 			);
-			expect(error.reason).toBe("invalid-dev-engines");
+			assert.strictEqual(error.reason, "invalid-dev-engines");
 		}),
 	);
 
 	it.effect("leaves onFail absent when the manifest omits it", () =>
 		Effect.gen(function* () {
 			const config = yield* load(JSON.stringify({ devEngines: validDevEngines }));
-			expect(config.packageManager.onFail).toBeUndefined();
-			expect(config.runtimes[0].onFail).toBeUndefined();
+			assert.isUndefined(config.packageManager.onFail);
+			assert.isUndefined(config.runtimes[0].onFail);
 		}),
 	);
 
@@ -408,8 +441,8 @@ describe("loadConfig — normalization edges", () => {
 
 			// `@`-joined, unlike the panel's space-separated cells — v1's split per
 			// formatter, kept as-is (ruling 54).
-			expect(logs).toContain("Detected runtime(s): node@26.3.1, bun@1.3.3");
-			expect(logs).toContain("Detected package manager: pnpm@11.8.0");
+			assert.include(logs, "Detected runtime(s): node@26.3.1, bun@1.3.3");
+			assert.include(logs, "Detected package manager: pnpm@11.8.0");
 		}),
 	);
 });

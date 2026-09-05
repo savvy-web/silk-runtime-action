@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import {
 	ActionLogger,
 	ActionOutputs,
@@ -152,9 +152,11 @@ describe("installRuntimes", () => {
 				Effect.provide(layerFor(log)),
 			);
 
-			expect(installed).toEqual([{ name: "node", version: "24.11.0", path: "/opt/toolcache/node/24.11.0/bin" }]);
-			expect(log.urls).toEqual(["https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"]);
-			expect(log.calls).toEqual([
+			assert.deepStrictEqual(installed, [
+				{ name: "node", version: "24.11.0", path: "/opt/toolcache/node/24.11.0/bin" },
+			]);
+			assert.deepStrictEqual(log.urls, ["https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"]);
+			assert.deepStrictEqual(log.calls, [
 				"find:node@24.11.0",
 				"download",
 				"extractTar:/tmp/archive:xz --strip=1 -f",
@@ -176,8 +178,8 @@ describe("installRuntimes", () => {
 				),
 			);
 
-			expect(installed[0]?.path).toBe("/opt/toolcache/node/24.11.0/bin");
-			expect(log.calls).toEqual([
+			assert.strictEqual(installed[0]?.path, "/opt/toolcache/node/24.11.0/bin");
+			assert.deepStrictEqual(log.calls, [
 				"find:node@24.11.0",
 				"addPath:/opt/toolcache/node/24.11.0/bin",
 				"probe:/opt/toolcache/node/24.11.0/bin/node",
@@ -191,8 +193,11 @@ describe("installRuntimes", () => {
 			yield* installRuntimes(configOf({ name: "deno", version: "2.5.6" }), LINUX_X64).pipe(
 				Effect.provide(layerFor(log)),
 			);
-			expect(log.calls).toContain("extractZip:/tmp/archive");
-			expect(log.calls.some((call) => call.startsWith("extractTar"))).toBe(false);
+			assert.include(log.calls, "extractZip:/tmp/archive");
+			assert.strictEqual(
+				log.calls.some((call) => call.startsWith("extractTar")),
+				false,
+			);
 		}),
 	);
 
@@ -202,8 +207,8 @@ describe("installRuntimes", () => {
 			const installed = yield* installRuntimes(configOf({ name: "deno", version: "2.5.6" }), LINUX_X64).pipe(
 				Effect.provide(layerFor(log)),
 			);
-			expect(installed[0]?.path).toBe("/opt/toolcache/deno/2.5.6");
-			expect(log.paths).toEqual(["/opt/toolcache/deno/2.5.6"]);
+			assert.strictEqual(installed[0]?.path, "/opt/toolcache/deno/2.5.6");
+			assert.deepStrictEqual(log.paths, ["/opt/toolcache/deno/2.5.6"]);
 		}),
 	);
 
@@ -218,10 +223,10 @@ describe("installRuntimes", () => {
 
 			// The wrapper is stripped before the cache write, so the cached root is
 			// the canonical layout every other writer of the shared tool cache uses.
-			expect(log.calls).toContain(`cacheDir:${path.join("/tmp/extracted", "node-v24.11.0-win-x64")}:node@24.11.0`);
-			expect(installed[0]?.path).toBe("/opt/toolcache/node/24.11.0");
-			expect(log.paths).toEqual(["/opt/toolcache/node/24.11.0"]);
-			expect(log.probes[0]?.command).toBe(path.join("/opt/toolcache/node/24.11.0", "node.exe"));
+			assert.include(log.calls, `cacheDir:${path.join("/tmp/extracted", "node-v24.11.0-win-x64")}:node@24.11.0`);
+			assert.strictEqual(installed[0]?.path, "/opt/toolcache/node/24.11.0");
+			assert.deepStrictEqual(log.paths, ["/opt/toolcache/node/24.11.0"]);
+			assert.strictEqual(log.probes[0]?.command, path.join("/opt/toolcache/node/24.11.0", "node.exe"));
 		}).pipe(Effect.provide(Path.layer)),
 	);
 
@@ -231,9 +236,9 @@ describe("installRuntimes", () => {
 			const installed = yield* installRuntimes(configOf({ name: "bun", version: "1.3.3" }), LINUX_X64).pipe(
 				Effect.provide(layerFor(log)),
 			);
-			expect(log.calls).toContain("cacheDir:/tmp/extracted/bun-linux-x64:bun@1.3.3");
-			expect(installed[0]?.path).toBe("/opt/toolcache/bun/1.3.3");
-			expect(log.probes[0]?.command).toBe("/opt/toolcache/bun/1.3.3/bun");
+			assert.include(log.calls, "cacheDir:/tmp/extracted/bun-linux-x64:bun@1.3.3");
+			assert.strictEqual(installed[0]?.path, "/opt/toolcache/bun/1.3.3");
+			assert.strictEqual(log.probes[0]?.command, "/opt/toolcache/bun/1.3.3/bun");
 		}),
 	);
 
@@ -246,8 +251,8 @@ describe("installRuntimes", () => {
 			}).pipe(Effect.provide(layerFor(log, { bareInstaller: true, installer: { find: hit(log) } })));
 			const path = yield* Path.Path;
 
-			expect(installed[0]?.path).toBe("/opt/toolcache/node/24.11.0");
-			expect(log.probes[0]?.command).toBe(path.join("/opt/toolcache/node/24.11.0", "node.exe"));
+			assert.strictEqual(installed[0]?.path, "/opt/toolcache/node/24.11.0");
+			assert.strictEqual(log.probes[0]?.command, path.join("/opt/toolcache/node/24.11.0", "node.exe"));
 		}).pipe(Effect.provide(Path.layer)),
 	);
 
@@ -257,8 +262,8 @@ describe("installRuntimes", () => {
 			const installed = yield* installRuntimes(configOf({ name: "bun", version: "1.3.3" }), LINUX_X64).pipe(
 				Effect.provide(layerFor(log, { bareInstaller: true, installer: { find: hit(log) } })),
 			);
-			expect(installed[0]?.path).toBe("/opt/toolcache/bun/1.3.3");
-			expect(log.probes[0]?.command).toBe("/opt/toolcache/bun/1.3.3/bun");
+			assert.strictEqual(installed[0]?.path, "/opt/toolcache/bun/1.3.3");
+			assert.strictEqual(log.probes[0]?.command, "/opt/toolcache/bun/1.3.3/bun");
 		}),
 	);
 
@@ -268,7 +273,7 @@ describe("installRuntimes", () => {
 			yield* installRuntimes(configOf({ name: "deno", version: "2.5.6" }), LINUX_X64).pipe(
 				Effect.provide(layerFor(log)),
 			);
-			expect(log.probes).toEqual([{ command: "/opt/toolcache/deno/2.5.6/deno", args: ["--version"] }]);
+			assert.deepStrictEqual(log.probes, [{ command: "/opt/toolcache/deno/2.5.6/deno", args: ["--version"] }]);
 		}),
 	);
 
@@ -280,11 +285,12 @@ describe("installRuntimes", () => {
 				LINUX_X64,
 			).pipe(Effect.provide(layerFor(log)));
 
-			expect(installed.map((runtime) => runtime.name)).toEqual(["node", "bun"]);
-			// node's whole sequence completes before bun's begins.
-			expect(log.calls.indexOf("find:bun@1.3.3")).toBeGreaterThan(
-				log.calls.indexOf("cacheDir:/tmp/extracted:node@24.11.0"),
+			assert.deepStrictEqual(
+				installed.map((runtime) => runtime.name),
+				["node", "bun"],
 			);
+			// node's whole sequence completes before bun's begins.
+			assert.isAbove(log.calls.indexOf("find:bun@1.3.3"), log.calls.indexOf("cacheDir:/tmp/extracted:node@24.11.0"));
 		}),
 	);
 
@@ -295,8 +301,8 @@ describe("installRuntimes", () => {
 				configOf({ name: "node", version: "24.11.0" }, { name: "bun", version: "1.3.3" }),
 				LINUX_X64,
 			).pipe(Effect.provide(layerFor(log)));
-			expect(log.logs).toContain("node 24.11.0");
-			expect(log.logs).toContain("bun 1.3.3");
+			assert.include(log.logs, "node 24.11.0");
+			assert.include(log.logs, "bun 1.3.3");
 		}),
 	);
 
@@ -305,7 +311,7 @@ describe("installRuntimes", () => {
 			const log = recorder();
 			yield* installRuntimes(configOf({ name: "node", version: "24.11.0" })).pipe(Effect.provide(layerFor(log)));
 			const host = currentHost();
-			expect(log.urls[0]).toContain(`-${host.platform === "win32" ? "win" : host.platform}-`);
+			assert.include(log.urls[0], `-${host.platform === "win32" ? "win" : host.platform}-`);
 		}),
 	);
 
@@ -325,14 +331,15 @@ describe("installRuntimes", () => {
 				),
 			);
 
-			expect(error._tag).toBe("RuntimeInstallError");
-			expect(error.reason).toBe("download");
+			assert.strictEqual(error._tag, "RuntimeInstallError");
+			assert.strictEqual(error.reason, "download");
 			// The kit error's prose, not its discriminant: a failed job says what
 			// went wrong and where.
-			expect(error.message).toBe(
+			assert.strictEqual(
+				error.message,
 				"Failed to install node@24.11.0: Could not download https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz (HTTP 404)",
 			);
-			expect(error.cause).toBeDefined();
+			assert.isDefined(error.cause);
 		}),
 	);
 
@@ -351,7 +358,7 @@ describe("installRuntimes", () => {
 					),
 				),
 			);
-			expect(error.reason).toBe("extract");
+			assert.strictEqual(error.reason, "extract");
 		}),
 	);
 
@@ -370,7 +377,7 @@ describe("installRuntimes", () => {
 					),
 				),
 			);
-			expect(error.reason).toBe("cache");
+			assert.strictEqual(error.reason, "cache");
 		}),
 	);
 
@@ -382,10 +389,10 @@ describe("installRuntimes", () => {
 					Effect.provide(layerFor(log)),
 				),
 			);
-			expect(error.reason).toBe("unsupported-platform");
-			expect(error.message).toBe("Failed to install deno@2.5.6: Unsupported platform for Deno: win32-arm64");
+			assert.strictEqual(error.reason, "unsupported-platform");
+			assert.strictEqual(error.message, "Failed to install deno@2.5.6: Unsupported platform for Deno: win32-arm64");
 			// Nothing was downloaded: the refusal happens before any I/O.
-			expect(log.calls).toEqual([]);
+			assert.deepStrictEqual(log.calls, []);
 		}),
 	);
 
@@ -397,8 +404,11 @@ describe("installRuntimes", () => {
 					Effect.provide(layerFor(log, { exitCode: 127 })),
 				),
 			);
-			expect(error.reason).toBe("verify");
-			expect(error.message).toBe("Failed to install deno@2.5.6: /opt/toolcache/deno/2.5.6/deno --version exited 127");
+			assert.strictEqual(error.reason, "verify");
+			assert.strictEqual(
+				error.message,
+				"Failed to install deno@2.5.6: /opt/toolcache/deno/2.5.6/deno --version exited 127",
+			);
 		}),
 	);
 
@@ -414,8 +424,9 @@ describe("installRuntimes", () => {
 					),
 				),
 			);
-			expect(error.reason).toBe("verify");
-			expect(error.message).toBe(
+			assert.strictEqual(error.reason, "verify");
+			assert.strictEqual(
+				error.message,
 				'Failed to install deno@2.5.6: Runner file "GITHUB_PATH" is not available; is this running on a GitHub runner?',
 			);
 		}),
@@ -438,20 +449,20 @@ describe("installRuntimes", () => {
 					),
 				),
 			);
-			expect(log.calls).not.toContain("find:bun@1.3.3");
+			assert.notInclude(log.calls, "find:bun@1.3.3");
 		}),
 	);
 
 	it("RuntimeInstallError carries its tag and reason", () => {
 		const error = new RuntimeInstallError({ reason: "download", message: "download failed" });
-		expect(error._tag).toBe("RuntimeInstallError");
-		expect(error.reason).toBe("download");
-		expect(error.message).toBe("download failed");
+		assert.strictEqual(error._tag, "RuntimeInstallError");
+		assert.strictEqual(error.reason, "download");
+		assert.strictEqual(error.message, "download failed");
 	});
 });
 
 describe("currentHost", () => {
 	it("reads the runner's platform and architecture from the process", () => {
-		expect(currentHost()).toEqual({ platform: process.platform, arch: process.arch });
+		assert.deepStrictEqual(currentHost(), { platform: process.platform, arch: process.arch });
 	});
 });

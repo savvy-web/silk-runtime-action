@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { BlobStore } from "@effected/github-actions";
 import { Effect, Option, Schema } from "effect";
 
@@ -13,21 +13,21 @@ describe("TurboArtifactMeta", () => {
 		// proves it — a class instance with the same fields would not match.
 		const encoded = Schema.encodeSync(TurboArtifactMeta)(TurboArtifactMeta.make({ tag: "sig", durationMs: 1250 }));
 
-		expect(encoded).toEqual({ tag: "sig", durationMs: 1250 });
-		expect(JSON.parse(JSON.stringify(encoded))).toEqual(encoded);
+		assert.deepStrictEqual(encoded, { tag: "sig", durationMs: 1250 });
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(encoded)), encoded);
 	});
 
 	it("encodes an absent tag as null", () => {
 		const encoded = Schema.encodeSync(TurboArtifactMeta)(TurboArtifactMeta.make({ tag: null, durationMs: 0 }));
 
-		expect(encoded).toEqual({ tag: null, durationMs: 0 });
+		assert.deepStrictEqual(encoded, { tag: null, durationMs: 0 });
 	});
 
 	it("survives a JSON round trip", () => {
 		const meta = TurboArtifactMeta.make({ tag: "sig", durationMs: 1250 });
 		const wire = JSON.parse(JSON.stringify(Schema.encodeSync(TurboArtifactMeta)(meta)));
 
-		expect(Schema.decodeUnknownSync(TurboArtifactMeta)(wire)).toEqual(meta);
+		assert.deepStrictEqual(Schema.decodeUnknownSync(TurboArtifactMeta)(wire), meta);
 	});
 
 	it("survives a real store round trip", () =>
@@ -41,10 +41,10 @@ describe("TurboArtifactMeta", () => {
 			yield* store.put("k", { metadata, body }, TurboArtifactMeta);
 			const blob = yield* store.get("k", TurboArtifactMeta);
 
-			expect(Option.isSome(blob)).toBe(true);
+			assert.strictEqual(Option.isSome(blob), true);
 			if (Option.isSome(blob)) {
-				expect(blob.value.metadata).toEqual(metadata);
-				expect(blob.value.body).toEqual(body);
+				assert.deepStrictEqual(blob.value.metadata, metadata);
+				assert.deepStrictEqual(blob.value.body, body);
 			}
 		}).pipe(Effect.provide(BlobStore.layerMemory), Effect.runPromise));
 });
@@ -59,6 +59,6 @@ describe("clampDurationMs", () => {
 		["keeps zero", 0, 0],
 		["maps infinity to the cap", Number.POSITIVE_INFINITY, 4_294_967_295],
 	])("%s", (_name, input, expected) => {
-		expect(clampDurationMs(input)).toBe(expected);
+		assert.strictEqual(clampDurationMs(input), expected);
 	});
 });

@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: integration
 created: 2026-03-21
-updated: 2026-08-20
-last-synced: 2026-08-20
+updated: 2026-09-04
+last-synced: 2026-09-04
 completeness: 92
 related:
   - ./architecture.md
@@ -23,15 +23,16 @@ Build pipeline, bundle configuration, the committed `dist/`, the dependency topo
 2. [Current state](#current-state)
 3. [Dependency topology](#dependency-topology)
 4. [Verification means the built artifact](#verification-means-the-built-artifact)
-5. [Rationale](#rationale)
-6. [Implementation details](#implementation-details)
-7. [Related documentation](#related-documentation)
+5. [Keeping dev and main coherent](#keeping-dev-and-main-coherent)
+6. [Rationale](#rationale)
+7. [Implementation details](#implementation-details)
+8. [Related documentation](#related-documentation)
 
 ---
 
 ## Overview
 
-The action is built with `@savvy-web/github-action-builder` (rsbuild-based, `^2.2.7`) and produces compiled JavaScript bundles that are **committed to git**. GitHub Actions loads the action from the checked-out ref with no build step in the runtime, so the compiled output must be present in the repository.
+The action is built with `@savvy-web/github-action-builder` (rsbuild-based) and produces compiled JavaScript bundles that are **committed to git**. GitHub Actions loads the action from the checked-out ref with no build step in the runtime, so the compiled output must be present in the repository.
 
 **Key features:**
 
@@ -116,26 +117,32 @@ runs:
 
 | Package | Role |
 | --- | --- |
-| `effect` (`catalog:effect` → `4.0.0-rc.109`) | The framework. In v4 the former `@effect/platform` is dissolved into core `effect` |
+| `effect` | The framework. In v4 the former `@effect/platform` is dissolved into core `effect` |
 | `@effect/platform-node` | Node platform layers (`NodeFileSystem`, `NodeHttpClient.layerUndici`) |
-| `@effected/github-actions` (`^0.9.2`) | Every GitHub Actions runtime interaction |
-| `@effected/npm` (`^0.7.0`) | `PackageManagerPin` |
-| `@effected/semver` (`^0.5.0`) | `SemVer.ExactVersionString`, which backs `AbsoluteVersion` |
-| `@effected/jsonc` (`^0.5.1`) | `Jsonc.parse` for `biome.jsonc` |
-| `@effected/commands` (`^0.5.0`) | `Run.succeeds` / `Run.collect` — the `jq` and `kcov --version` probes, and kcov's build commands |
+| `@effected/github-actions` | Every GitHub Actions runtime interaction |
+| `@effected/npm` | `PackageManagerPin`, `PackageManagerCache.defaultDirectory` |
+| `@effected/lockfiles` | `filenamesFor` — the lockfile names a package manager can produce |
+| `@effected/workspaces` | `WorkspaceRoot` / `WorkspaceDiscovery`, behind `restore-cache` |
+| `@effected/semver` | `SemVer.ExactVersionString`, which backs `AbsoluteVersion` |
+| `@effected/jsonc` | `Jsonc.parse` for `biome.jsonc` |
+| `@effected/commands` | `Run.succeeds` / `Run.collect` — the `jq` and `kcov --version` probes, and kcov's build commands |
+| `@effected/yaml` | Not imported by `src/`; a required peer of `@effected/lockfiles` |
 
 `@effected/commands` was a declared-but-unimported entry until the BATS/kcov work; `install-bats` and `install-kcov` are its first importers, and kcov's source build is the first time this action spawns a build subprocess at all.
 
-Other `@effected/*` entries are declared in `package.json` but **not imported by `src/` today**: `git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`, `yaml`. Notably `@effected/glob` left the code path when lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`. Nothing is bundled that is not imported, so an unused declaration costs install time rather than bundle size.
+**Every declared dependency but `@effected/yaml` is now imported.** The #348 canon pass deleted seven runtime entries that `src/` had never imported — `@effected/git`, `github`, `glob`, `markdown`, `package-json`, `runtimes` and `sbom`. `@effected/glob` had left the code path when lockfile discovery and hashing moved onto `CacheKey.matchingFiles` / `CacheKey.hashFiles`; `@effected/package-json` left it when `devEngines` decoding moved into `steps/load-config.ts`. None of them cost bundle size — nothing unimported is bundled — but they cost install time, and more importantly they made the manifest a false statement about what the action depends on. A dependency list that includes things nobody imports cannot be used to reason about blast radius when an upstream package breaks.
+
+**No version numbers appear in this doc, deliberately.** Every `@effected/*` range is `catalog:effected` and both `effect` entries are `catalog:effect`, resolved by the `@effected/pnpm-plugin-effect` config dependency. The catalog definitions do not live in this repository; the versions actually installed are in `pnpm-lock.yaml`'s `catalogs:` block. Re-derive them from there rather than trusting prose — a pinned number written here is wrong the first time the plugin publishes.
 
 ### Dev (not bundled)
 
-- `@savvy-web/github-action-builder` (`^2.2.7`) — the build tool.
-- `@savvy-web/silk` (`^3.2.11`) — the Biome preset and the `savvy` CLI used by `ci:version`.
+- `@savvy-web/github-action-builder` — the build tool.
+- `@savvy-web/silk` — the Biome preset and the `savvy` CLI used by `ci:version`.
 - `@vitest-agent/plugin` — test tooling and coverage levels.
-- `@effect/vitest` — Effect-aware test harness (declared as a runtime dependency, used only by tests).
+- `@effect/vitest` — the Effect-aware test harness.
+- `@effected/memfs` — `MemoryFileSystem`, the filesystem double the whole unit suite runs on. See [testing strategy](./testing-strategy.md#the-filesystem-is-a-real-volume).
 
-No pnpm overrides, no patches, no links. Every range is a published caret.
+No pnpm overrides, no patches, no links.
 
 ### The dogfood loop and its verification rule
 
@@ -155,11 +162,11 @@ The rebuild ran on four such overrides. Unlinking them produced a green install 
 The honest check is therefore narrow:
 
 1. Upstream publishes a **release wave at bumped versions**.
-2. Bump the ranges here to those versions.
+2. Take the new versions here — today that means the `effected` catalog moving under `@effected/pnpm-plugin-effect`, not a range edited in this repository's `package.json`.
 3. Unlink and remove any `overrides:` entry.
 4. Verify with a **cold registry install in CI** — not a warm local one.
 
-That is how the rebuild's loop closed on 2026-08-03, against `@effected/github-actions@0.3.0`, `@effected/npm@0.7.0`, `@effected/package-json@0.7.0` and `@effected/semver@0.3.0`. Ranges are now caret-floored at that wave.
+That is how the rebuild's loop closed on 2026-08-03, against a four-package release wave. Since then the per-package carets have been replaced by catalog references, which moves the pin one level out: bumping a first-party dependency is a config-dependency bump, and the resolved version is only visible in `pnpm-lock.yaml`.
 
 Two related hazards from the same loop, worth carrying:
 
@@ -213,6 +220,22 @@ The practical check is one grep against the built bundle after `pnpm build`, for
 
 ---
 
+## Keeping dev and main coherent
+
+`release-sync.yml` is gone. Its replacement is `.github/workflows/branch-sync.yml`, which owns three concerns that all mutate the `dev`/`main` relationship and therefore share one `branch-sync` concurrency group so they cannot race: `sync-dev` evens `dev` out with `main`, `major-tag` moves the `v<major>` alias tag on a published stable release, and `promote` opens (or refreshes) the `dev -> main` PR after a `pnpm/config-deps` merge. Read the workflow for the mechanics — it is heavily commented and it is the source of truth.
+
+Two decisions in it are worth carrying here, because both replace something that was wrong.
+
+**`sync-dev` keys off a push to `main`, not off a published release.** A push to `main` that produces no release — a dependency promotion with no changeset, the common case now that config-dependency bumps flow through `promote` — still has to even the branches out, and the release trigger missed exactly that class. Merging `changeset-release/main` is itself a push to `main`, so the release path is still covered by the broader trigger.
+
+**`dev` is never blindly clobbered.** The old behaviour was a hard reset justified by "dev work always lands in main first"; that is a claim about process, not a check. The workflow now asks the only question that matters — *would resetting lose work?* — by merging `dev` into `main` **in memory** with `git merge-tree --write-tree` and comparing the resulting tree to `main`'s. Equal trees mean `dev` holds no content `main` lacks, and the reset is a content no-op. A `dev` that genuinely is ahead gets rebased instead, and a rebase that conflicts leaves `dev` untouched with a warning.
+
+The subtlety that forces the tree comparison is **squash merges destroy patch-id equality**. `git cherry` and every other commit-level "is this merged?" test compares patch-ids one commit at a time, so N `dev` commits squashed into one commit on `main` match nothing and read as unmerged work — which would have made the safe path never fire on this repository, where `main`'s ruleset allows only squash merges. Content is the source of truth for this question; commits are not.
+
+Every push in the workflow is `--force-with-lease`d against the head it read, so a concurrent push to `dev` aborts the sync rather than losing to it.
+
+---
+
 ## Rationale
 
 ### Commit `dist/` to git
@@ -257,14 +280,14 @@ Bundling the worker with the same tool and into the same directory is what makes
 
 ### TypeScript configuration
 
-`module: "ESNext"`, `moduleResolution: "bundler"`, `target: "ES2022"`, `strict: true`, `noEmit: true`, `exactOptionalPropertyTypes` (which is why the optional S3 fields in `server-config.ts` are spread rather than assigned). All imports carry `.js` extensions and Node builtins use the `node:` protocol, both enforced by Biome. Type checking runs on `@typescript/native-preview` (tsgo).
+`module: "ESNext"`, `moduleResolution: "bundler"`, `target: "ES2022"`, `strict: true`, `noEmit: true`, `exactOptionalPropertyTypes` (which is why the optional S3 fields in `server-config.ts` are spread rather than assigned). All imports carry `.js` extensions and Node builtins use the `node:` protocol, both enforced by Biome. Type checking is plain `tsc --noEmit` (`types:check`, run through Turbo by `pnpm typecheck`) against TypeScript 7 — there is no `@typescript/native-preview` dependency, and prose here claimed one until #348.
 
 ### Release process
 
 1. `pnpm changeset` records the change.
 2. The changesets workflow opens a release PR; version application runs through the `savvy` CLI (`ci:version`), which affects release tooling only, never the action source or bundles.
 3. Merging bumps `package.json` and `CHANGELOG.md` and creates a GitHub release with tags.
-4. `release-sync.yml` moves the `v<major>` alias tag and resets `dev` to `main`.
+4. `.github/workflows/branch-sync.yml` moves the `v<major>` alias tag and evens `dev` out with `main` — see [keeping dev and main coherent](#keeping-dev-and-main-coherent).
 5. Consumers reference by tag (`savvy-web/silk-runtime-action@v1`).
 
 Commits must be GPG-signed with the GitHub-verified key for `C. Spencer Beggs <spencer@savvyweb.systems>`, or the signature ruleset rejects them.
@@ -288,3 +311,5 @@ Commits must be GPG-signed with the GitHub-verified key for `C. Spencer Beggs <s
 - `action.config.ts` — build configuration and the `ignore` list.
 - `action.yml` — the action definition and the parity contract.
 - `package.json` — dependencies, scripts and the `devEngines` pins this repository uses on itself.
+- `pnpm-lock.yaml` — the `catalogs:` block, the only honest record of which `effect` and `@effected/*` versions are installed.
+- `.github/workflows/branch-sync.yml` — the `sync-dev` / `major-tag` / `promote` jobs.

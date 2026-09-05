@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { PackageManagerInstallOptions } from "@effected/github-actions";
 import {
 	ActionLogger,
@@ -104,9 +104,9 @@ describe("setupPackageManager", () => {
 				Effect.provide(layerFor(log, { bareInstaller: true })),
 			);
 
-			expect(result).toEqual({ name: "bun", version: "1.3.3", binDir: Option.none() });
-			expect(log.logs).toContain("bun is its own package manager, no additional setup needed");
-			expect(log.paths).toEqual([]);
+			assert.deepStrictEqual(result, { name: "bun", version: "1.3.3", binDir: Option.none() });
+			assert.include(log.logs, "bun is its own package manager, no additional setup needed");
+			assert.deepStrictEqual(log.paths, []);
 		}),
 	);
 
@@ -117,8 +117,8 @@ describe("setupPackageManager", () => {
 				Effect.provide(layerFor(log, { bareInstaller: true })),
 			);
 
-			expect(result).toEqual({ name: "deno", version: "2.5.6", binDir: Option.none() });
-			expect(log.logs).toContain("deno is its own package manager, no additional setup needed");
+			assert.deepStrictEqual(result, { name: "deno", version: "2.5.6", binDir: Option.none() });
+			assert.include(log.logs, "deno is its own package manager, no additional setup needed");
 		}),
 	);
 
@@ -130,8 +130,8 @@ describe("setupPackageManager", () => {
 			// an activation that never happened. The positive assertion is what
 			// keeps the negative one honest — a step that logged nothing at all
 			// would otherwise pass it.
-			expect(log.logs).toContain("bun is its own package manager, no additional setup needed");
-			expect(log.logs).not.toContain("bun@1.3.3 activated");
+			assert.include(log.logs, "bun is its own package manager, no additional setup needed");
+			assert.notInclude(log.logs, "bun@1.3.3 activated");
 		}),
 	);
 
@@ -140,10 +140,10 @@ describe("setupPackageManager", () => {
 			const log = recorder();
 			yield* setupPackageManager(specOf("pnpm", "10.20.0")).pipe(Effect.provide(layerFor(log)));
 
-			expect(log.pins).toHaveLength(1);
-			expect(log.pins[0]?.name).toBe("pnpm");
-			expect(log.pins[0]?.version.toString()).toBe("10.20.0");
-			expect(log.pins[0]?.integrity).toBeUndefined();
+			assert.lengthOf(log.pins, 1);
+			assert.strictEqual(log.pins[0]?.name, "pnpm");
+			assert.strictEqual(log.pins[0]?.version.toString(), "10.20.0");
+			assert.isUndefined(log.pins[0]?.integrity);
 		}),
 	);
 
@@ -154,8 +154,8 @@ describe("setupPackageManager", () => {
 
 			// The pin grammar owns the split: the first `+` begins integrity, so the
 			// version never carries it.
-			expect(log.pins[0]?.version.toString()).toBe("10.20.0");
-			expect(log.pins[0]?.integrity).toBe("sha512.deadbeef");
+			assert.strictEqual(log.pins[0]?.version.toString(), "10.20.0");
+			assert.strictEqual(log.pins[0]?.integrity, "sha512.deadbeef");
 		}),
 	);
 
@@ -165,8 +165,8 @@ describe("setupPackageManager", () => {
 			const result = yield* setupPackageManager(specOf("pnpm", "10.20.0")).pipe(Effect.provide(layerFor(log)));
 			// The shim directory the installer wrote, which is what makes `pnpm`
 			// resolvable by name — the entry root holds no executable.
-			expect(log.paths).toEqual(["/opt/toolcache/pnpm/10.20.0/.bin"]);
-			expect(result.binDir).toStrictEqual(Option.some("/opt/toolcache/pnpm/10.20.0/.bin"));
+			assert.deepStrictEqual(log.paths, ["/opt/toolcache/pnpm/10.20.0/.bin"]);
+			assert.deepStrictEqual(result.binDir, Option.some("/opt/toolcache/pnpm/10.20.0/.bin"));
 		}),
 	);
 
@@ -193,8 +193,8 @@ describe("setupPackageManager", () => {
 				),
 			);
 
-			expect(log.paths).toEqual(["/opt/toolcache/bun/1.3.3"]);
-			expect(result.binDir).toStrictEqual(Option.some("/opt/toolcache/bun/1.3.3"));
+			assert.deepStrictEqual(log.paths, ["/opt/toolcache/bun/1.3.3"]);
+			assert.deepStrictEqual(result.binDir, Option.some("/opt/toolcache/bun/1.3.3"));
 		}),
 	);
 
@@ -220,7 +220,7 @@ describe("setupPackageManager", () => {
 			// executing the npm bundled with that node rather than the pinned one.
 			// Which npm ran was therefore a function of the runner image. `false` is
 			// what makes it a function of the manifest.
-			expect(log.options[0]?.allowAmbient).toBe(false);
+			assert.strictEqual(log.options[0]?.allowAmbient, false);
 		}),
 	);
 
@@ -252,9 +252,9 @@ describe("setupPackageManager", () => {
 				),
 			);
 
-			expect(log.paths).toEqual([]);
+			assert.deepStrictEqual(log.paths, []);
 			// Nothing to prepend downstream either: the manager is already resolvable.
-			expect(result.binDir).toStrictEqual(Option.none());
+			assert.deepStrictEqual(result.binDir, Option.none());
 		}),
 	);
 
@@ -262,7 +262,7 @@ describe("setupPackageManager", () => {
 		Effect.gen(function* () {
 			const log = recorder();
 			yield* setupPackageManager(specOf("pnpm", "10.20.0")).pipe(Effect.provide(layerFor(log)));
-			expect(log.logs).toContain("pnpm@10.20.0 activated");
+			assert.include(log.logs, "pnpm@10.20.0 activated");
 		}),
 	);
 
@@ -279,8 +279,8 @@ describe("setupPackageManager", () => {
 				),
 			);
 
-			expect(result.name).toBe("pnpm");
-			expect(result.version).toBe("10.20.0+sha512.deadbeef");
+			assert.strictEqual(result.name, "pnpm");
+			assert.strictEqual(result.version, "10.20.0+sha512.deadbeef");
 		}),
 	);
 
@@ -295,12 +295,13 @@ describe("setupPackageManager", () => {
 				),
 			);
 
-			expect(error._tag).toBe("PackageManagerError");
-			expect(error.reason).toBe("install");
-			expect(error.message).toBe(
+			assert.strictEqual(error._tag, "PackageManagerError");
+			assert.strictEqual(error.reason, "install");
+			assert.strictEqual(
+				error.message,
 				'Failed to setup pnpm@10.20.0+deadbeef: Invalid package-manager pin "pnpm@10.20.0+deadbeef": integrity must be a corepack <algo>.<hex> hash',
 			);
-			expect(error.cause).toBeDefined();
+			assert.isDefined(error.cause);
 		}),
 	);
 
@@ -325,10 +326,10 @@ describe("setupPackageManager", () => {
 				),
 			);
 
-			expect(error.reason).toBe("install");
+			assert.strictEqual(error.reason, "install");
 			// The kit error's prose, not its discriminant.
-			expect(error.message).toContain("Failed to setup pnpm@10.20.0: ");
-			expect(error.message).toContain("https://registry.npmjs.org/pnpm/-/pnpm-10.20.0.tgz");
+			assert.include(error.message, "Failed to setup pnpm@10.20.0: ");
+			assert.include(error.message, "https://registry.npmjs.org/pnpm/-/pnpm-10.20.0.tgz");
 		}),
 	);
 
@@ -356,7 +357,7 @@ describe("setupPackageManager", () => {
 
 			// Nothing was cached, so the manager was never acquired: install, not
 			// verify. `verify` is reserved for an artifact that *did* land.
-			expect(error.reason).toBe("install");
+			assert.strictEqual(error.reason, "install");
 		}),
 	);
 
@@ -383,8 +384,8 @@ describe("setupPackageManager", () => {
 
 			// The artifact downloaded and extracted; what failed is the check that it
 			// is the package manager it claims to be.
-			expect(error.reason).toBe("verify");
-			expect(error.message).toContain("Failed to setup yarn@4.0.0: ");
+			assert.strictEqual(error.reason, "verify");
+			assert.include(error.message, "Failed to setup yarn@4.0.0: ");
 		}),
 	);
 
@@ -401,8 +402,9 @@ describe("setupPackageManager", () => {
 				),
 			);
 
-			expect(error.reason).toBe("activate");
-			expect(error.message).toBe(
+			assert.strictEqual(error.reason, "activate");
+			assert.strictEqual(
+				error.message,
 				'Failed to setup pnpm@10.20.0: Runner file "GITHUB_PATH" is not available; is this running on a GitHub runner?',
 			);
 		}),
@@ -410,8 +412,8 @@ describe("setupPackageManager", () => {
 
 	it("PackageManagerError carries its tag and reason", () => {
 		const error = new PackageManagerError({ reason: "activate", message: "activation failed" });
-		expect(error._tag).toBe("PackageManagerError");
-		expect(error.reason).toBe("activate");
-		expect(error.message).toBe("activation failed");
+		assert.strictEqual(error._tag, "PackageManagerError");
+		assert.strictEqual(error.reason, "activate");
+		assert.strictEqual(error.message, "activation failed");
 	});
 });

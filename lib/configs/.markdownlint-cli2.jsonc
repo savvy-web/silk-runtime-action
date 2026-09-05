@@ -75,9 +75,7 @@
 		}
 	},
 	"customRules": ["@savvy-web/silk/changesets/markdownlint"],
-	"fix": true,
 	"gitignore": true,
-	"globs": ["**/*.{md,mdx}"],
 	"ignores": [
 		"**/node_modules",
 		"**/.cache",

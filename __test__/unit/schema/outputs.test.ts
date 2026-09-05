@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { ActionOutputs } from "@effected/github-actions";
 import { Effect } from "effect";
 
@@ -38,15 +38,15 @@ describe("OUTPUT_NAMES", () => {
 		// declared — stayed invisible until a consumer's workflow read an empty
 		// string.
 		const declared = declaredOutputNames();
-		expect(declared.length).toBeGreaterThan(0);
-		expect([...OUTPUT_NAMES].sort()).toEqual([...declared].sort());
+		assert.isAbove(declared.length, 0);
+		assert.deepStrictEqual([...OUTPUT_NAMES].sort(), [...declared].sort());
 	});
 
 	it("lists them in the order action.yml declares them", () => {
 		// Nothing depends on the order, and it is asserted anyway: the two lists
 		// are read side by side whenever an output is added, and a shuffled one
 		// costs a reviewer the diff.
-		expect([...OUTPUT_NAMES]).toEqual([...declaredOutputNames()]);
+		assert.deepStrictEqual([...OUTPUT_NAMES], [...declaredOutputNames()]);
 	});
 });
 
@@ -73,12 +73,12 @@ const emitted = (model: OutputsModel) =>
 
 describe("bats and kcov outputs", () => {
 	it("defaults to all-disabled", () => {
-		expect(initialOutputs.batsEnabled).toBe(false);
-		expect(initialOutputs.batsVersion).toBe("");
-		expect(initialOutputs.batsLibPath).toBe("");
-		expect(initialOutputs.kcovEnabled).toBe(false);
-		expect(initialOutputs.kcovVersion).toBe("");
-		expect(initialOutputs.kcovCacheHit).toBe(false);
+		assert.strictEqual(initialOutputs.batsEnabled, false);
+		assert.strictEqual(initialOutputs.batsVersion, "");
+		assert.strictEqual(initialOutputs.batsLibPath, "");
+		assert.strictEqual(initialOutputs.kcovEnabled, false);
+		assert.strictEqual(initialOutputs.kcovVersion, "");
+		assert.strictEqual(initialOutputs.kcovCacheHit, false);
 	});
 
 	it.effect("publishes all six", () =>
@@ -92,12 +92,12 @@ describe("bats and kcov outputs", () => {
 				kcovVersion: "43",
 				kcovCacheHit: true,
 			});
-			expect(seen["bats-enabled"]).toBe("true");
-			expect(seen["bats-version"]).toBe("1.14.0");
-			expect(seen["bats-lib-path"]).toBe("/home/runner/.local/share");
-			expect(seen["kcov-enabled"]).toBe("true");
-			expect(seen["kcov-version"]).toBe("43");
-			expect(seen["kcov-cache-hit"]).toBe("true");
+			assert.strictEqual(seen["bats-enabled"], "true");
+			assert.strictEqual(seen["bats-version"], "1.14.0");
+			assert.strictEqual(seen["bats-lib-path"], "/home/runner/.local/share");
+			assert.strictEqual(seen["kcov-enabled"], "true");
+			assert.strictEqual(seen["kcov-version"], "43");
+			assert.strictEqual(seen["kcov-cache-hit"], "true");
 		}),
 	);
 });
@@ -106,9 +106,9 @@ describe("emitOutputs", () => {
 	it.effect("writes every action.yml output exactly once", () =>
 		Effect.gen(function* () {
 			const { seen, calls } = yield* emitted(initialOutputs);
-			expect(calls.sort()).toEqual([...OUTPUT_NAMES].sort());
-			expect(seen["cache-hit"]).toBe("false");
-			expect(seen["turbo-cache-backend"]).toBe("none");
+			assert.deepStrictEqual(calls.sort(), [...OUTPUT_NAMES].sort());
+			assert.strictEqual(seen["cache-hit"], "false");
+			assert.strictEqual(seen["turbo-cache-backend"], "none");
 		}),
 	);
 
@@ -147,7 +147,7 @@ describe("emitOutputs", () => {
 				cachePaths: "sentinel-9",
 			});
 
-			expect(seen).toEqual({
+			assert.deepStrictEqual(seen, {
 				"node-version": "sentinel-1",
 				"node-enabled": "true",
 				"bun-version": "sentinel-2",
@@ -195,7 +195,7 @@ describe("emitOutputs", () => {
 				const trueNames = Object.entries(seen)
 					.filter(([, value]) => value === "true")
 					.map(([published]) => published);
-				expect(trueNames).toEqual([name]);
+				assert.deepStrictEqual(trueNames, [name]);
 			}
 		}),
 	);

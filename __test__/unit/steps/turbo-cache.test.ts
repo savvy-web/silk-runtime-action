@@ -2,7 +2,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NodeFileSystem } from "@effect/platform-node";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { DetachedProcessError, DetachedProcessOps, DetachedSpawnOptions } from "@effected/github-actions";
 import {
 	ActionEnvironment,
@@ -238,20 +238,23 @@ describe("serverLogPath", () => {
 	it("derives one path per port, in the temp directory", () => {
 		// Three call sites name this file without passing it between them: the
 		// spawn, the failed-readiness error and post's teardown log line.
-		expect(serverLogPath(41230)).toBe(join(tmpdir(), "turbogha-41230.log"));
-		expect(serverLogPath(9080)).not.toBe(serverLogPath(41230));
+		assert.strictEqual(serverLogPath(41230), join(tmpdir(), "turbogha-41230.log"));
+		assert.notStrictEqual(serverLogPath(9080), serverLogPath(41230));
 	});
 });
 
 describe("defaultServerEntry", () => {
 	it("names the worker bundle beside the bundle it is called from", () => {
 		const entry = defaultServerEntry();
-		expect(basename(entry)).toBe("turbo-server.js");
+		assert.strictEqual(basename(entry), "turbo-server.js");
 		// The build emits `dist/main.js` and `dist/turbo-server.js` side by side,
 		// so the directory is whatever holds the caller — here, the source tree.
 		// `fileURLToPath` rather than `URL.pathname`, which is percent-encoded and
 		// carries a leading slash before a Windows drive letter.
-		expect(dirname(entry)).toBe(dirname(fileURLToPath(new URL("../../../src/steps/turbo-cache.ts", import.meta.url))));
+		assert.strictEqual(
+			dirname(entry),
+			dirname(fileURLToPath(new URL("../../../src/steps/turbo-cache.ts", import.meta.url))),
+		);
 	});
 });
 
@@ -261,7 +264,7 @@ describe("the readiness probe the step hands awaitReady", () => {
 		Effect.gen(function* () {
 			const probed: Probed = { urls: [] };
 			const { recorded } = yield* run({ port: 41999 });
-			expect(recorded.probes).toHaveLength(1);
+			assert.lengthOf(recorded.probes, 1);
 			const answer = yield* (recorded.probes[0] as Effect.Effect<boolean, never, HttpClient.HttpClient>).pipe(
 				Effect.provide(httpClientStub(probed, options)),
 			);
@@ -274,13 +277,13 @@ describe("the readiness probe the step hands awaitReady", () => {
 			// The one assertion that is genuinely this repo's rather than the kit's:
 			// `httpProbe` is handed the right URL. Ruling 73 — the status route
 			// answers without auth, which is what makes it usable as a probe.
-			expect(probed.urls).toEqual(["http://127.0.0.1:41999/v8/artifacts/status"]);
+			assert.deepStrictEqual(probed.urls, ["http://127.0.0.1:41999/v8/artifacts/status"]);
 		}),
 	);
 
 	it.effect("is true when the server answers its status route", () =>
 		Effect.gen(function* () {
-			expect((yield* probeAgainst({ status: 200 })).answer).toBe(true);
+			assert.strictEqual((yield* probeAgainst({ status: 200 })).answer, true);
 		}),
 	);
 
@@ -288,7 +291,7 @@ describe("the readiness probe the step hands awaitReady", () => {
 		Effect.gen(function* () {
 			// A server that answers unhappily is not ready either — turbo would get
 			// the same answer for its own requests.
-			expect((yield* probeAgainst({ status: 503 })).answer).toBe(false);
+			assert.strictEqual((yield* probeAgainst({ status: 503 })).answer, false);
 		}),
 	);
 
@@ -299,7 +302,7 @@ describe("the readiness probe the step hands awaitReady", () => {
 			// a child that has not finished binding has to arrive as `false` —
 			// otherwise the very first poll aborts the wait it exists to perform.
 			const { answer } = yield* probeAgainst({ refused: true });
-			expect(answer).toBe(false);
+			assert.strictEqual(answer, false);
 		}),
 	);
 });
@@ -309,12 +312,12 @@ describe("startTurboCache: off", () => {
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({ turbo: false });
 
-			expect(started.backend).toBe("none");
-			expect(Option.isNone(started.port)).toBe(true);
-			expect(Option.isNone(started.state)).toBe(true);
-			expect(recorded.spawns).toEqual([]);
-			expect(recorded.exported).toEqual([]);
-			expect(recorded.saved).toEqual([]);
+			assert.strictEqual(started.backend, "none");
+			assert.strictEqual(Option.isNone(started.port), true);
+			assert.strictEqual(Option.isNone(started.state), true);
+			assert.deepStrictEqual(recorded.spawns, []);
+			assert.deepStrictEqual(recorded.exported, []);
+			assert.deepStrictEqual(recorded.saved, []);
 		}),
 	);
 
@@ -322,9 +325,9 @@ describe("startTurboCache: off", () => {
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({ inputs: inputs({ turboCache: "off" }) });
 
-			expect(started.backend).toBe("none");
-			expect(recorded.spawns).toEqual([]);
-			expect(recorded.exported).toEqual([]);
+			assert.strictEqual(started.backend, "none");
+			assert.deepStrictEqual(recorded.spawns, []);
+			assert.deepStrictEqual(recorded.exported, []);
 		}),
 	);
 
@@ -343,10 +346,10 @@ describe("startTurboCache: off", () => {
 				}),
 			});
 
-			expect(recorded.masked).toContain("vercel-token");
-			expect(recorded.masked).toContain("AKIAEXAMPLE");
-			expect(recorded.masked).toContain("s3-secret");
-			expect(recorded.masked).toContain("s3-session");
+			assert.include(recorded.masked, "vercel-token");
+			assert.include(recorded.masked, "AKIAEXAMPLE");
+			assert.include(recorded.masked, "s3-secret");
+			assert.include(recorded.masked, "s3-session");
 		}),
 	);
 });
@@ -361,11 +364,11 @@ describe("startTurboCache: passthrough", () => {
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({ inputs: passthroughInputs });
 
-			expect(started.backend).toBe("remote");
-			expect(Option.isNone(started.port)).toBe(true);
-			expect(Option.isNone(started.state)).toBe(true);
-			expect(exported(recorded, "TURBO_TOKEN")).toBe("vercel-token");
-			expect(exported(recorded, "TURBO_TEAM")).toBe("acme");
+			assert.strictEqual(started.backend, "remote");
+			assert.strictEqual(Option.isNone(started.port), true);
+			assert.strictEqual(Option.isNone(started.state), true);
+			assert.strictEqual(exported(recorded, "TURBO_TOKEN"), "vercel-token");
+			assert.strictEqual(exported(recorded, "TURBO_TEAM"), "acme");
 		}),
 	);
 
@@ -375,7 +378,7 @@ describe("startTurboCache: passthrough", () => {
 			// nothing about the cache the job summary went on to describe. One
 			// formatter renders both, so the two cannot disagree.
 			const { recorded } = yield* run({ inputs: passthroughInputs });
-			expect(recorded.logs).toContain("passthrough (Vercel)");
+			assert.include(recorded.logs, "passthrough (Vercel)");
 		}),
 	);
 
@@ -383,15 +386,15 @@ describe("startTurboCache: passthrough", () => {
 		Effect.gen(function* () {
 			const { recorded } = yield* run({ inputs: passthroughInputs });
 			// Naming an endpoint here would pin a URL this action does not own.
-			expect(exported(recorded, "TURBO_API")).toBeUndefined();
+			assert.isUndefined(exported(recorded, "TURBO_API"));
 		}),
 	);
 
 	it.effect("starts no server", () =>
 		Effect.gen(function* () {
 			const { recorded } = yield* run({ inputs: passthroughInputs });
-			expect(recorded.spawns).toEqual([]);
-			expect(recorded.saved).toEqual([]);
+			assert.deepStrictEqual(recorded.spawns, []);
+			assert.deepStrictEqual(recorded.saved, []);
 		}),
 	);
 
@@ -401,8 +404,8 @@ describe("startTurboCache: passthrough", () => {
 				inputs: inputs({ ...passthroughInputs, turboS3Bucket: Option.some("turbo-cache") }),
 			});
 
-			expect(started.backend).toBe("remote");
-			expect(recorded.spawns).toEqual([]);
+			assert.strictEqual(started.backend, "remote");
+			assert.deepStrictEqual(recorded.spawns, []);
 		}),
 	);
 
@@ -414,8 +417,8 @@ describe("startTurboCache: passthrough", () => {
 				inputs: inputs({ turboToken: Option.some(Redacted.make("vercel-token")) }),
 			});
 
-			expect(started.backend).toBe("github");
-			expect(recorded.logs.join("\n")).toContain("Both turbo-token and turbo-team are required");
+			assert.strictEqual(started.backend, "github");
+			assert.include(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
 		}),
 	);
 
@@ -423,15 +426,15 @@ describe("startTurboCache: passthrough", () => {
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({ inputs: inputs({ turboTeam: Option.some("acme") }) });
 
-			expect(started.backend).toBe("github");
-			expect(recorded.logs.join("\n")).toContain("Both turbo-token and turbo-team are required");
+			assert.strictEqual(started.backend, "github");
+			assert.include(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
 		}),
 	);
 
 	it.effect("says nothing when both credentials are absent", () =>
 		Effect.gen(function* () {
 			const { recorded } = yield* run({});
-			expect(recorded.logs.join("\n")).not.toContain("Both turbo-token and turbo-team are required");
+			assert.notInclude(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
 		}),
 	);
 
@@ -445,9 +448,9 @@ describe("startTurboCache: passthrough", () => {
 				inputs: inputs({ turboCache: "off", turboToken: Option.some(Redacted.make("vercel-token")) }),
 			});
 
-			expect(started.backend).toBe("none");
-			expect(recorded.spawns).toEqual([]);
-			expect(recorded.logs.join("\n")).not.toContain("Both turbo-token and turbo-team are required");
+			assert.strictEqual(started.backend, "none");
+			assert.deepStrictEqual(recorded.spawns, []);
+			assert.notInclude(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
 		}),
 	);
 
@@ -458,8 +461,8 @@ describe("startTurboCache: passthrough", () => {
 				inputs: inputs({ turboTeam: Option.some("acme") }),
 			});
 
-			expect(started.backend).toBe("none");
-			expect(recorded.logs.join("\n")).not.toContain("Both turbo-token and turbo-team are required");
+			assert.strictEqual(started.backend, "none");
+			assert.notInclude(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
 		}),
 	);
 });
@@ -469,20 +472,20 @@ describe("startTurboCache: embedded", () => {
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({});
 
-			expect(started.backend).toBe("github");
-			expect(Option.getOrThrow(started.port)).toBe(41230);
-			expect(recorded.spawns).toHaveLength(1);
+			assert.strictEqual(started.backend, "github");
+			assert.strictEqual(Option.getOrThrow(started.port), 41230);
+			assert.lengthOf(recorded.spawns, 1);
 			const spec = recorded.spawns[0] as DetachedSpawnOptions;
-			expect(spec.command).toBe(process.execPath);
-			expect(spec.args).toEqual([SERVER_ENTRY]);
-			expect(spec.logFile).toBe(serverLogPath(41230));
+			assert.strictEqual(spec.command, process.execPath);
+			assert.deepStrictEqual(spec.args, [SERVER_ENTRY]);
+			assert.strictEqual(spec.logFile, serverLogPath(41230));
 		}),
 	);
 
 	it.effect("names the backend and the bound port once the server answers", () =>
 		Effect.gen(function* () {
 			const { recorded } = yield* run({});
-			expect(recorded.logs).toContain("github · server ready (:41230)");
+			assert.include(recorded.logs, "github · server ready (:41230)");
 		}),
 	);
 
@@ -491,11 +494,14 @@ describe("startTurboCache: embedded", () => {
 			const { recorded } = yield* run({ inputs: inputs({ turboCachePrefix: "pr-42/" }) });
 
 			const env = (recorded.spawns[0] as DetachedSpawnOptions).env ?? {};
-			expect(env.TURBOGHA_PORT).toBe("41230");
-			expect(env.TURBOGHA_PREFIX).toBe("pr-42/");
-			expect(env.TURBOGHA_BACKEND).toBe("github");
+			assert.strictEqual(env.TURBOGHA_PORT, "41230");
+			assert.strictEqual(env.TURBOGHA_PREFIX, "pr-42/");
+			assert.strictEqual(env.TURBOGHA_BACKEND, "github");
 			// No S3 variable belongs in a GitHub-backend spawn.
-			expect(Object.keys(env).filter((name) => name.startsWith("TURBOGHA_S3_"))).toEqual([]);
+			assert.deepStrictEqual(
+				Object.keys(env).filter((name) => name.startsWith("TURBOGHA_S3_")),
+				[],
+			);
 		}),
 	);
 
@@ -508,9 +514,9 @@ describe("startTurboCache: embedded", () => {
 
 			const credentialOf = (recorded: Recorded): string =>
 				(recorded.spawns[0] as DetachedSpawnOptions).env?.TURBOGHA_TOKEN ?? "";
-			expect(credentialOf(first.recorded)).toMatch(/^[0-9a-f-]{36}$/);
-			expect(credentialOf(first.recorded)).not.toBe("silk-runtime-action");
-			expect(credentialOf(second.recorded)).not.toBe(credentialOf(first.recorded));
+			assert.match(credentialOf(first.recorded), /^[0-9a-f-]{36}$/);
+			assert.notStrictEqual(credentialOf(first.recorded), "silk-runtime-action");
+			assert.notStrictEqual(credentialOf(second.recorded), credentialOf(first.recorded));
 		}),
 	);
 
@@ -518,10 +524,10 @@ describe("startTurboCache: embedded", () => {
 		Effect.gen(function* () {
 			const { recorded } = yield* run({});
 
-			expect(exported(recorded, "TURBO_API")).toBe("http://127.0.0.1:41230");
+			assert.strictEqual(exported(recorded, "TURBO_API"), "http://127.0.0.1:41230");
 			const credential = (recorded.spawns[0] as DetachedSpawnOptions).env?.TURBOGHA_TOKEN;
-			expect(exported(recorded, "TURBO_TOKEN")).toBe(credential);
-			expect(exported(recorded, "TURBO_TEAM")).toBe(credential);
+			assert.strictEqual(exported(recorded, "TURBO_TOKEN"), credential);
+			assert.strictEqual(exported(recorded, "TURBO_TEAM"), credential);
 		}),
 	);
 
@@ -531,16 +537,16 @@ describe("startTurboCache: embedded", () => {
 
 			// Oracle 34: a child that hangs half-started is still reapable, because
 			// the pid was persisted before anything waited on it.
-			expect(recorded.order.indexOf("save")).toBeLessThan(recorded.order.indexOf("awaitReady"));
-			expect(recorded.order.indexOf("spawn")).toBeLessThan(recorded.order.indexOf("save"));
-			expect(recorded.saved).toHaveLength(1);
+			assert.isBelow(recorded.order.indexOf("save"), recorded.order.indexOf("awaitReady"));
+			assert.isBelow(recorded.order.indexOf("spawn"), recorded.order.indexOf("save"));
+			assert.lengthOf(recorded.saved, 1);
 			const [key, saved] = recorded.saved[0] as readonly [string, TurboServerState];
-			expect(key).toBe(STATE_KEYS.turboServer);
-			expect(saved.pid).toBe(4242);
-			expect(saved.port).toBe(41230);
-			expect(saved.backend).toBe("github");
-			expect(saved.logFile).toBe(serverLogPath(41230));
-			expect(Option.getOrThrow(started.state)).toEqual(saved);
+			assert.strictEqual(key, STATE_KEYS.turboServer);
+			assert.strictEqual(saved.pid, 4242);
+			assert.strictEqual(saved.port, 41230);
+			assert.strictEqual(saved.backend, "github");
+			assert.strictEqual(saved.logFile, serverLogPath(41230));
+			assert.deepStrictEqual(Option.getOrThrow(started.state), saved);
 		}),
 	);
 
@@ -549,7 +555,7 @@ describe("startTurboCache: embedded", () => {
 			const { recorded } = yield* run({});
 			// A `TURBO_API` exported ahead of readiness would point turbo at a port
 			// nothing is listening on yet.
-			expect(recorded.order.indexOf("awaitReady")).toBeLessThan(recorded.order.indexOf("export:TURBO_API"));
+			assert.isBelow(recorded.order.indexOf("awaitReady"), recorded.order.indexOf("export:TURBO_API"));
 		}),
 	);
 
@@ -570,18 +576,18 @@ describe("startTurboCache: embedded", () => {
 			const probed: Probed = { urls: [] };
 			const { started, recorded } = yield* run({ port: 41777 });
 
-			expect(Option.getOrThrow(started.port)).toBe(41777);
-			expect(recorded.probes).toHaveLength(1);
+			assert.strictEqual(Option.getOrThrow(started.port), 41777);
+			assert.lengthOf(recorded.probes, 1);
 			const up = yield* (recorded.probes[0] as Effect.Effect<boolean, never, HttpClient.HttpClient>).pipe(
 				Effect.provide(httpClientStub(probed, { status: 200 })),
 			);
 
-			expect(up).toBe(true);
+			assert.strictEqual(up, true);
 			const api = exported(recorded, "TURBO_API");
-			expect(api).toBe("http://127.0.0.1:41777");
+			assert.strictEqual(api, "http://127.0.0.1:41777");
 			// The probe's own URL is that address plus the status route — not a
 			// coincidence of two independently-correct constants.
-			expect(probed.urls).toEqual([`${api}/v8/artifacts/status`]);
+			assert.deepStrictEqual(probed.urls, [`${api}/v8/artifacts/status`]);
 		}),
 	);
 });
@@ -601,16 +607,16 @@ describe("startTurboCache: S3 backend", () => {
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({ inputs: s3Inputs });
 
-			expect(started.backend).toBe("s3");
+			assert.strictEqual(started.backend, "s3");
 			const env = (recorded.spawns[0] as DetachedSpawnOptions).env ?? {};
-			expect(env.TURBOGHA_BACKEND).toBe("s3");
-			expect(env.TURBOGHA_S3_BUCKET).toBe("turbo-cache");
-			expect(env.TURBOGHA_S3_REGION).toBe("us-east-1");
-			expect(env.TURBOGHA_S3_ENDPOINT).toBe("http://127.0.0.1:9000");
-			expect(env.TURBOGHA_S3_ACCESS_KEY_ID).toBe("minioadmin");
-			expect(env.TURBOGHA_S3_SECRET_ACCESS_KEY).toBe("miniosecret");
-			expect(env.TURBOGHA_S3_SESSION_TOKEN).toBe("miniosession");
-			expect(env.TURBOGHA_S3_PREFIX).toBe("builds/");
+			assert.strictEqual(env.TURBOGHA_BACKEND, "s3");
+			assert.strictEqual(env.TURBOGHA_S3_BUCKET, "turbo-cache");
+			assert.strictEqual(env.TURBOGHA_S3_REGION, "us-east-1");
+			assert.strictEqual(env.TURBOGHA_S3_ENDPOINT, "http://127.0.0.1:9000");
+			assert.strictEqual(env.TURBOGHA_S3_ACCESS_KEY_ID, "minioadmin");
+			assert.strictEqual(env.TURBOGHA_S3_SECRET_ACCESS_KEY, "miniosecret");
+			assert.strictEqual(env.TURBOGHA_S3_SESSION_TOKEN, "miniosession");
+			assert.strictEqual(env.TURBOGHA_S3_PREFIX, "builds/");
 		}),
 	);
 
@@ -620,9 +626,9 @@ describe("startTurboCache: S3 backend", () => {
 
 			// `Secret.forChildEnv` is the only sanctioned way a `Redacted` becomes a
 			// child's environment variable, and it masks the whole set first.
-			expect(recorded.masked).toContain("miniosecret");
-			expect(recorded.masked).toContain("miniosession");
-			expect(recorded.masked).toContain("minioadmin");
+			assert.include(recorded.masked, "miniosecret");
+			assert.include(recorded.masked, "miniosession");
+			assert.include(recorded.masked, "minioadmin");
 		}),
 	);
 
@@ -631,12 +637,12 @@ describe("startTurboCache: S3 backend", () => {
 			const { recorded } = yield* run({ inputs: inputs({ turboS3Bucket: Option.some("turbo-cache") }) });
 
 			const env = (recorded.spawns[0] as DetachedSpawnOptions).env ?? {};
-			expect(env.TURBOGHA_S3_BUCKET).toBe("turbo-cache");
+			assert.strictEqual(env.TURBOGHA_S3_BUCKET, "turbo-cache");
 			// The worker reads unset and empty as the same case; an omitted variable
 			// is the clearer thing to find in a process listing.
-			expect("TURBOGHA_S3_ENDPOINT" in env).toBe(false);
-			expect("TURBOGHA_S3_SESSION_TOKEN" in env).toBe(false);
-			expect("TURBOGHA_S3_PREFIX" in env).toBe(false);
+			assert.strictEqual("TURBOGHA_S3_ENDPOINT" in env, false);
+			assert.strictEqual("TURBOGHA_S3_SESSION_TOKEN" in env, false);
+			assert.strictEqual("TURBOGHA_S3_PREFIX" in env, false);
 		}),
 	);
 
@@ -644,7 +650,7 @@ describe("startTurboCache: S3 backend", () => {
 		Effect.gen(function* () {
 			const { recorded } = yield* run({ inputs: s3Inputs });
 			const [, saved] = recorded.saved[0] as readonly [string, TurboServerState];
-			expect(saved.backend).toBe("s3");
+			assert.strictEqual(saved.backend, "s3");
 		}),
 	);
 });
@@ -662,14 +668,14 @@ describe("startTurboCache: degraded", () => {
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
 
-			expect(started.backend).toBe("none");
-			expect(Option.isNone(started.port)).toBe(true);
+			assert.strictEqual(started.backend, "none");
+			assert.strictEqual(Option.isNone(started.port), true);
 			// Oracle 39 row 4: nothing is exported, because a `TURBO_API` pointing at
 			// a dead port turns every later cache operation into a connection error.
-			expect(recorded.exported).toEqual([]);
+			assert.deepStrictEqual(recorded.exported, []);
 			// The state was saved anyway, so post can still reap the half-started child.
-			expect(recorded.saved).toHaveLength(1);
-			expect(Option.isSome(started.state)).toBe(true);
+			assert.lengthOf(recorded.saved, 1);
+			assert.strictEqual(Option.isSome(started.state), true);
 		}),
 	);
 
@@ -688,10 +694,10 @@ describe("startTurboCache: degraded", () => {
 
 			// Oracle 41 — the log file is the only record a detached child leaves.
 			const line = recorded.logs.join("\n");
-			expect(line).toContain("pid=7331");
-			expect(line).toContain("127.0.0.1:41230");
-			expect(line).toContain(serverLogPath(41230));
-			expect(line).toContain("continuing WITHOUT a remote cache");
+			assert.include(line, "pid=7331");
+			assert.include(line, "127.0.0.1:41230");
+			assert.include(line, serverLogPath(41230));
+			assert.include(line, "continuing WITHOUT a remote cache");
 		}),
 	);
 
@@ -707,11 +713,11 @@ describe("startTurboCache: degraded", () => {
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
 
-			expect(started.backend).toBe("none");
-			expect(Option.isNone(started.state)).toBe(true);
-			expect(recorded.saved).toEqual([]);
-			expect(recorded.logs.join("\n")).toContain("Turbo cache setup error");
-			expect(recorded.logs.join("\n")).toContain("DetachedSpawnFailedError");
+			assert.strictEqual(started.backend, "none");
+			assert.strictEqual(Option.isNone(started.state), true);
+			assert.deepStrictEqual(recorded.saved, []);
+			assert.include(recorded.logs.join("\n"), "Turbo cache setup error");
+			assert.include(recorded.logs.join("\n"), "DetachedSpawnFailedError");
 		}),
 	);
 
@@ -723,8 +729,8 @@ describe("startTurboCache: degraded", () => {
 
 			// The cost is a leaked child, which is strictly better than a run that
 			// spawned a working server and then refused to use it.
-			expect(started.backend).toBe("github");
-			expect(recorded.logs.join("\n")).toContain("will not be reaped by the post phase");
+			assert.strictEqual(started.backend, "github");
+			assert.include(recorded.logs.join("\n"), "will not be reaped by the post phase");
 		}),
 	);
 
@@ -741,9 +747,9 @@ describe("startTurboCache: degraded", () => {
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
 
-			expect(started.backend).toBe("none");
-			expect(recorded.logs.join("\n")).toContain("Turbo cache setup defect");
-			expect(recorded.logs.join("\n")).toContain("openSync EACCES");
+			assert.strictEqual(started.backend, "none");
+			assert.include(recorded.logs.join("\n"), "Turbo cache setup defect");
+			assert.include(recorded.logs.join("\n"), "openSync EACCES");
 		}),
 	);
 
@@ -760,8 +766,8 @@ describe("startTurboCache: degraded", () => {
 				serverEntry: SERVER_ENTRY,
 			}).pipe(Effect.provide(layer(recorded)));
 
-			expect(started.backend).toBe("none");
-			expect(recorded.logs.join("\n")).toContain("boom");
+			assert.strictEqual(started.backend, "none");
+			assert.include(recorded.logs.join("\n"), "boom");
 		}),
 	);
 });
@@ -829,11 +835,11 @@ describe("the state startTurboCache saves", () => {
 				state.get(STATE_KEYS.turboServer, TurboServerState),
 			).pipe(Effect.provide(realState(republish(written))));
 
-			expect(restored).toEqual(Option.getOrThrow(started.state));
-			expect(restored.pid).toBe(ProcessId.make(31_337));
-			expect(restored.backend).toBe("s3");
+			assert.deepStrictEqual(restored, Option.getOrThrow(started.state));
+			assert.strictEqual(restored.pid, ProcessId.make(31_337));
+			assert.strictEqual(restored.backend, "s3");
 			// The encoded form has to be plain JSON, on one line.
-			expect(written).not.toContain("_id");
+			assert.notInclude(written, "_id");
 		}).pipe(Effect.provide(NodeFileSystem.layer), Effect.scoped),
 	);
 });

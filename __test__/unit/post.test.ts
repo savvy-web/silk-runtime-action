@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { DetachedProcessOps } from "@effected/github-actions";
 import {
 	ActionCache,
@@ -10,7 +10,10 @@ import {
 	DetachedSignalFailedError,
 	ProcessId,
 } from "@effected/github-actions";
-import { Effect, FileSystem, Layer, Logger, Option, PlatformError, References } from "effect";
+import type { MemoryFileSystemSeedEntry } from "@effected/memfs";
+import { MemoryFileSystem } from "@effected/memfs";
+import type { FileSystem } from "effect";
+import { Effect, Layer, Logger, Option, References } from "effect";
 
 import { makePost, post } from "../../src/post.js";
 import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState } from "../../src/state.js";
@@ -99,31 +102,28 @@ const stateWithKcov = (
 	});
 
 /**
- * A `FileSystem` whose `readDirectory` serves `directories`, and reports every
- * other path as absent.
+ * A volume holding `directories` — each key a directory, each value its file
+ * names — and nothing else.
  *
  * @remarks
  * The store save probes each configured directory for content before archiving
  * it, so this is the seam that separates "the manager created its store root and
  * downloaded nothing" from "there is a store here worth keeping" — the two cases
- * a configured path list cannot tell apart.
+ * a configured path list cannot tell apart. On a volume all three states are
+ * expressible as themselves: absent (unseeded), present-and-empty
+ * (`MemoryFileSystem.directory()`), and populated.
  */
 const fileSystemTest = (directories: Readonly<Record<string, ReadonlyArray<string>>> = {}) =>
-	FileSystem.layerNoop({
-		readDirectory: (path: string) => {
-			const entries = directories[path];
-			return entries === undefined
-				? Effect.fail(
-						PlatformError.systemError({
-							_tag: "NotFound",
-							module: "FileSystem",
-							method: "readDirectory",
-							pathOrDescriptor: path,
-						}),
-					)
-				: Effect.succeed([...entries]);
-		},
-	});
+	MemoryFileSystem.layerWith(
+		Object.fromEntries(
+			Object.entries(directories).flatMap(
+				([directory, entries]): ReadonlyArray<readonly [string, MemoryFileSystemSeedEntry]> =>
+					entries.length === 0
+						? [[directory, MemoryFileSystem.directory()]]
+						: entries.map((entry) => [`${directory}/${entry}`, ""]),
+			),
+		),
+	);
 
 /** Runs `post` over `state` and `cache`, capturing every log line it emits. */
 const runPost = (options: {
@@ -203,7 +203,12 @@ describe("post", () => {
 			yield* post.pipe(Effect.provide(makeLayer(read)));
 			// Teardown precedes every branch that can return early (oracle 35): a
 			// detached child outliving the job is worse than an unsaved cache.
-			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.storeCache, STATE_KEYS.kcovCache]);
+			assert.deepStrictEqual(read, [
+				STATE_KEYS.turboServer,
+				STATE_KEYS.cache,
+				STATE_KEYS.storeCache,
+				STATE_KEYS.kcovCache,
+			]);
 		}),
 	);
 
@@ -212,8 +217,8 @@ describe("post", () => {
 			const saves: Array<Saved> = [];
 			const exit = yield* runPost({ state: stateWithStore(Option.some(missedStore)), cache: cacheTest(saves) });
 
-			expect(exit._tag).toBe("Success");
-			expect(saves).toEqual([{ paths: missedStore.paths, key: missedStore.primaryKey }]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saves, [{ paths: missedStore.paths, key: missedStore.primaryKey }]);
 		}),
 	);
 
@@ -230,7 +235,7 @@ describe("post", () => {
 			});
 			yield* runPost({ state: stateWithStore(Option.some(rung)), cache: cacheTest(saves) });
 
-			expect(saves).toEqual([{ paths: rung.paths, key: rung.primaryKey }]);
+			assert.deepStrictEqual(saves, [{ paths: rung.paths, key: rung.primaryKey }]);
 		}),
 	);
 
@@ -245,8 +250,8 @@ describe("post", () => {
 				logs,
 			});
 
-			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("Store cache was an exact hit");
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(logs.join("\n"), "Store cache was an exact hit");
 		}),
 	);
 
@@ -266,8 +271,8 @@ describe("post", () => {
 				logs,
 			});
 
-			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("No populated store directories");
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(logs.join("\n"), "No populated store directories");
 		}),
 	);
 
@@ -281,8 +286,8 @@ describe("post", () => {
 				logs,
 			});
 
-			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("No populated store directories");
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(logs.join("\n"), "No populated store directories");
 		}),
 	);
 
@@ -301,7 +306,7 @@ describe("post", () => {
 				directories: { "/home/runner/.cache/yarn": [], "/home/runner/.yarn/berry/cache": ["v6"] },
 			});
 
-			expect(saves).toEqual([{ paths: ["/home/runner/.yarn/berry/cache"], key: two.primaryKey }]);
+			assert.deepStrictEqual(saves, [{ paths: ["/home/runner/.yarn/berry/cache"], key: two.primaryKey }]);
 		}),
 	);
 
@@ -333,8 +338,11 @@ describe("post", () => {
 				}),
 			});
 
-			expect(exit._tag).toBe("Success");
-			expect(saves.map((save) => save.key)).toEqual([missed.primaryKey, missedStore.primaryKey]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(
+				saves.map((save) => save.key),
+				[missed.primaryKey, missedStore.primaryKey],
+			);
 		}),
 	);
 
@@ -344,7 +352,7 @@ describe("post", () => {
 			// Every `ActionCache` member is unstubbed, so a save attempt dies —
 			// which is precisely the "no save on `Option.none()`" assertion.
 			const exit = yield* post.pipe(Effect.provide(makeLayer(read)), Effect.exit);
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 		}),
 	);
 
@@ -353,8 +361,8 @@ describe("post", () => {
 			const saves: Array<Saved> = [];
 			const exit = yield* runPost({ state: stateWith(Option.some(missed)), cache: cacheTest(saves) });
 
-			expect(exit._tag).toBe("Success");
-			expect(saves).toEqual([{ paths: missed.paths, key: missed.primaryKey }]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saves, [{ paths: missed.paths, key: missed.primaryKey }]);
 		}),
 	);
 
@@ -366,7 +374,7 @@ describe("post", () => {
 
 			// A partial restore left the archive short of what this run installed, so
 			// the primary key is the one that has to end up populated.
-			expect(saves).toEqual([{ paths: partial.paths, key: partial.primaryKey }]);
+			assert.deepStrictEqual(saves, [{ paths: partial.paths, key: partial.primaryKey }]);
 		}),
 	);
 
@@ -377,9 +385,9 @@ describe("post", () => {
 			// Every `ActionCache` member is unstubbed, so a save would die.
 			const exit = yield* runPost({ state: stateWith(Option.some(exact)), cache: ActionCache.layerTest({}), logs });
 
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 			// Verbatim v1, because it is what a workflow log has always said.
-			expect(logs).toContain("Cache was an exact hit — skipping save");
+			assert.include(logs, "Cache was an exact hit — skipping save");
 		}),
 	);
 
@@ -388,7 +396,7 @@ describe("post", () => {
 			const empty = CacheState.make({ ...missed, paths: [] });
 			const exit = yield* runPost({ state: stateWith(Option.some(empty)), cache: ActionCache.layerTest({}) });
 
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 		}),
 	);
 
@@ -404,9 +412,9 @@ describe("post", () => {
 
 			// The job has already done its work; a cache that would not take it is
 			// not a reason to fail the run.
-			expect(exit._tag).toBe("Success");
-			expect(saves).toHaveLength(1);
-			expect(logs.join("\n")).toContain("refused");
+			assert.strictEqual(exit._tag, "Success");
+			assert.lengthOf(saves, 1);
+			assert.include(logs.join("\n"), "refused");
 		}),
 	);
 
@@ -431,8 +439,13 @@ describe("post", () => {
 				Effect.exit,
 			);
 
-			expect(exit._tag).toBe("Success");
-			expect(read).toEqual([STATE_KEYS.turboServer, STATE_KEYS.cache, STATE_KEYS.storeCache, STATE_KEYS.kcovCache]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(read, [
+				STATE_KEYS.turboServer,
+				STATE_KEYS.cache,
+				STATE_KEYS.storeCache,
+				STATE_KEYS.kcovCache,
+			]);
 		}),
 	);
 
@@ -461,9 +474,9 @@ describe("post", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
-			expect(saves).toHaveLength(1);
-			expect(reaped).toEqual([4242]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.lengthOf(saves, 1);
+			assert.deepStrictEqual(reaped, [4242]);
 		}),
 	);
 
@@ -485,8 +498,8 @@ describe("post", () => {
 			);
 			// The log file is the only record a detached child leaves, and post is
 			// the last place that can point at it.
-			expect(logs.join("\n")).toContain("pid=4242");
-			expect(logs.join("\n")).toContain("/tmp/turbo-server.log");
+			assert.include(logs.join("\n"), "pid=4242");
+			assert.include(logs.join("\n"), "/tmp/turbo-server.log");
 		}),
 	);
 
@@ -507,8 +520,8 @@ describe("post", () => {
 			);
 			// The server exits on its own SIGTERM handler, and a runner may have
 			// torn the process group down before post ran.
-			expect(exit._tag).toBe("Success");
-			expect(logs.join("\n")).toContain("had already exited");
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(logs.join("\n"), "had already exited");
 		}),
 	);
 
@@ -520,7 +533,7 @@ describe("post", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 		}),
 	);
 
@@ -548,10 +561,10 @@ describe("post", () => {
 			// first buys the guarantee that a child is always signalled; containing
 			// its failures is what stops that ordering from costing the run its
 			// cache when the signal is the thing that broke.
-			expect(exit._tag).toBe("Success");
-			expect(saves).toEqual([{ paths: missed.paths, key: missed.primaryKey }]);
-			expect(logs.join("\n")).toContain("Turbo cache server teardown failed for pid 4242");
-			expect(logs.join("\n")).toContain("kill exploded");
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saves, [{ paths: missed.paths, key: missed.primaryKey }]);
+			assert.include(logs.join("\n"), "Turbo cache server teardown failed for pid 4242");
+			assert.include(logs.join("\n"), "kill exploded");
 		}),
 	);
 
@@ -574,8 +587,8 @@ describe("post", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
-			expect(saves).toEqual([{ paths: missed.paths, key: missed.primaryKey }]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saves, [{ paths: missed.paths, key: missed.primaryKey }]);
 		}),
 	);
 
@@ -604,9 +617,9 @@ describe("post", () => {
 			// A `main` that died mid-write leaves state that decodes as malformed.
 			// That says nothing about whether this run's dependencies are worth
 			// archiving, and there is no pid to signal either way.
-			expect(exit._tag).toBe("Success");
-			expect(saves).toEqual([{ paths: missed.paths, key: missed.primaryKey }]);
-			expect(logs.join("\n")).toContain("Turbo cache server state could not be read (malformed)");
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saves, [{ paths: missed.paths, key: missed.primaryKey }]);
+			assert.include(logs.join("\n"), "Turbo cache server state could not be read (malformed)");
 		}),
 	);
 
@@ -628,7 +641,7 @@ describe("post", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 		}),
 	);
 
@@ -648,7 +661,7 @@ describe("post", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 		}),
 	);
 
@@ -669,7 +682,7 @@ describe("post", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
+			assert.strictEqual(exit._tag, "Success");
 		}),
 	);
 });
@@ -689,8 +702,8 @@ describe("kcov cache save", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
-			expect(saved).toEqual([{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saved, [{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
 		}),
 	);
 
@@ -712,8 +725,8 @@ describe("kcov cache save", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
-			expect(saved).toEqual([]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saved, []);
 		}),
 	);
 
@@ -738,8 +751,8 @@ describe("kcov cache save", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
-			expect(saved).toEqual([{ paths: rungHit.paths, key: rungHit.primaryKey }]);
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saved, [{ paths: rungHit.paths, key: rungHit.primaryKey }]);
 		}),
 	);
 
@@ -767,8 +780,8 @@ describe("kcov cache save", () => {
 				),
 				Effect.exit,
 			);
-			expect(exit._tag).toBe("Success");
-			expect(saves).toContainEqual({ paths: missed.paths, key: missed.primaryKey });
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepInclude(saves, { paths: missed.paths, key: missed.primaryKey });
 		}),
 	);
 
@@ -797,9 +810,9 @@ describe("kcov cache save", () => {
 			// A `main` that died mid-write leaves the dependency-cache state
 			// malformed too — precisely the turbo read's own "main died mid-write"
 			// case. That must not cost the kcov save its turn.
-			expect(exit._tag).toBe("Success");
-			expect(saves).toEqual([{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
-			expect(logs.join("\n")).toContain("Dependency cache state could not be read (malformed)");
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(saves, [{ paths: missedKcov.paths, key: missedKcov.primaryKey }]);
+			assert.include(logs.join("\n"), "Dependency cache state could not be read (malformed)");
 		}),
 	);
 });

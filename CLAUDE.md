@@ -44,33 +44,50 @@ Consuming repositories **MUST** have a root `package.json` with:
 
 ## Technical Stack
 
-* **Framework:** [Effect](https://effect.website) **v4** (`effect@4.0.0-rc.109` via
-  `catalog:effect`, supplied by the `@effected/pnpm-plugin-effect` config dependency). In v4
+* **Framework:** [Effect](https://effect.website) **v4**, via `catalog:effect` — an exact
+  pin supplied by the `@effected/pnpm-plugin-effect` config dependency, so read the version
+  out of `pnpm-lock.yaml`'s `catalogs:` block rather than from here. In v4
   `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient`
   live there); only Node platform layers ship separately, in `@effect/platform-node`.
   Services are class-based `Context.Service` with exported `*Shape` companion types.
-* **Action services:** `@effected/github-actions` (`^0.6.0`) — zero `@actions/*` deps.
+* **Action services:** `@effected/github-actions` — zero `@actions/*` deps.
   Imported: `Action`, `ActionCache`, `ActionEnvironment`, `ActionInput`, `ActionLogger`,
   `ActionOutputs` (incl. `layerDetached`), `ActionState`, `BlobStore` /
   `GitHubCacheBlobStore`, `CacheKey` (incl. `digest`), `ChildEnv`, `DetachedProcess`,
   `GitHubMarkdown`, `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
   `GitHubContext.branch` (off `ActionEnvironment.github`) is the branch fallback chain.
+  **Do not cite a version here** — every `@effected/*` range is `catalog:effected`, resolved
+  by the `@effected/pnpm-plugin-effect` config dependency, so the installed version is in
+  `pnpm-lock.yaml`'s `catalogs:` block and nowhere else. Re-derive it; a number written into
+  this file is stale by the next bump, and kit-surface claims are re-verified against the
+  installed version on every bump, not against this paragraph.
 * **Other first-party imports:** `@effected/npm` (`PackageManagerPin`,
   `PackageManagerCache.defaultDirectory` — the cited default-cache-directory table),
   `@effected/lockfiles` (`filenamesFor`), `@effected/semver` (`SemVer.ExactVersionString`,
   backs `AbsoluteVersion`), `@effected/jsonc` (`Jsonc.parse`), `@effected/commands` (`Run`,
-  used by the `install-bats` and `install-kcov` steps). Remaining `@effected/*` entries
-  (`git`, `github`, `glob`, `markdown`, `package-json`, `runtimes`, `sbom`, `workspaces`,
-  `yaml`) are declared but not imported by `src/` — `devEngines` is decoded locally in
-  `steps/load-config.ts`. Every range is a published caret; no overrides, links or patches.
+  used by the `install-bats` and `install-kcov` steps), `@effected/workspaces`
+  (`WorkspaceDiscovery`, `WorkspaceRoot`).
+* **Dependency honesty.** Every declared `@effected/*` dependency is either imported by
+  `src/` **or** a required peer of one that is. Today the one peer-only entry is
+  `@effected/yaml`, which `@effected/lockfiles` requires; everything else in the list is
+  imported. **Resolve the peer closure before deleting anything that looks unused.** Eight
+  declarations had no import in `src/` at the #348 reconciliation; seven were genuinely dead
+  and were removed, and the eighth was `@effected/yaml`, which nothing here imports and
+  `@effected/lockfiles` requires. An import-walker that stops at "not imported" deletes it.
+* **Test doubles:** `@effected/memfs` (devDependency) is the filesystem double —
+  `MemoryFileSystem.layerWith` for a seeded volume, `layerFaulty` for an injected failure or
+  a delegating recorder. `FileSystem.layerNoop` is not used anywhere in the suite.
 * **Build:** `@savvy-web/github-action-builder` (rsbuild) via `action.config.ts`.
-* **Cross-phase state:** `src/state.ts` — `CacheState`, `TurboServerState` (`Schema.Class`),
-  `STATE_KEYS`; `main` writes, `post` reads.
+* **Cross-phase state:** `src/state.ts` — `STATE_KEYS` plus four `Schema.Class` bundles:
+  `CacheState`, `StoreCacheState`, `KcovCacheState`, `TurboServerState`. `main` writes,
+  `post` reads, and each branch in `post` absorbs its own failure so no one of them can cost
+  another its save.
 * **Action type:** compiled Node action (`node24`, see `action.yml`); pnpm and Node pinned
   exactly in `package.json`.
 * **Tooling:** Biome extending `@savvy-web/silk`; Vitest + `@effect/vitest` +
-  `@vitest-agent/plugin` (unit tests in `__test__/`, plus fixture workflow tests);
-  `@typescript/native-preview` for typechecking.
+  `@vitest-agent/plugin` (unit tests in `__test__/unit/`, plus fixture workflow tests);
+  `tsc --noEmit` for typechecking, through turbo's `types:check` task. Tests use `it.effect`
+  and `assert.*`; `expect` is not used.
 
 The `claude` script in `package.json` points at a machine-local sibling checkout
 (`../../spencerbeggs/effected/plugin`) — a local dev convenience only; nothing in build,
@@ -84,8 +101,12 @@ pnpm typecheck          # tsc --noEmit, via turbo
 pnpm test               # Vitest (test:watch, test:coverage)
 pnpm lint / lint:fix    # Biome (lint:md for markdown)
 pnpm build              # REQUIRED before commit
-pnpm changeset
 ```
+
+There is **no `changeset` script**. Changesets are authored through the `/silk:changeset`
+skill; `pnpm exec savvy changeset` covers the rest of the lifecycle (`lint`, `check`,
+`deps`, `version`) and has no `add` subcommand. `pnpm ci:version` is what the release
+workflow runs.
 
 Always commit source **and** compiled output together
 (`git add src/ dist/ .github/actions/local/`). Commits must be GPG-signed with the
@@ -104,16 +125,17 @@ committed `dist`, **not** `node_modules`.
 | `@effected/*` | `spencerbeggs/effected` | `../../spencerbeggs/effected/packages/<name>` |
 | `@savvy-web/github-action-builder` | `savvy-web/systems` | `../systems/packages/github-action-builder` |
 
-**Current state: nothing is linked.** `pnpm-workspace.yaml` carries no `overrides:` entry
-and every range is a published caret. The rebuild's dogfood loop closed **2026-08-03** with
-the effected release wave — `github-actions@0.3.0`, `npm@0.7.0`, `package-json@0.7.0`,
-`semver@0.3.0` — and its post-loop sweep landed the same day as
-`github-actions@0.4.0`, `npm@0.8.0`, `lockfiles@0.3.0`, adopted here in the #207 cleanup
-round.
+**To find out whether anything is linked, read the tree, not this paragraph:**
+`pnpm-workspace.yaml` carries an `overrides:` entry while a link is live and none when it is
+not. Every published range is `catalog:effected` / `catalog:effect`, resolved by the
+`@effected/pnpm-plugin-effect` config dependency — there are no hand-written carets to read
+a link out of.
 
-Cross-repo iteration runs through the **dogfood mailbox protocol** (`.claude/dogfood/`, the
-`silk:dogfood` skill): a request goes upstream, the upstream session builds and hands back,
-this repo adopts. Links are added lazily, for one round, and removed before push.
+Cross-repo iteration runs through the **dogfood mailbox protocol** (the `silk:dogfood`
+skill): a request goes upstream, the upstream session builds and hands back, this repo
+adopts. Links are added lazily, for one round, and removed before push. The mailbox lives at
+`.claude/dogfood/`, which is **gitignored local-only state** created by the skill when a loop
+starts — a clean checkout has no such directory, and that is correct rather than missing.
 
 **Procedure:** build the library in its own repo
 (`cd packages/<name> && node savvy.build.ts --target dev`); link it — `pnpm link
@@ -124,8 +146,10 @@ Library edits ship separately on their own branch. **Never push while linked** �
 the published range, `pnpm install`, then push.
 
 **Effect v4 API authority:** `.repos/effect` is a vendored, read-only submodule pinned to
-`effect@4.0.0-rc.109` — the source of truth for v4 APIs, whose surface diverges from the
-v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not edit.
+the `effect` version in the catalog — the source of truth for v4 APIs, whose surface
+diverges from the v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not
+edit. The pin is re-verified on every `effect` bump; where the submodule and `node_modules`
+disagree, `node_modules` wins and the pin is what is stale.
 
 ### Turbo file caching: `**/.turbo/cache` only
 
@@ -144,8 +168,8 @@ Unauthorized`. The S3 backend is unaffected — it uses its own credentials.
 ## Development & Release Cycle
 
 All in-progress work lands on the long-lived **`dev`** branch, never directly on `main`;
-`main` always reflects the last released state. `release.yml` pins the shared workflow
-(`savvy-web/.github`) at `@dev` so it exercises workflow changes early.
+`main` always reflects the last released state. `release.yml` delegates to the shared
+workflow (`savvy-web/.github/.github/workflows/release.yml`) pinned at **`@main`**.
 
 **Flow: `dev` → `main` → release**
 
@@ -155,7 +179,7 @@ All in-progress work lands on the long-lived **`dev`** branch, never directly on
 3. Pushes to that branch trigger **Phase 2** validation (build, publish dry-runs,
    release-notes preview, sticky comment).
 4. Merging the release PR triggers **Phase 3** — publish, Git tags, GitHub release.
-5. The published release fires `release-sync.yml`.
+5. `branch-sync.yml` puts the branch pair back in order (below).
 
 **`Closes #N` does not fire on a merge into `dev`.** GitHub auto-closes a linked issue only
 when the PR merges into the **default branch**, and ordinary work here targets `dev` — so
@@ -163,12 +187,24 @@ close the issue by hand after merging, with a pointer to the merge commit. Keep 
 in the PR body anyway: it still links the issue in the UI, and it is what fires later when
 `dev` reaches `main`. Two issues were left silently open this way before it was noticed.
 
-**`release-sync.yml`** — on `release: [published]` (plus `workflow_dispatch` with `tag` +
-`dry-run`), as the GitHub App bot so its pushes bypass protection without recursing. On a
-**stable SemVer release `>= 1.0.0`** (bare `MAJOR.MINOR.PATCH`) it moves the **`v<major>`**
-alias tag to the released commit and **hard-resets `dev` to `main` HEAD** — a genuine
-clobber, safe because `dev` work always lands in `main` first. Pushes are skipped when the
-remote already matches; prerelease, build-metadata and sub-`1.0.0` tags no-op.
+**`branch-sync.yml`** — three jobs, one concurrency group, each running as the GitHub App bot
+so its pushes bypass protection without recursing. It replaced the old `release-sync.yml`,
+and two of the differences are load-bearing:
+
+* **`sync-dev`** keys off **`main` moving** (`push: [main]`), not off a release being
+  published. A push to `main` that produces no release — a dependency promotion with no
+  changeset — still has to even the branches out, and keying on `release` missed exactly
+  that case.
+* **`dev` is never blindly clobbered.** The job merges `dev` into `main` *in memory*
+  (`git merge-tree --write-tree`) and resets only when the resulting tree equals `main`'s —
+  content, not commits, because a squash merge destroys patch-id equality and would read as
+  unmerged work. A `dev` that genuinely holds something `main` lacks is **rebased**; if the
+  rebase conflicts, nothing is touched and the job warns. Every push is
+  `--force-with-lease`d against the `dev` head it read, so a concurrent push aborts the sync
+  rather than losing to it.
+* **`major-tag`** moves the `v<major>` alias tag on `release: [published]`.
+* **`promote`** opens or refreshes the `dev` → `main` PR when a `pnpm/config-deps` branch
+  merges into `dev`.
 
 ## Documentation Structure
 
@@ -199,11 +235,12 @@ remote already matches; prerelease, build-metadata and sub-`1.0.0` tags no-op.
 ```text
 .
 ├── src/
-│   ├── main.ts                # Action.run(program, { layer: MainLive })
-│   ├── post.ts                # post Effect + Action.run(…, { layer: PostLive })
+│   ├── main.ts                # program import + the GITHUB_ACTIONS entry guard
+│   ├── post.ts                # post Effect + the same guard, over PostLive
 │   ├── program.ts             # main pipeline: inputs → steps → outputs
 │   ├── turbo-server.ts        # detached cache-server entry (third bundle)
-│   ├── state.ts               # STATE_KEYS + CacheState + TurboServerState
+│   ├── state.ts               # STATE_KEYS + CacheState / StoreCacheState /
+│   │                          # KcovCacheState / TurboServerState
 │   ├── layers/app.ts          # MainLive / PostLive
 │   ├── schema/                # domain.ts, inputs.ts, outputs.ts
 │   ├── steps/                 # one contract module per pipeline step, in order
@@ -212,10 +249,16 @@ remote already matches; prerelease, build-metadata and sub-`1.0.0` tags no-op.
 │   └── descriptors/           # descriptor.ts + node / bun / deno / biome / bats / kcov
 ├── __test__/unit/             # Vitest suites, mirroring src/ (never co-located)
 ├── __fixtures__/              # workflow integration test fixtures
+├── lib/configs/               # markdownlint-cli2, commitlint, lint-staged
 ├── dist/                      # main.js / post.js / turbo-server.js / package.json
-├── .github/actions/local/     # mirrored bundled action for local testing
+├── .github/actions/local/     # mirrored bundled action, the target test-fixture runs
+├── .repos/effect              # vendored, read-only Effect v4 source (submodule)
 ├── action.config.ts
 ├── action.yml
+├── biome.json
+├── vitest.config.ts
+├── vitest.setup.ts            # strips GITHUB_ACTIONS / INPUT_* / STATE_* from the
+│                              # test process, which is what keeps the entry guards honest
 └── package.json
 ```
 
@@ -273,7 +316,7 @@ fetched degrades to a warning and reports disabled.
 
 ## Code Quality Standards
 
-`biome.jsonc` extends `@savvy-web/silk/biome`. **The preset is authoritative** — where this
+`biome.json` extends `@savvy-web/silk/biome`. **The preset is authoritative** — where this
 list and the preset disagree, the preset wins.
 
 * **Indentation:** tabs, width 2; **line width** 120
@@ -308,7 +351,9 @@ change or CI runs stale code.
 ## Contributing
 
 1. Edit source in `src/` (see [src/CLAUDE.md](src/CLAUDE.md))
-2. Add/update unit tests in `__test__/unit/`, mirroring the `src/` path — never co-located
+2. Add/update unit tests in `__test__/unit/`, mirroring the `src/` path — never co-located.
+   `it.effect` + `assert.*`, and `@effected/memfs` for anything filesystem-shaped
 3. Add/update fixtures and workflows if needed
 4. `pnpm build`, then commit source + `dist/` + `.github/actions/local/`
-5. `pnpm changeset`, push, and verify all tests pass in GitHub Actions
+5. Write a changeset with `/silk:changeset`, push, and verify all tests pass in GitHub
+   Actions

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { ScriptedSpawner } from "@effected/commands";
 import {
 	ActionCache,
@@ -11,7 +11,8 @@ import {
 	ToolInstaller,
 	ToolInstallerError,
 } from "@effected/github-actions";
-import { Effect, FileSystem, Layer, Logger, Option, Path, PlatformError, References } from "effect";
+import { MemoryFileSystem } from "@effected/memfs";
+import { Effect, Layer, Logger, Option, Path, PlatformError, References } from "effect";
 
 import { kcovCacheKey } from "../../../src/descriptors/kcov.js";
 import { installKcov } from "../../../src/steps/install-kcov.js";
@@ -45,6 +46,16 @@ interface Recorded {
 }
 
 const recorder = (): Recorded => ({ restored: [], ladders: [], ran: [], paths: [], env: [], saved: [], logs: [] });
+
+/**
+ * The one `KcovCacheState` a run stashed, narrowed for assertion.
+ *
+ * `Recorded.saved` is deliberately `unknown` — the recorder captures whatever
+ * the step handed `ActionState.set` without re-declaring its schema — so the
+ * two fields these tests turn on are narrowed here rather than at each site.
+ */
+const saved = (r: Recorded): { readonly primaryKey: string; readonly restoredKey: Option.Option<string> } =>
+	r.saved[0] as { readonly primaryKey: string; readonly restoredKey: Option.Option<string> };
 
 /**
  * What the cache answers: nothing, the primary key exactly, or the fallback
@@ -125,20 +136,25 @@ const makeLayer = (r: Recorded, options: LayerOptions) => {
 					: Effect.sync(() => void r.paths.push(p)),
 			exportVariable: (n, v) => Effect.sync(() => void r.env.push([n, v])),
 		}),
-		FileSystem.layerNoop({
-			makeDirectory: (path: string) =>
-				options.makeDirectoryFails === true
-					? Effect.fail(
-							PlatformError.systemError({
-								module: "FileSystem",
-								method: "makeDirectory",
-								_tag: "PermissionDenied",
-								pathOrDescriptor: path,
-							}),
-						)
-					: Effect.void,
-			access: () => Effect.void,
-		}),
+		// An empty in-memory volume: the step only creates the out-of-source build
+		// directory and removes a poisoned prefix, so nothing needs seeding. The
+		// fault is registered only when a case asks for it — an unregistered method
+		// is never intercepted, so every other call goes to the volume.
+		MemoryFileSystem.layerFaulty(
+			options.makeDirectoryFails === true
+				? {
+						makeDirectory: (path: string) =>
+							Effect.fail(
+								PlatformError.systemError({
+									module: "FileSystem",
+									method: "makeDirectory",
+									_tag: "PermissionDenied",
+									pathOrDescriptor: path,
+								}),
+							),
+					}
+				: {},
+		).pipe(Layer.provide(MemoryFileSystem.layer)),
 		Path.layer,
 		ActionLogger.layerTest({}),
 		Logger.layer([Logger.make(({ message }) => void r.logs.push(String(message)))]),
@@ -153,8 +169,8 @@ describe("installKcov", () => {
 			const result = yield* installKcov(false, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
-			expect(Option.isNone(result)).toBe(true);
-			expect(r.restored).toEqual([]);
+			assert.strictEqual(Option.isNone(result), true);
+			assert.deepStrictEqual(r.restored, []);
 		}),
 	);
 
@@ -164,14 +180,14 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 0 })),
 			);
-			expect(r.restored).toEqual([PRIMARY]);
-			expect(r.ladders).toEqual([[RUNG]]);
-			expect(Option.isSome(result) && result.value.cacheHit).toBe(true);
+			assert.deepStrictEqual(r.restored, [PRIMARY]);
+			assert.deepStrictEqual(r.ladders, [[RUNG]]);
+			assert.strictEqual(Option.isSome(result) && result.value.cacheHit, true);
 			// The entry already lives under the key a save would use, so there is no
 			// state to stash.
-			expect(r.saved).toEqual([]);
+			assert.deepStrictEqual(r.saved, []);
 			// The one thing a hit is worth: no apt, no cmake, no make.
-			expect(r.ran).toEqual(["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
+			assert.deepStrictEqual(r.ran, ["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
 		}),
 	);
 
@@ -182,12 +198,19 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 127 })),
 			);
-			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
-			expect(r.saved).toHaveLength(1);
-			expect(r.logs.some((l) => l.includes("rebuilding"))).toBe(true);
-			expect(r.ran.filter((c) => c.endsWith("kcov --version"))).toHaveLength(2);
-			expect(r.ran).toContain("make install");
-			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.none() });
+			assert.strictEqual(Option.isSome(result) && result.value.cacheHit, false);
+			assert.lengthOf(r.saved, 1);
+			assert.strictEqual(
+				r.logs.some((l) => l.includes("rebuilding")),
+				true,
+			);
+			assert.lengthOf(
+				r.ran.filter((c) => c.endsWith("kcov --version")),
+				2,
+			);
+			assert.include(r.ran, "make install");
+			assert.strictEqual(saved(r).primaryKey, PRIMARY);
+			assert.deepStrictEqual(saved(r).restoredKey, Option.none());
 		}),
 	);
 
@@ -200,11 +223,12 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "prefix", probeExit: 0 })),
 			);
-			expect(Option.isSome(result) && result.value.cacheHit).toBe(true);
+			assert.strictEqual(Option.isSome(result) && result.value.cacheHit, true);
 			// Warm: restored, probed, published — never built.
-			expect(r.ran).toEqual(["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
-			expect(r.saved).toHaveLength(1);
-			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.some(OLDER) });
+			assert.deepStrictEqual(r.ran, ["/opt/hostedtoolcache/kcov/43/x64/bin/kcov --version"]);
+			assert.lengthOf(r.saved, 1);
+			assert.strictEqual(saved(r).primaryKey, PRIMARY);
+			assert.deepStrictEqual(saved(r).restoredKey, Option.some(OLDER));
 		}),
 	);
 
@@ -217,13 +241,14 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "prefix", probeExit: 127 })),
 			);
-			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
-			expect(r.ran).toContain("make install");
-			expect(r.saved).toHaveLength(1);
+			assert.strictEqual(Option.isSome(result) && result.value.cacheHit, false);
+			assert.include(r.ran, "make install");
+			assert.lengthOf(r.saved, 1);
 			// Saved under the NEW primary with no restored key — never under the key it
 			// came from, which is what makes the poisoned entry heal.
-			expect(r.saved[0]).toMatchObject({ primaryKey: PRIMARY, restoredKey: Option.none() });
-			expect((r.saved[0] as { primaryKey: string }).primaryKey).not.toBe(OLDER);
+			assert.strictEqual(saved(r).primaryKey, PRIMARY);
+			assert.deepStrictEqual(saved(r).restoredKey, Option.none());
+			assert.notStrictEqual(saved(r).primaryKey, OLDER);
 		}),
 	);
 
@@ -233,11 +258,11 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
-			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
-			expect(r.saved).toHaveLength(1);
-			expect(r.paths).toEqual(["/opt/hostedtoolcache/kcov/43/x64/bin"]);
-			expect(r.env).toContainEqual(["KCOV_PATH", "/opt/hostedtoolcache/kcov/43/x64/bin/kcov"]);
-			expect(r.ran).toEqual([
+			assert.strictEqual(Option.isSome(result) && result.value.cacheHit, false);
+			assert.lengthOf(r.saved, 1);
+			assert.deepStrictEqual(r.paths, ["/opt/hostedtoolcache/kcov/43/x64/bin"]);
+			assert.deepInclude(r.env, ["KCOV_PATH", "/opt/hostedtoolcache/kcov/43/x64/bin/kcov"]);
+			assert.deepStrictEqual(r.ran, [
 				"sudo apt-get update",
 				"sudo apt-get install -y --no-install-recommends cmake g++ libdw-dev binutils-dev libcurl4-openssl-dev zlib1g-dev pkg-config",
 				"cmake -DCMAKE_INSTALL_PREFIX=/opt/hostedtoolcache/kcov/43/x64 /tmp/x/kcov-43",
@@ -255,9 +280,9 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 			);
 			const macKey = kcovCacheKey("43", "macos15", "arm64", Option.none(), Option.some("20260801.1"));
-			expect(r.restored).toEqual([macKey.key]);
-			expect(r.ladders).toEqual([macKey.restoreKeys]);
-			expect(r.ran[0]).toBe("brew install dwarfutils openssl@3");
+			assert.deepStrictEqual(r.restored, [macKey.key]);
+			assert.deepStrictEqual(r.ladders, [macKey.restoreKeys]);
+			assert.strictEqual(r.ran[0], "brew install dwarfutils openssl@3");
 		}),
 	);
 
@@ -268,10 +293,10 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0 })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("detect");
-			expect(r.restored).toEqual([]);
-			expect(r.ladders).toEqual([]);
-			expect(r.ran).toEqual([]);
+			assert.strictEqual(error.reason, "detect");
+			assert.deepStrictEqual(r.restored, []);
+			assert.deepStrictEqual(r.ladders, []);
+			assert.deepStrictEqual(r.ran, []);
 		}),
 	);
 
@@ -282,8 +307,8 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, buildExit: 2 })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("build");
-			expect(error.message).toContain("boom");
+			assert.strictEqual(error.reason, "build");
+			assert.include(error.message, "boom");
 		}),
 	);
 
@@ -296,8 +321,8 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 127 })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("verify");
-			expect(r.saved).toEqual([]);
+			assert.strictEqual(error.reason, "verify");
+			assert.deepStrictEqual(r.saved, []);
 		}),
 	);
 
@@ -307,8 +332,11 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, restoreFails: true })),
 			);
-			expect(Option.isSome(result) && result.value.cacheHit).toBe(false);
-			expect(r.logs.some((l) => l.includes("cache could not be read"))).toBe(true);
+			assert.strictEqual(Option.isSome(result) && result.value.cacheHit, false);
+			assert.strictEqual(
+				r.logs.some((l) => l.includes("cache could not be read")),
+				true,
+			);
 		}),
 	);
 
@@ -318,9 +346,12 @@ describe("installKcov", () => {
 			const result = yield* installKcov(true, OPTS).pipe(
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, saveFails: true })),
 			);
-			expect(Option.isSome(result)).toBe(true);
-			expect(r.logs.some((l) => l.includes("the next run will rebuild"))).toBe(true);
-			expect(r.paths).toHaveLength(1);
+			assert.strictEqual(Option.isSome(result), true);
+			assert.strictEqual(
+				r.logs.some((l) => l.includes("the next run will rebuild")),
+				true,
+			);
+			assert.lengthOf(r.paths, 1);
 		}),
 	);
 
@@ -331,7 +362,7 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "primary", probeExit: 0, publishFails: true })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("publish");
+			assert.strictEqual(error.reason, "publish");
 		}),
 	);
 
@@ -342,7 +373,7 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, downloadFails: true })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("download");
+			assert.strictEqual(error.reason, "download");
 		}),
 	);
 
@@ -353,8 +384,8 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, makeDirectoryFails: true })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("build");
-			expect(error.message).toContain("/tmp/x/build");
+			assert.strictEqual(error.reason, "build");
+			assert.include(error.message, "/tmp/x/build");
 		}),
 	);
 
@@ -365,8 +396,8 @@ describe("installKcov", () => {
 				Effect.provide(makeLayer(r, { restore: "miss", probeExit: 0, spawnFails: true })),
 				Effect.flip,
 			);
-			expect(error.reason).toBe("build");
-			expect(error.message).toContain("apt-get update could not be run");
+			assert.strictEqual(error.reason, "build");
+			assert.include(error.message, "apt-get update could not be run");
 		}),
 	);
 
@@ -388,8 +419,8 @@ describe("installKcov", () => {
 				else process.env.ImageVersion = before;
 			}
 			// Collapsed onto the rung, with no trailing separator and no ladder.
-			expect(r.restored).toEqual([RUNG.slice(0, -1)]);
-			expect(r.ladders).toEqual([[]]);
+			assert.deepStrictEqual(r.restored, [RUNG.slice(0, -1)]);
+			assert.deepStrictEqual(r.ladders, [[]]);
 		}),
 	);
 });

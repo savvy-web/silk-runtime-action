@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import type { BlobEnvelopeError, BlobStoreShape } from "@effected/github-actions";
 import { BlobStore, BlobStoreError } from "@effected/github-actions";
 import type { Layer } from "effect";
@@ -65,9 +65,9 @@ describe("makeTurboHandler routes", () => {
 	it("answers the status probe without authentication", async () => {
 		const [status] = await overMemory([request({ path: "/v8/artifacts/status", authorization: undefined })]);
 
-		expect(status?.status).toBe(200);
-		expect(status?.headers).toEqual({ "content-type": "application/json" });
-		expect(new TextDecoder().decode(status?.body)).toBe(JSON.stringify({ status: "enabled" }));
+		assert.strictEqual(status?.status, 200);
+		assert.deepStrictEqual(status?.headers, { "content-type": "application/json" });
+		assert.strictEqual(new TextDecoder().decode(status?.body), JSON.stringify({ status: "enabled" }));
 	});
 
 	it("strips the query string turbo appends", async () => {
@@ -76,14 +76,14 @@ describe("makeTurboHandler routes", () => {
 			request({ path: "/v8/artifacts/status?teamId=team_x&slug=x", authorization: undefined }),
 		]);
 
-		expect(status?.status).toBe(200);
+		assert.strictEqual(status?.status, 200);
 	});
 
 	it("answers events with an empty array when authenticated", async () => {
 		const [events] = await overMemory([request({ path: "/v8/artifacts/events", method: "POST" })]);
 
-		expect(events?.status).toBe(200);
-		expect(new TextDecoder().decode(events?.body)).toBe("[]");
+		assert.strictEqual(events?.status, 200);
+		assert.strictEqual(new TextDecoder().decode(events?.body), "[]");
 	});
 
 	it("refuses events without the token", async () => {
@@ -91,13 +91,13 @@ describe("makeTurboHandler routes", () => {
 		// `/status`, which is the readiness probe and stays open.
 		const [events] = await overMemory([request({ path: "/v8/artifacts/events", authorization: undefined })]);
 
-		expect(events?.status).toBe(401);
+		assert.strictEqual(events?.status, 401);
 	});
 
 	it("is a 404 for an unknown path", async () => {
 		const [unknown] = await overMemory([request({ path: "/v9/artifacts/hash1" })]);
 
-		expect(unknown).toEqual({ status: 404, headers: {} });
+		assert.deepStrictEqual(unknown, { status: 404, headers: {} });
 	});
 
 	it("is a 404 for an unknown path before it checks the token", async () => {
@@ -105,19 +105,19 @@ describe("makeTurboHandler routes", () => {
 		// 404 whether or not the caller could have authenticated.
 		const [unknown] = await overMemory([request({ path: "/", authorization: undefined })]);
 
-		expect(unknown?.status).toBe(404);
+		assert.strictEqual(unknown?.status, 404);
 	});
 
 	it("is a 404 for an artifact path with no hash", async () => {
 		const [empty] = await overMemory([request({ path: "/v8/artifacts/" })]);
 
-		expect(empty?.status).toBe(404);
+		assert.strictEqual(empty?.status, 404);
 	});
 
 	it("is a 404 for an artifact path with a nested hash", async () => {
 		const [nested] = await overMemory([request({ path: "/v8/artifacts/a/b" })]);
 
-		expect(nested?.status).toBe(404);
+		assert.strictEqual(nested?.status, 404);
 	});
 
 	it("is a 404 for a relative-segment hash", async () => {
@@ -128,14 +128,14 @@ describe("makeTurboHandler routes", () => {
 			request({ path: "/v8/artifacts/.." }),
 		]);
 
-		expect(dot?.status).toBe(404);
-		expect(dotdot?.status).toBe(404);
+		assert.strictEqual(dot?.status, 404);
+		assert.strictEqual(dotdot?.status, 404);
 	});
 
 	it("is a 405 for a method it does not implement", async () => {
 		const [other] = await overMemory([request({ method: "DELETE" })]);
 
-		expect(other).toEqual({ status: 405, headers: {} });
+		assert.deepStrictEqual(other, { status: 405, headers: {} });
 	});
 });
 
@@ -143,25 +143,25 @@ describe("makeTurboHandler authentication", () => {
 	it("refuses a mismatched token", async () => {
 		const [get] = await overMemory([request({ authorization: "Bearer wrong" })]);
 
-		expect(get).toEqual({ status: 401, headers: {} });
+		assert.deepStrictEqual(get, { status: 401, headers: {} });
 	});
 
 	it("refuses a missing authorization header", async () => {
 		const [get] = await overMemory([request({ authorization: undefined })]);
 
-		expect(get?.status).toBe(401);
+		assert.strictEqual(get?.status, 401);
 	});
 
 	it("accepts the bearer prefix in any case", async () => {
 		const [get] = await overMemory([request({ authorization: `bearer ${TOKEN}` })]);
 
-		expect(get?.status).toBe(404);
+		assert.strictEqual(get?.status, 404);
 	});
 
 	it("accepts a bare token with no bearer prefix", async () => {
 		const [get] = await overMemory([request({ authorization: TOKEN })]);
 
-		expect(get?.status).toBe(404);
+		assert.strictEqual(get?.status, 404);
 	});
 
 	it("accepts anything when no token is expected", async () => {
@@ -171,7 +171,7 @@ describe("makeTurboHandler authentication", () => {
 		// run — the handler stays permissive so a test can exercise it.
 		const [get] = await overMemory([request({ authorization: undefined })], { expectedToken: "" });
 
-		expect(get?.status).toBe(404);
+		assert.strictEqual(get?.status, 404);
 	});
 });
 
@@ -179,7 +179,7 @@ describe("makeTurboHandler artifacts", () => {
 	it("stores a PUT and answers 202", async () => {
 		const [put] = await overMemory([request({ method: "PUT", body: new Uint8Array([1, 2, 3]) })]);
 
-		expect(put).toEqual({ status: 202, headers: {} });
+		assert.deepStrictEqual(put, { status: 202, headers: {} });
 	});
 
 	it("serves back what a PUT stored", async () => {
@@ -189,9 +189,9 @@ describe("makeTurboHandler artifacts", () => {
 			request({ method: "GET" }),
 		]);
 
-		expect(get?.status).toBe(200);
-		expect(get?.body).toEqual(body);
-		expect(get?.headers).toEqual({
+		assert.strictEqual(get?.status, 200);
+		assert.deepStrictEqual(get?.body, body);
+		assert.deepStrictEqual(get?.headers, {
 			"content-type": "application/octet-stream",
 			"x-artifact-duration": "1250",
 			"x-artifact-tag": "signature",
@@ -201,13 +201,13 @@ describe("makeTurboHandler artifacts", () => {
 	it("always sends a duration header", async () => {
 		const [, get] = await overMemory([request({ method: "PUT" }), request({ method: "GET" })]);
 
-		expect(get?.headers["x-artifact-duration"]).toBe("0");
+		assert.strictEqual(get?.headers["x-artifact-duration"], "0");
 	});
 
 	it("omits the tag header when no tag was sent", async () => {
 		const [, get] = await overMemory([request({ method: "PUT" }), request({ method: "GET" })]);
 
-		expect(get?.headers["x-artifact-tag"]).toBeUndefined();
+		assert.isUndefined(get?.headers["x-artifact-tag"]);
 	});
 
 	it("omits the tag header when the tag was empty", async () => {
@@ -215,7 +215,7 @@ describe("makeTurboHandler artifacts", () => {
 		// back as `x-artifact-tag: `.
 		const [, get] = await overMemory([request({ method: "PUT", artifactTag: "" }), request({ method: "GET" })]);
 
-		expect(get?.headers["x-artifact-tag"]).toBeUndefined();
+		assert.isUndefined(get?.headers["x-artifact-tag"]);
 	});
 
 	it("clamps the stored duration", async () => {
@@ -224,7 +224,7 @@ describe("makeTurboHandler artifacts", () => {
 			request({ method: "GET" }),
 		]);
 
-		expect(get?.headers["x-artifact-duration"]).toBe("0");
+		assert.strictEqual(get?.headers["x-artifact-duration"], "0");
 	});
 
 	it("answers HEAD from presence", async () => {
@@ -234,14 +234,14 @@ describe("makeTurboHandler artifacts", () => {
 			request({ method: "HEAD" }),
 		]);
 
-		expect(head1?.status).toBe(404);
-		expect(head2).toEqual({ status: 200, headers: {} });
+		assert.strictEqual(head1?.status, 404);
+		assert.deepStrictEqual(head2, { status: 200, headers: {} });
 	});
 
 	it("is a 404 on a miss", async () => {
 		const [get] = await overMemory([request({ method: "GET" })]);
 
-		expect(get).toEqual({ status: 404, headers: {} });
+		assert.deepStrictEqual(get, { status: 404, headers: {} });
 	});
 
 	it("is a 404 on a blob it cannot read as its own metadata", async () => {
@@ -256,7 +256,7 @@ describe("makeTurboHandler artifacts", () => {
 			return yield* makeTurboHandler({ prefix: "", expectedToken: TOKEN })(request({ method: "GET" }));
 		});
 
-		expect(await Effect.runPromise(seeded.pipe(Effect.provide(store)))).toEqual({ status: 404, headers: {} });
+		assert.deepStrictEqual(await Effect.runPromise(seeded.pipe(Effect.provide(store))), { status: 404, headers: {} });
 	});
 });
 
@@ -265,7 +265,7 @@ describe("makeTurboHandler keys", () => {
 		const keys: Array<string> = [];
 		await overStore(recordingStore(keys), request({ method: "PUT" }));
 
-		expect(keys).toEqual(["hash1"]);
+		assert.deepStrictEqual(keys, ["hash1"]);
 	});
 
 	it("separates a prefix from the hash with a slash", async () => {
@@ -275,20 +275,20 @@ describe("makeTurboHandler keys", () => {
 		const keys: Array<string> = [];
 		await overStore(recordingStore(keys), request({ method: "PUT" }), { prefix: "p" });
 
-		expect(keys).toEqual(["p/hash1"]);
+		assert.deepStrictEqual(keys, ["p/hash1"]);
 	});
 
 	it("leaves a prefix that already ends in a slash alone", async () => {
 		const keys: Array<string> = [];
 		await overStore(recordingStore(keys), request({ method: "HEAD" }), { prefix: "p/" });
 
-		expect(keys).toEqual(["p/hash1"]);
+		assert.deepStrictEqual(keys, ["p/hash1"]);
 	});
 
 	it("reads back what the same prefix wrote", async () => {
 		const [, get] = await overMemory([request({ method: "PUT" }), request({ method: "GET" })], { prefix: "team-a" });
 
-		expect(get?.status).toBe(200);
+		assert.strictEqual(get?.status, 200);
 	});
 
 	it("does not read across prefixes", async () => {
@@ -299,7 +299,7 @@ describe("makeTurboHandler keys", () => {
 			return yield* handlerB(request({ method: "GET" }));
 		});
 
-		expect(await Effect.runPromise(crossed.pipe(Effect.provide(BlobStore.layerMemory)))).toEqual({
+		assert.deepStrictEqual(await Effect.runPromise(crossed.pipe(Effect.provide(BlobStore.layerMemory))), {
 			status: 404,
 			headers: {},
 		});
@@ -313,7 +313,7 @@ describe("makeTurboHandler failures", () => {
 	});
 
 	it("collapses a store failure to a bare 500", async () => {
-		expect(await overStore(refusing, request({ method: "GET" }))).toEqual({ status: 500, headers: {} });
+		assert.deepStrictEqual(await overStore(refusing, request({ method: "GET" })), { status: 500, headers: {} });
 	});
 
 	it("hands the store failure to its caller", async () => {
@@ -323,9 +323,9 @@ describe("makeTurboHandler failures", () => {
 		const seen: Array<unknown> = [];
 		await overStore(refusing, request({ method: "GET" }), { onStoreFailure: (error) => void seen.push(error) });
 
-		expect(seen).toHaveLength(1);
-		expect((seen[0] as BlobStoreError).reason).toBe("refused");
-		expect((seen[0] as BlobStoreError).status).toBe(401);
+		assert.lengthOf(seen, 1);
+		assert.strictEqual((seen[0] as BlobStoreError).reason, "refused");
+		assert.strictEqual((seen[0] as BlobStoreError).status, 401);
 	});
 
 	it("collapses a failing PUT to a 500", async () => {
@@ -333,7 +333,7 @@ describe("makeTurboHandler failures", () => {
 			put: () => Effect.fail(new BlobStoreError({ reason: "unreachable" })),
 		});
 
-		expect(await overStore(failing, request({ method: "PUT" }))).toEqual({ status: 500, headers: {} });
+		assert.deepStrictEqual(await overStore(failing, request({ method: "PUT" })), { status: 500, headers: {} });
 	});
 
 	it("collapses a failing HEAD to a 500", async () => {
@@ -341,7 +341,7 @@ describe("makeTurboHandler failures", () => {
 			has: () => Effect.fail(new BlobStoreError({ reason: "unreachable" })),
 		});
 
-		expect(await overStore(failing, request({ method: "HEAD" }))).toEqual({ status: 500, headers: {} });
+		assert.deepStrictEqual(await overStore(failing, request({ method: "HEAD" })), { status: 500, headers: {} });
 	});
 
 	it("keeps the envelope failure off the caller's hands", async () => {
@@ -358,8 +358,8 @@ describe("makeTurboHandler failures", () => {
 		});
 		const response = await Effect.runPromise(program.pipe(Effect.provide(BlobStore.layerMemory)));
 
-		expect(response.status).toBe(404);
-		expect(seen).toEqual([]);
+		assert.strictEqual(response.status, 404);
+		assert.deepStrictEqual(seen, []);
 	});
 });
 
@@ -372,7 +372,7 @@ describe("makeTurboHandler metadata", () => {
 		});
 		await overStore(store, request({ method: "PUT", artifactTag: "sig", artifactDuration: 12.9 }));
 
-		expect(stored).toEqual([TurboArtifactMeta.make({ tag: "sig", durationMs: 12 })]);
+		assert.deepStrictEqual(stored, [TurboArtifactMeta.make({ tag: "sig", durationMs: 12 })]);
 	});
 
 	it("stores an absent tag as null", async () => {
@@ -383,6 +383,6 @@ describe("makeTurboHandler metadata", () => {
 		});
 		await overStore(store, request({ method: "PUT" }));
 
-		expect(stored).toEqual([TurboArtifactMeta.make({ tag: null, durationMs: 0 })]);
+		assert.deepStrictEqual(stored, [TurboArtifactMeta.make({ tag: null, durationMs: 0 })]);
 	});
 });

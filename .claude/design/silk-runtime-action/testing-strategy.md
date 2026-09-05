@@ -3,8 +3,8 @@ status: current
 module: silk-runtime-action
 category: testing
 created: 2026-03-21
-updated: 2026-08-20
-last-synced: 2026-08-20
+updated: 2026-09-04
+last-synced: 2026-09-04
 completeness: 95
 related:
   - ./architecture.md
@@ -22,11 +22,12 @@ Two tiers: `@effect/vitest` unit tests over the kit's test layers, and fixture-b
 
 1. [Overview](#overview)
 2. [Current state](#current-state)
-3. [What a test double cannot tell you](#what-a-test-double-cannot-tell-you)
-4. [The parity guards](#the-parity-guards)
-5. [Rationale](#rationale)
-6. [Implementation details](#implementation-details)
-7. [Related documentation](#related-documentation)
+3. [The filesystem is a real volume](#the-filesystem-is-a-real-volume)
+4. [What a test double cannot tell you](#what-a-test-double-cannot-tell-you)
+5. [The parity guards](#the-parity-guards)
+6. [Rationale](#rationale)
+7. [Implementation details](#implementation-details)
+8. [Related documentation](#related-documentation)
 
 ---
 
@@ -36,8 +37,10 @@ Unit tests run in Vitest through `@effect/vitest`, over service doubles provided
 
 **Key features:**
 
-- **530 unit tests** in `__test__/unit/`, mirroring `src/` — never co-located.
+- **574 unit tests across 31 files** in `__test__/unit/`, mirroring `src/` — never co-located.
 - Kit-provided `X.layerTest({ … })` doubles with partial overrides; unstubbed members die on use, deliberately.
+- The filesystem is **not** a double but a real in-memory volume, `@effected/memfs`. See [the filesystem is a real volume](#the-filesystem-is-a-real-volume).
+- Assertions are `assert.*` from `@effect/vitest` (chai), not `expect`.
 - Cross-phase state schemas are tested against the **real** `ActionState` layer, not a double.
 - `action.yml` ↔ code parity is a test, for both inputs and outputs.
 - Formatter prose is pinned **codepoint-verbatim**.
@@ -57,7 +60,8 @@ Unit tests run in Vitest through `@effect/vitest`, over service doubles provided
 
 ```text
 __test__/unit/
-  layers.test.ts            post.test.ts            program.test.ts       state.test.ts
+  environment.test.ts       layers.test.ts          post.test.ts
+  program.test.ts           state.test.ts
   schema/{domain,inputs,outputs}.test.ts
   steps/{cache-config,detect-bats,detect-biome,detect-turbo,install-bats,install-biome,
          install-dependencies,install-kcov,install-runtimes,load-config,restore-cache,
@@ -70,7 +74,7 @@ __test__/unit/
 
 Tests are **never co-located** with source. The tree mirrors `src/` so the mapping is mechanical.
 
-`steps/steps.test.ts` is the cross-cutting one: it asserts the shape every step contract shares rather than any single step's behaviour.
+`steps/steps.test.ts` is the cross-cutting one: it asserts the shape every step contract shares rather than any single step's behaviour. `environment.test.ts` is the other odd one out: it tests the *harness*, asserting from inside a worker that `vitest.setup.ts` really stripped `GITHUB_ACTIONS`, `INPUT_*` and `STATE_*` (see [architecture](./architecture.md#entry-points)).
 
 ### Kit test layers
 
@@ -90,6 +94,8 @@ BlobStore.layerTest({ /* … */ })
 ```
 
 **An unstubbed member dies on use, and that is the design.** A test that stubs only what the code under test should touch turns any unexpected call into a loud failure. `program.test.ts` leans on this explicitly: its `ChildProcessSpawner` double implements `spawn` and `exitCode` and lets the derived members die, because no step should be collecting a command's output wholesale.
+
+That discipline governs the **kit** doubles — `ToolInstaller`, `ActionOutputs`, `ChildProcessSpawner` and friends. It no longer describes the filesystem, which is a real volume rather than a stub; see [the filesystem is a real volume](#the-filesystem-is-a-real-volume).
 
 Inputs are keyed by **input name** (`"biome-version"`), never by a runner variable spelling. The provider is dual-accept, so no test needs to know that the runner writes `INPUT_BIOME-VERSION` with the hyphen intact. `ActionInput.variable(name)` exists for the rare test that must speak the variable form.
 
@@ -148,6 +154,8 @@ coverage: { enabled: true, provider: "v8", include: ["src/**/*.ts"], exclude: []
 
 Both matrices use `fail-fast: false` so a single run surfaces every failure. Both run `.github/actions/local` — the **built** action — not the source.
 
+**A one-letter typo disabled the whole matrix on release PRs.** `test.yml` watched `changesets-release/main`; changesets spells the branch `changeset-release/main`, singular. Nothing errors on a `branches:` entry that matches no branch, so the fixture matrix simply never ran on a release PR — the one PR where running it matters most — and the workflow looked correctly configured the entire time. Fixed in the #348 pass. The general shape: a trigger filter fails **open into silence**, so branch names in `on:` are worth checking against the tool that creates them rather than against memory.
+
 Cache fixtures run as a dependent pair: a create job installs everything and saves, then a restore job asserts `cache-hit`. Turbo fixtures use a double-build pattern: run `turbo run` twice and assert the second build is a remote cache hit.
 
 ### What the `bats-kcov` fixture is for
@@ -163,9 +171,35 @@ Two deliberate scoping decisions on that row:
 
 ---
 
+## The filesystem is a real volume
+
+The filesystem double is `@effected/memfs`, and there are **zero `FileSystem.layerNoop` sites left in the suite**. Three constructors cover everything:
+
+| Constructor | Use |
+| --- | --- |
+| `MemoryFileSystem.layerWith(seed)` | a volume pre-populated with files and directories |
+| `MemoryFileSystem.layer` | an empty volume |
+| `MemoryFileSystem.layerFaulty(faults).pipe(Layer.provide(volume))` | an injected failure, or a delegating recorder over a real volume |
+
+**Fault handlers delegate when they return `undefined`**, and that default is what makes the recorder pattern work: a handler pushes the path it was asked about, returns `undefined`, and the underlying volume answers for real. A test can therefore observe *which* paths a step probed without having to also simulate what it finds there.
+
+This changes what a filesystem-shaped test proves. Under a hand-stubbed `FileSystem`, an absent file was a stub author's decision; under a volume, it is the volume's own honest answer, produced by the same code path the real thing uses. Three behavioural differences surfaced during the conversion, and each is a case where the old double had been quietly more permissive than reality:
+
+- **`readFileString` is derived from `readFile`.** A `NotFound` on a string read therefore names `readFile` as the failing method — which is exactly what the real Node filesystem reports. `steps/load-config.test.ts` asserted the string-level method name and had to be corrected; it had been asserting the double's shape rather than the platform's.
+- **`FileSystem.copy` refuses an existing destination.** `errorOnExist` is the platform default. `install-bats` created its destination directory and then copied into it without `{ overwrite: true }`, so a **warm `~/.local/share` — a second invocation of the action within one job — silently failed to provision bats**. The hand-stubbed `copy` it replaced had no opinion about existing destinations and could not have caught this at any level of test effort. Fixed by passing `{ overwrite: true }`.
+- **`readDirectory("/")` on a fresh volume is not empty.** It includes the pre-created `tmp` directory. Any assertion about the contents of the volume root has to account for it.
+
+The second of those is the argument for the whole conversion in one line: the bug was in production, the unit suite was green, and the reason it was green is that the double was a simplification of the interface rather than an implementation of it.
+
+### Assertions are `assert.*`
+
+The suite uses chai-style `assert.*` from `@effect/vitest` throughout — 1085 call sites were converted from `expect`. One gotcha rides along: **`assert.deepStrictEqual` compares prototypes and `expect(...).toEqual` does not**, so a decoded `Schema.Class` instance cannot be compared against an object literal. Assert its fields instead.
+
+---
+
 ## What a test double cannot tell you
 
-Lessons from production bugs that green unit suites did not catch. The first two reduce to the same thing — **an in-memory double is strictly more permissive than the runner** — and the last to a sharper version of it: the thing under test in a unit suite is the source, and the thing CI runs is the bundle.
+Lessons from production bugs that green unit suites did not catch. Most of them reduce to one thing — **a hand-written double is strictly more permissive than the runner** — with two sharper variants: the thing under test in a unit suite is the source while the thing CI runs is the bundle, and a wrong default can be a success in the wrong place rather than a failure anywhere. Moving the filesystem onto a real volume closed one whole family of these; see [the filesystem is a real volume](#the-filesystem-is-a-real-volume).
 
 ### Cross-phase state must round-trip through text
 
@@ -195,6 +229,12 @@ A full trip saves through a service pointed at a scoped temp state file, **repub
 `install-bats` synthesizes a `load.bash` for `bats-mock`, and the unit suite covers that synthesis directly — the case exists, it asserts the file's exact contents, and it was green throughout. The bundled `dist/main.js` nonetheless carried a live `${BASH_SOURCE[0]}` template substitution, because the minifier constant-folded the escaped source form back into one, and every run of the built action died at module load with `ReferenceError: BASH_SOURCE is not defined`.
 
 The full account, and the rule it generalizes to, live in [build and distribution](./build-and-distribution.md#verification-means-the-built-artifact). What it means *here*: for any literal that must reach disk verbatim, the unit test is necessary and not sufficient. The e2e tier is the only tier that runs the artifact CI runs, which is one more reason the fixture matrices are not optional garnish.
+
+### An unset `$HOME` made every path relative
+
+`install-bats` derived its library root from `process.env.HOME`, defaulting to `""` when unset. On a runner where `$HOME` was absent the root resolved to the **relative** `.local/share`: the libraries were installed into the checkout, and `BATS_LIB_PATH` was exported as a relative path. Every `bats_load_library` in the consuming repository then failed, with nothing in the failure naming the cause — the action reported success, the files existed somewhere, and the error surfaced a step later in a third-party shell function.
+
+Two changes, because either alone is insufficient. The default now falls back to `os.homedir()` rather than `""`, and an **absolute-path check fails typed before the first archive is fetched** — the step refuses to install to a relative root at all, instead of installing somewhere useless and reporting success. A default that silently produces a relative path is the shape of bug that survives every test tier: it is not a failure anywhere, it is a success in the wrong place.
 
 ### The e2e harness must fail on an empty answer
 
@@ -300,6 +340,9 @@ Cases assert on captured outputs, recorded spawns (including the child's `PATH`)
 | Green unit test, red runner | A state or envelope schema whose encoded form is not JSON | Round-trip it through the real `ActionState` harness |
 | Passes locally, fails in CI | Platform branching | Pass an explicit `host` / `platform` and pin both |
 | An e2e assertion passes suspiciously | Empty actual against a non-empty expected | Already fixed in the harness; if it recurs, fix the harness first |
+| Green suite, fails on a second run in one job | An operation the old double permitted and the platform does not (`copy` onto an existing destination) | Re-check against `@effected/memfs`, which implements the platform's rules |
+| `assert.deepStrictEqual` fails on identical-looking values | Prototype mismatch — a decoded `Schema.Class` against an object literal | Assert the fields, not the instance |
+| A workflow "runs" but produces no jobs | A `branches:` filter matching nothing | Check the branch name against whatever tool creates it |
 
 ---
 
@@ -312,6 +355,11 @@ Cases assert on captured outputs, recorded spawns (including the child's `PATH`)
 - [Caching strategy](./caching-strategy.md) — the state protocol the real-`ActionState` harness exists for.
 - [Turbo remote cache](./turbo-remote-cache.md) — the subsystem the five e2e jobs exercise.
 - [Build and distribution](./build-and-distribution.md) — how the local copy the fixtures run is produced.
+
+**Source files:**
+
+- `vitest.setup.ts` — the `globalSetup` that strips `GITHUB_ACTIONS`, `INPUT_*` and `STATE_*` before the fork pool starts.
+- `vitest.config.ts` — pool, coverage level and thresholds.
 
 **Context files:**
 
