@@ -1,5 +1,17 @@
 # @savvy-web/silk-runtime-action
 
+## 1.6.0
+
+### Maintenance
+
+- Bumps effected kit to the latest version. [#361][#361]
+
+### Thanks
+
+Thanks to [@spencerbeggs](https://github.com/spencerbeggs) for their contributions!
+
+[#361]: https://github.com/savvy-web/silk-runtime-action/pull/361
+
 ## 1.5.9
 
 ### Dependencies
@@ -219,28 +231,34 @@ Thanks to [@savvy-web-bot](https://github.com/apps/savvy-web-bot) for their cont
   union is archived under the new key.
 
 - The post phase probes each store directory for content and archives only the populated
-  ones. The store key carries no install policy by design, so it cannot tell a&#10;`install-deps: false` run from a full one; without the probe, a cold store keyspace whose
+  ones. The store key carries no install policy by design, so it cannot tell a
+  `install-deps: false` run from a full one; without the probe, a cold store keyspace whose
   first job installs nothing would archive an empty store under the shared key and freeze it.
   The probe is on content rather than on whether an install ran, so a workflow that skips
   this action's install and runs its own in a later step still gets its store archived.
 
 #### `store-cache-hit` output
 
-- Reports the store restore as `true` \| `partial` \| `false`, independently of&#10;`cache-hit`. A `false` here beside a `true` there is the shape of a job that restored
+- Reports the store restore as `true` \| `partial` \| `false`, independently of
+  `cache-hit`. A `false` here beside a `true` there is the shape of a job that restored
   its linked trees and will still download every package.
 
 ### Bug Fixes
 
 #### A `install-deps: false` job no longer poisons the dependency cache
 
-- The cache key did not record what the install was going to do, so a job passing&#10;`install-deps: false` archived an empty `node_modules` and an empty store under
+- The cache key did not record what the install was going to do, so a job passing
+  `install-deps: false` archived an empty `node_modules` and an empty store under
   exactly the key a full-install job on the same commit would use. Every later run then
   reported `exact hit`, skipped the save — there is nothing to re-save when the key
-  already matches — and installed from the network anyway. Observed as an `exact hit`&#10;restore followed by pnpm's `reused 0, downloaded 939`, on a cache that nothing could
+  already matches — and installed from the network anyway. Observed as an `exact hit`
+  restore followed by pnpm's `reused 0, downloaded 939`, on a cache that nothing could
   repair because the poisoned entry kept winning.
 
-- The install policy now rides in the key's version digest as `deps:scripts`,&#10;`deps:no-scripts` or `no-deps`. `ignore-scripts` goes in with it, for the same reason
-  one layer down: a `node_modules` built with lifecycle scripts skipped is missing every&#10;`postinstall` artifact, and restoring it into a run that asked for a full install hands
+- The install policy now rides in the key's version digest as `deps:scripts`,
+  `deps:no-scripts` or `no-deps`. `ignore-scripts` goes in with it, for the same reason
+  one layer down: a `node_modules` built with lifecycle scripts skipped is missing every
+  `postinstall` artifact, and restoring it into a run that asked for a full install hands
   back a tree that looks complete and is not.
 
 #### Lockfile discovery no longer matches test fixtures
@@ -248,10 +266,13 @@ Thanks to [@savvy-web-bot](https://github.com/apps/savvy-web-bot) for their cont
 - Built-in lockfile patterns are matched at the **workspace root** only, where every
   manager actually writes one; a workspace package's dependency change reaches the key
   through the root lockfile rather than beside it. They were previously globbed at any
-  depth (`**/pnpm-lock.yaml`), guarded by a denylist of directory names —&#10;`__fixtures__`, `__tests__`, `__test__` — which a repository spelling its fixtures&#10;`test/fixtures/`, `e2e/` or `examples/` walked straight past, keying its cache on
+  depth (`**/pnpm-lock.yaml`), guarded by a denylist of directory names —
+  `__fixtures__`, `__tests__`, `__test__` — which a repository spelling its fixtures
+  `test/fixtures/`, `e2e/` or `examples/` walked straight past, keying its cache on
   files no install ever reads.
 
-- `additional-lockfiles` still accepts arbitrary globs, and those still skip&#10;`node_modules`, `.git` and test-fixture directories.
+- `additional-lockfiles` still accepts arbitrary globs, and those still skip
+  `node_modules`, `.git` and test-fixture directories.
 
 #### The archive no longer sweeps up every `node_modules` under the checkout
 
@@ -309,7 +330,9 @@ Thanks to [@savvy-web-bot](https://github.com/apps/savvy-web-bot) for their cont
 | `BlobEnvelopeError` | `NotABlobEnvelopeError` \| `TruncatedBlobEnvelopeError` \| `UnsupportedBlobEnvelopeVersionError` \| `BlobMetadataDecodeError` \| `BlobMetadataEncodeError` |
 
 - Behavior is unchanged; the visible difference is that a lockfile, spawn or
-  cache-key failure now names its class where it previously named a `reason`&#10;literal — `Lockfile discovery failed (CacheKeyReadError)` rather than&#10;`(readFailed)`. The turbo cache handler still treats every unreadable envelope
+  cache-key failure now names its class where it previously named a `reason`
+  literal — `Lockfile discovery failed (CacheKeyReadError)` rather than
+  `(readFailed)`. The turbo cache handler still treats every unreadable envelope
   as a miss, now by catching all five envelope tags. `ToolInstallerError` also
   gained a required `subject`. [#293][#293]
 
@@ -444,12 +467,19 @@ Thanks to [@savvy-web-bot](https://github.com/apps/savvy-web-bot) for their cont
 ### Features
 
 - Added auto-detected support for the BATS bash-testing toolchain and kcov coverage.
-  - New inputs `bats` and `kcov` (`auto | true | false`, default `auto`). `bats: auto`&#10;installs when the repo shows bash testing — any `**/*.bats` file, or a `vitest-bats`&#10;dependency in the root manifest. `kcov: auto` follows the bats decision.
-  - Provisions bats-core `1.14.0` into the tool cache, and `bats-support` `0.3.0`,&#10;`bats-assert` `2.2.4`, `bats-file` `0.4.0` and `bats-mock` `1.2.5` into&#10;`$HOME/.local/share` — one location that satisfies both `bats_load_library` and&#10;`vitest-bats`'s own directory scan, with no `sudo` required.
+  - New inputs `bats` and `kcov` (`auto | true | false`, default `auto`). `bats: auto`
+    installs when the repo shows bash testing — any `**/*.bats` file, or a `vitest-bats`
+    dependency in the root manifest. `kcov: auto` follows the bats decision.
+  - Provisions bats-core `1.14.0` into the tool cache, and `bats-support` `0.3.0`,
+    `bats-assert` `2.2.4`, `bats-file` `0.4.0` and `bats-mock` `1.2.5` into
+    `$HOME/.local/share` — one location that satisfies both `bats_load_library` and
+    `vitest-bats`'s own directory scan, with no `sudo` required.
   - Builds kcov `43` from source and caches it under its own Actions cache entry with a
     restore-key ladder, verifying a restored binary before trusting it and rebuilding when
     that probe fails.
-  - Exports `BATS_LIB_PATH`, `BATS_PATH` and `KCOV_PATH`, and adds six new outputs:&#10;`bats-enabled`, `bats-version`, `bats-lib-path`, `kcov-enabled`, `kcov-version` and&#10;`kcov-cache-hit`.
+  - Exports `BATS_LIB_PATH`, `BATS_PATH` and `KCOV_PATH`, and adds six new outputs:
+    `bats-enabled`, `bats-version`, `bats-lib-path`, `kcov-enabled`, `kcov-version` and
+    `kcov-cache-hit`.
   - Every failure degrades to a warning and a `false` enabled-output — neither install can
     fail the job.
   - Windows is not supported for this toolchain: the kcov descriptor refuses `win32`, and
@@ -948,7 +978,8 @@ When `turbo.json` is detected, the action now auto-starts a local cache server
 (bundled as `dist/turbo-server.js`) that persists Turborepo artifacts across
 CI runs. Two backends are supported:
 
-- **GitHub Actions cache** (default) — zero-config; uses the existing&#10;`ACTIONS_CACHE_URL` / `ACTIONS_RUNTIME_TOKEN` environment that the runner
+- **GitHub Actions cache** (default) — zero-config; uses the existing
+  `ACTIONS_CACHE_URL` / `ACTIONS_RUNTIME_TOKEN` environment that the runner
   provides.
 - **S3-compatible storage** — activated via the new `turbo-s3-*` inputs;
   uses SigV4 request signing internally (no `aws-sdk` dependency).
@@ -984,14 +1015,16 @@ hits, matching local-hit behavior.
 **Behavior change:** the embedded remote cache server provides artifact-level
 caching (faster and more granular than the old whole-`**/.turbo` file cache).
 Turbo's local artifact cache (`**/.turbo/cache`) is still file-cached as a fast
-local-restore layer, but `**/.turbo/runs` (run summaries) and the other `.turbo`&#10;subdirectories are no longer cached.
+local-restore layer, but `**/.turbo/runs` (run summaries) and the other `.turbo`
+subdirectories are no longer cached.
 
 ### Bug Fixes
 
 - [`c2ac82a`](https://github.com/savvy-web/silk-runtime-action/commit/c2ac82aca9614f7a7bc25c205ce6c75f6d2817b2) ### Lockfile discovery ignores test and fixture directories
 
 Cache-key generation hashes the repository's lockfiles. Lockfile discovery now
-excludes test and fixture trees — `__fixtures__/`, `__test__/` (including nested&#10;`fixtures/`), and the Jest `__tests__/` convention — at any depth, in addition
+excludes test and fixture trees — `__fixtures__/`, `__test__/` (including nested
+`fixtures/`), and the Jest `__tests__/` convention — at any depth, in addition
 to the existing `node_modules/` and `.git/` exclusions. Repositories that keep
 fixture lockfiles (files named like real lockfiles, used by tests) no longer
 have those files pollute the dependency cache key, which previously caused
@@ -1012,7 +1045,8 @@ workspace root or in workspace packages are still discovered.
 ### Quieter install logs
 
 The action silences noisy chatter from its own install steps — npm update and
-funding notices and husky `prepare` output — by setting `NPM_CONFIG_UPDATE_NOTIFIER`,&#10;`NPM_CONFIG_FUND`, `HUSKY`, and `COREPACK_ENABLE_DOWNLOAD_PROMPT` on its own
+funding notices and husky `prepare` output — by setting `NPM_CONFIG_UPDATE_NOTIFIER`,
+`NPM_CONFIG_FUND`, `HUSKY`, and `COREPACK_ENABLE_DOWNLOAD_PROMPT` on its own
 process only. These are not exported, so they do not affect later steps in your
 job (and `HUSKY=0` correctly skips git-hook installation in CI). The package
 manager's own install summary is preserved.
@@ -1022,7 +1056,9 @@ manager's own install summary is preserved.
 ### Bug Fixes
 
 - [`137939d`](https://github.com/savvy-web/silk-runtime-action/commit/137939d442ab1e7a44ab3f8919efa22d95a19aa2) The action no longer crashes on Windows runners. The committed bundle had a
-  build-machine absolute path frozen into `@azure/storage-common`'s&#10;`createRequire(import.meta.url)` call (reached via the cache service's&#10;`@azure/storage-blob` dependency). That driveless POSIX `file://` path was
+  build-machine absolute path frozen into `@azure/storage-common`'s
+  `createRequire(import.meta.url)` call (reached via the cache service's
+  `@azure/storage-blob` dependency). That driveless POSIX `file://` path was
   accepted on macOS/Linux but rejected by `createRequire` on Windows, throwing at
   module load. Rebuilt with a bundler that keeps `import.meta.url` as a runtime
   expression, so the path resolves correctly on every platform.
