@@ -9,22 +9,22 @@ importers:
         specifier: 0.7.1
         version: 0.7.1
       '@savvy-web/pnpm-plugin-silk':
-        specifier: 0.34.1
-        version: 0.34.1
+        specifier: 0.34.2
+        version: 0.34.2
 
 packages:
 
   '@effected/pnpm-plugin-effect@0.7.1':
     resolution: {integrity: sha512-Y6FL3tc/wRtQb1cBsNIUiPVwmfzH+spnl7gNTWyhPeiMdsScPl3McYEiUBoUYPD+eIvdh1QPA1SDDF1YFvrjCg==}
 
-  '@savvy-web/pnpm-plugin-silk@0.34.1':
-    resolution: {integrity: sha512-c4v4LPIvj8WERmS1UVUafk4THBgVhG/ULH1OggU94wiPFazQWcJQ0XtEocBLlXXZAL9R7W5PN0L7W22+CBj67g==}
+  '@savvy-web/pnpm-plugin-silk@0.34.2':
+    resolution: {integrity: sha512-0fxSk7ix0HXkrGP6igaw2Cpm6rggP2dAUzZuDBqrnVfHGZhO5ymf0lghN8BEyREX5KU17MMgDVncAvueSFBK0g==}
 
 snapshots:
 
   '@effected/pnpm-plugin-effect@0.7.1': {}
 
-  '@savvy-web/pnpm-plugin-silk@0.34.1': {}
+  '@savvy-web/pnpm-plugin-silk@0.34.2': {}
 
 ---
 lockfileVersion: '9.0'
@@ -77,7 +77,7 @@ overrides:
   '@effect/vitest>vitest': ^5.0.0
   '@microsoft/api-extractor>typescript': ^6.0.3
 
-pnpmfileChecksum: sha256-ZpplR0DSrkPalbn4uQwexbAv2rrxooVCgI9/5+6oW/o=
+pnpmfileChecksum: sha256-m0Xl3Xu+rfxKLFb6UeFJQ9SAEJlKHylTwKG5YjuOA9o=
 
 importers:
 
