@@ -68,30 +68,21 @@ Consuming repositories **MUST** have a root `package.json` with:
   used by the `install-bats` and `install-kcov` steps), `@effected/workspaces`
   (`WorkspaceDiscovery`, `WorkspaceRoot`).
 * **Dependency honesty.** Every declared `@effected/*` dependency is either imported by
-  `src/` **or** a required peer of one that is. Today the one peer-only entry is
-  `@effected/yaml`, which `@effected/lockfiles` requires; everything else in the list is
-  imported. **Resolve the peer closure before deleting anything that looks unused.** Eight
-  declarations had no import in `src/` at the #348 reconciliation; seven were genuinely dead
-  and were removed, and the eighth was `@effected/yaml`, which nothing here imports and
-  `@effected/lockfiles` requires. An import-walker that stops at "not imported" deletes it.
+  `src/` or a required peer of one that is; see
+  [`okf/conventions/dependency-honesty.md`](okf/conventions/dependency-honesty.md).
 * **Test doubles:** `@effected/memfs` (devDependency) is the filesystem double —
   `MemoryFileSystem.layerWith` for a seeded volume, `layerFaulty` for an injected failure or
-  a delegating recorder. `FileSystem.layerNoop` is not used anywhere in the suite.
+  a delegating recorder. `FileSystem.layerNoop` is not used anywhere in the suite. See
+  [`okf/decisions/kit-test-layers-and-real-volume.md`](okf/decisions/kit-test-layers-and-real-volume.md).
 * **Build:** `@savvy-web/github-action-builder` (rsbuild) via `action.config.ts`.
-* **Cross-phase state:** `src/state.ts` — `STATE_KEYS` plus four `Schema.Class` bundles:
-  `CacheState`, `StoreCacheState`, `KcovCacheState`, `TurboServerState`. `main` writes,
-  `post` reads, and each branch in `post` absorbs its own failure so no one of them can cost
-  another its save.
+* **Cross-phase state:** `src/state.ts` — `STATE_KEYS` plus four `Schema.Class` bundles.
+  See [`okf/models/cross-phase-state.md`](okf/models/cross-phase-state.md).
 * **Action type:** compiled Node action (`node24`, see `action.yml`); pnpm and Node pinned
   exactly in `package.json`.
 * **Tooling:** Biome extending `@savvy-web/silk`; Vitest + `@effect/vitest` +
   `@vitest-agent/plugin` (unit tests in `__test__/unit/`, plus fixture workflow tests);
   `tsc --noEmit` for typechecking, through turbo's `types:check` task. Tests use `it.effect`
   and `assert.*`; `expect` is not used.
-
-The `claude` script in `package.json` points at a machine-local sibling checkout
-(`../../spencerbeggs/effected/plugin`) — a local dev convenience only; nothing in build,
-test or CI depends on it.
 
 ## Common Commands
 
@@ -127,43 +118,31 @@ committed `dist`, **not** `node_modules`.
 
 **To find out whether anything is linked, read the tree, not this paragraph:**
 `pnpm-workspace.yaml` carries an `overrides:` entry while a link is live and none when it is
-not. Every published range is `catalog:effected` / `catalog:effect`, resolved by the
-`@effected/pnpm-plugin-effect` config dependency — there are no hand-written carets to read
-a link out of.
+not.
 
 Cross-repo iteration runs through the **dogfood mailbox protocol** (the `silk:dogfood`
 skill): a request goes upstream, the upstream session builds and hands back, this repo
-adopts. Links are added lazily, for one round, and removed before push. The mailbox lives at
-`.claude/dogfood/`, which is **gitignored local-only state** created by the skill when a loop
-starts — a clean checkout has no such directory, and that is correct rather than missing.
-
-**Procedure:** build the library in its own repo
-(`cd packages/<name> && node savvy.build.ts --target dev`); link it — `pnpm link
-../systems/packages/github-action-builder` for the builder, the `silk:dogfood` protocol for
-anything `@effected/*`; iterate (edit → rebuild there → `pnpm typecheck` + `pnpm test` +
-`pnpm build` here); keep the declared range correct for the eventual unlinked install.
-Library edits ship separately on their own branch. **Never push while linked** — unlink, pin
-the published range, `pnpm install`, then push.
+adopts. The mailbox lives at `.claude/dogfood/`, gitignored local-only state the skill
+creates when a loop starts. The full adopt-and-unlink procedure is
+[`okf/runbooks/adopt-a-first-party-release.md`](okf/runbooks/adopt-a-first-party-release.md).
+**Never push while linked** — unlink, pin the published range, `pnpm install`, then push.
 
 **Effect v4 API authority:** `.repos/effect` is a vendored, read-only submodule pinned to
 the `effect` version in the catalog — the source of truth for v4 APIs, whose surface
 diverges from the v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not
-edit. The pin is re-verified on every `effect` bump; where the submodule and `node_modules`
-disagree, `node_modules` wins and the pin is what is stale.
+edit.
 
 ### Turbo file caching: `**/.turbo/cache` only
 
-The remote cache server (or Vercel passthrough) is the primary cache. As a complementary
-local-restore layer, only `**/.turbo/cache` goes into the Actions file cache.
-`**/.turbo/runs`, `.turbo/cookies` and `.turbo/daemon` are deliberately excluded — a
-restored stale run summary breaks "latest run = current run" detection in tooling that
-parses `turbo --summarize`. See `TURBO_LOCAL_CACHE_PATHS` in `src/steps/cache-config.ts`.
+Only `**/.turbo/cache` goes into the Actions file cache, as a complementary local-restore
+layer beside the remote cache. See
+[`okf/models/cache-config.md`](okf/models/cache-config.md) for what each excluded path
+would break.
 
 ### Known limitation: `ACTIONS_RUNTIME_TOKEN` lifetime
 
-The embedded GitHub backend captures `ACTIONS_RUNTIME_TOKEN` at server spawn time. That
-token is a short-lived JWT, so on very long jobs late cache writes may get `401
-Unauthorized`. The S3 backend is unaffected — it uses its own credentials.
+See
+[`okf/limitations/actions-runtime-token-lifetime.md`](okf/limitations/actions-runtime-token-lifetime.md).
 
 ## Development & Release Cycle
 
@@ -181,54 +160,51 @@ workflow (`savvy-web/.github/.github/workflows/release.yml`) pinned at **`@main`
 4. Merging the release PR triggers **Phase 3** — publish, Git tags, GitHub release.
 5. `branch-sync.yml` puts the branch pair back in order (below).
 
-**`Closes #N` does not fire on a merge into `dev`.** GitHub auto-closes a linked issue only
-when the PR merges into the **default branch**, and ordinary work here targets `dev` — so
-close the issue by hand after merging, with a pointer to the merge commit. Keep the trailer
-in the PR body anyway: it still links the issue in the UI, and it is what fires later when
-`dev` reaches `main`. Two issues were left silently open this way before it was noticed.
+**`Closes #N` does not fire on a merge into `dev`** — close the issue by hand after merging,
+with a pointer to the merge commit; keep the trailer in the PR body anyway, since it fires
+later when `dev` reaches `main`. See
+[`okf/gotchas/closes-does-not-fire-on-dev-merge.md`](okf/gotchas/closes-does-not-fire-on-dev-merge.md).
 
-**`branch-sync.yml`** — three jobs, one concurrency group, each running as the GitHub App bot
-so its pushes bypass protection without recursing. It replaced the old `release-sync.yml`,
-and two of the differences are load-bearing:
-
-* **`sync-dev`** keys off **`main` moving** (`push: [main]`), not off a release being
-  published. A push to `main` that produces no release — a dependency promotion with no
-  changeset — still has to even the branches out, and keying on `release` missed exactly
-  that case.
-* **`dev` is never blindly clobbered.** The job merges `dev` into `main` *in memory*
-  (`git merge-tree --write-tree`) and resets only when the resulting tree equals `main`'s —
-  content, not commits, because a squash merge destroys patch-id equality and would read as
-  unmerged work. A `dev` that genuinely holds something `main` lacks is **rebased**; if the
-  rebase conflicts, nothing is touched and the job warns. Every push is
-  `--force-with-lease`d against the `dev` head it read, so a concurrent push aborts the sync
-  rather than losing to it.
-* **`major-tag`** moves the `v<major>` alias tag on `release: [published]`.
-* **`promote`** opens or refreshes the `dev` → `main` PR when a `pnpm/config-deps` branch
-  merges into `dev`.
+**`branch-sync.yml`** — three jobs (`sync-dev`, `major-tag`, `promote`), one concurrency
+group, each running as the GitHub App bot. `sync-dev` keys off `main` moving, not off a
+release, and never blindly clobbers `dev`: it compares merged trees, not commits, and
+rebases rather than resets when `dev` holds something `main` lacks. See
+[`okf/decisions/branch-sync-by-content-not-commits.md`](okf/decisions/branch-sync-by-content-not-commits.md)
+and [`okf/runbooks/release.md`](okf/runbooks/release.md) for the full path from changeset to
+published release.
 
 ## Documentation Structure
 
 * **[src/CLAUDE.md](src/CLAUDE.md)** — source layout, step-contract conventions
 * **[**fixtures**/CLAUDE.md](__fixtures__/CLAUDE.md)** — integration test fixtures
 * **[.github/workflows/CLAUDE.md](.github/workflows/CLAUDE.md)** — workflow test patterns
+* **[okf/](okf/index.md)** — the OKF knowledge bundle; see "Bundle Navigation" below
 
-### Design Documentation
+## Bundle Navigation
 
-* **Architecture:** `@./.claude/design/silk-runtime-action/architecture.md`
-  Load for system design, entry points, or layer composition.
-* **Effect Service Model:** `@./.claude/design/silk-runtime-action/effect-service-model.md`
-  Load for services, error handling, or dependency injection.
-* **Runtime Installation:** `@./.claude/design/silk-runtime-action/runtime-installation.md`
-  Load when modifying runtime descriptors, PM setup, or Biome installation.
-* **Caching Strategy:** `@./.claude/design/silk-runtime-action/caching-strategy.md`
-  Load for cache keys, lockfiles, or cross-phase state.
-* **Build and Distribution:** `@./.claude/design/silk-runtime-action/build-and-distribution.md`
-  Load when modifying build config, dist management, or the release process.
-* **Turbo Remote Cache:** `@./.claude/design/silk-runtime-action/turbo-remote-cache.md`
-  Load for the embedded cache server, backend selection, the artifact codec/handler, or
-  server lifecycle and teardown.
-* **Testing Strategy:** `@./.claude/design/silk-runtime-action/testing-strategy.md`
-  Load when writing tests, mock patterns, or fixture setup.
+`okf/` is this repository's [OKF](https://github.com/spencerbeggs/okfit) knowledge bundle —
+the depth this file used to carry inline now lives there as Decisions, Conventions, Gotchas,
+Limitations, DataModels, Interfaces, Runbooks, Modules, Consumers, and Glossary entries.
+Start at [`okf/index.md`](okf/index.md) (the project file plus every section index); each
+section's own `index.md` lists its concepts with a one-line summary. Browse with the
+`mcp__plugin_okfit_mcp__*` tools (`list_concepts`, `get_concept`, `concept_neighbors`,
+`stale_report`) rather than grepping the tree by hand; `pnpm exec okfit validate .` checks
+the bundle and `pnpm exec okfit sync .` regenerates the indexes and `generated.at` stamps.
+
+Where a topic lives:
+
+| Question | Concept |
+| --- | --- |
+| Pipeline step order | [`okf/decisions/pipeline-step-ordering.md`](okf/decisions/pipeline-step-ordering.md), [`okf/modules/silk-runtime-action.md`](okf/modules/silk-runtime-action.md) |
+| Adding a step | [`okf/conventions/step-contract.md`](okf/conventions/step-contract.md) |
+| `addPath` semantics | [`okf/gotchas/add-path-is-for-later-steps.md`](okf/gotchas/add-path-is-for-later-steps.md), [`okf/conventions/path-publication-rules.md`](okf/conventions/path-publication-rules.md) |
+| Cache keys | [`okf/models/cache-config.md`](okf/models/cache-config.md), [`okf/decisions/typed-cache-key-and-restore-ladder.md`](okf/decisions/typed-cache-key-and-restore-ladder.md) |
+| kcov | [`okf/decisions/kcov-built-from-source.md`](okf/decisions/kcov-built-from-source.md), [`okf/decisions/separate-kcov-cache-entry.md`](okf/decisions/separate-kcov-cache-entry.md), [`okf/limitations/kcov-platform-coverage.md`](okf/limitations/kcov-platform-coverage.md) |
+| Verifying against `dist/` | [`okf/conventions/verify-against-the-built-artifact.md`](okf/conventions/verify-against-the-built-artifact.md) |
+| Turbo backend selection | [`okf/decisions/embedded-turbo-server.md`](okf/decisions/embedded-turbo-server.md), [`okf/interfaces/turbo-artifacts-protocol.md`](okf/interfaces/turbo-artifacts-protocol.md) |
+| Linking a first-party dep | [`okf/runbooks/adopt-a-first-party-release.md`](okf/runbooks/adopt-a-first-party-release.md) |
+| Which test double to trust | [`okf/decisions/kit-test-layers-and-real-volume.md`](okf/decisions/kit-test-layers-and-real-volume.md) |
+| dev/main sync | [`okf/decisions/branch-sync-by-content-not-commits.md`](okf/decisions/branch-sync-by-content-not-commits.md), [`okf/runbooks/release.md`](okf/runbooks/release.md) |
 
 ## Project Structure
 
@@ -337,7 +313,9 @@ stubs; writes `dist/package.json` (`{ "type": "module" }`); and mirrors everythi
 `.github/actions/local/` (`persistLocal`), the copy `test-fixture` runs.
 
 Both directories are committed and cleaned before each build. Rebuild after **any** source
-change or CI runs stale code.
+change or CI runs stale code. See
+[`okf/decisions/commit-dist-and-local-copy.md`](okf/decisions/commit-dist-and-local-copy.md)
+for why.
 
 ## Common Issues
 

@@ -1,0 +1,12 @@
+#:schema https://raw.githubusercontent.com/spencerbeggs/okfit/main/schemas/config/okfit-1.0.0.json
+
+[bundle]
+path = "okf"
+profile = "software-project"
+
+[actors]
+agent = "okfit/claude-code"
+humans = ["human:spencer"]
+
+[tags.caching]
+description = "Concerns the workspace archive, the package-manager store, the kcov entry, or the embedded turbo remote cache: keys, ladders, restore and save."

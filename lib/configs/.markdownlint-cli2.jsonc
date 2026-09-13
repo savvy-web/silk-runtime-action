@@ -90,5 +90,17 @@
 		"**/__fixtures__/**",
 		"**/.repos"
 	],
-	"noBanner": true
+	"noBanner": true,
+	"overrides": [
+		{
+			"combine": "merge",
+			"config": { "MD025": { "front_matter_title": "" } },
+			"filter": ["okf/**/*.md", "!okf/**/index.md"]
+		},
+		{
+			"combine": "merge",
+			"config": { "MD025": false },
+			"filter": ["okf/**/index.md"]
+		}
+	]
 }

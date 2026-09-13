@@ -43,3 +43,4 @@ docs/superpowers/
 
 # dogfood mailbox (local-only cross-repo collaboration state)
 .claude/dogfood/
+.okfit-migration/

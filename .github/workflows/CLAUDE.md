@@ -4,7 +4,8 @@ How this repository tests itself against real runners, and the composite actions
 that legible.
 
 **See also:** [Root CLAUDE.md](../../CLAUDE.md) |
-[**fixtures**/CLAUDE.md](../../__fixtures__/CLAUDE.md) for the fixtures each job runs.
+[**fixtures**/CLAUDE.md](../../__fixtures__/CLAUDE.md) for the fixtures each job runs |
+[okf/modules/test-harness.md](../../okf/modules/test-harness.md)
 
 ## The workflows
 

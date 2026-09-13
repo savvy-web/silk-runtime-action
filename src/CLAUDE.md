@@ -79,7 +79,8 @@ annotated `R`** — never let `R` be inferred. `program.ts`'s `R` is the union o
 step's; `MainLive` supplies only what `ActionServices` lacks. The module doc states the
 failure posture beside the error channel — fail-the-job, degrade-to-warning, or
 double-netted — so a kit upgrade that widens a member's channel is a build error at that
-line rather than a silently failed job.
+line rather than a silently failed job. Full rule and rationale:
+[`okf/conventions/step-contract.md`](../okf/conventions/step-contract.md).
 
 ## The `oracle N` / `ruling N` / `quirk N` citations
 
@@ -100,13 +101,15 @@ the incident that forced it.
 
 ## Conventions
 
-- **Tests live in `__test__/unit/`**, mirroring this tree — never co-located.
+- **Tests live in `__test__/unit/`**, mirroring this tree — never co-located. See
+  [`okf/conventions/unit-test-conventions.md`](../okf/conventions/unit-test-conventions.md).
 - **The filesystem double is `@effected/memfs`**, never a hand-rolled `FileSystem.layerNoop`
   over a map. A real volume answers absence honestly, so a read nothing seeded fails the way
   the platform fails it instead of returning whatever a stub's author remembered. Faults —
   a permission error, a recorder that observes a path and delegates — go through
   `MemoryFileSystem.layerFaulty`, whose handlers delegate by default when they return
-  `undefined`.
+  `undefined`. Why a real volume over a hand-rolled double:
+  [`okf/decisions/kit-test-layers-and-real-volume.md`](../okf/decisions/kit-test-layers-and-real-volume.md).
 - **`it.effect` plus `assert.*`** from `@effect/vitest`. `expect` is not used.
 - **`ProcessId.make`, never `makeUnsafe`** — `makeUnsafe` typechecks through test doubles
   then dies at runtime where `catchDefect` goes blind.

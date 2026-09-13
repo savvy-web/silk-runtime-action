@@ -3,7 +3,8 @@
 Self-contained project configurations used as integration tests for the action.
 
 **See also:** [Root CLAUDE.md](../CLAUDE.md) |
-[.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md)
+[.github/workflows/CLAUDE.md](../.github/workflows/CLAUDE.md) |
+[okf/modules/test-harness.md](../okf/modules/test-harness.md)
 
 ## What a fixture is
 
