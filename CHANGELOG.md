@@ -1,5 +1,17 @@
 # @savvy-web/silk-runtime-action
 
+## 1.6.2
+
+### Maintenance
+
+- Upgrades core kit. [#373][#373]
+
+### Thanks
+
+Thanks to [@spencerbeggs](https://github.com/spencerbeggs) for their contributions!
+
+[#373]: https://github.com/savvy-web/silk-runtime-action/pull/373
+
 ## 1.6.1
 
 ### Dependencies
