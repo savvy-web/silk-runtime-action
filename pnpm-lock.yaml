@@ -77,8 +77,6 @@ overrides:
   '@effect/vitest>vitest': ^5.0.1
   '@microsoft/api-extractor>typescript': ^6.0.3
 
-pnpmfileChecksum: sha256-aBGwA1TVsFYebnyMwgnyR/I7r1bxLfmWmko1YnNidM4=
-
 importers:
 
   .:
