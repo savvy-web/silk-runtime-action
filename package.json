@@ -44,7 +44,7 @@
 		"@effect/vitest": "catalog:effect",
 		"@effected/memfs": "catalog:effected",
 		"@okfit/plugin": "^0.4.0",
-		"@savvy-web/github-action-builder": "^2.3.8",
+		"@savvy-web/github-action-builder": "^2.4.0",
 		"@savvy-web/silk": "^4.0.6",
 		"@vitest-agent/plugin": "^4.0.4"
 	},
