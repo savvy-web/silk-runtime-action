@@ -26,6 +26,7 @@ jobs:
           - windows-latest
         pm:
           - npm
+          - npm12
           - pnpm
           - yarn
           - multi
@@ -49,6 +50,20 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: node --version && npm --version
             title: 📦 NPM (Create Cache)
+          - pm: npm12
+            fixture: node-npm-12
+            install-deps: "true"
+            expected-cache-hit: "false"
+            expected-node-enabled: "true"
+            expected-node-version: 26.9.0
+            expected-package-manager: npm
+            expected-package-manager-version: 12.0.2
+            expected-deno-enabled: "false"
+            expected-bun-enabled: "false"
+            expected-biome-enabled: "false"
+            expected-turbo-enabled: "false"
+            test-command: node --version && npm --version
+            title: 📦 NPM 12 (Create Cache)
           - pm: pnpm
             fixture: node-pnpm
             install-deps: "true"
@@ -206,6 +221,7 @@ jobs:
           - windows-latest
         pm:
           - npm
+          - npm12
           - pnpm
           - yarn
           - multi
@@ -225,6 +241,20 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: node --version && npm --version
             title: 📦 NPM (Restore Cache)
+          - pm: npm12
+            fixture: node-npm-12
+            install-deps: "true"
+            expected-cache-hit: "true"
+            expected-node-enabled: "true"
+            expected-node-version: 26.9.0
+            expected-package-manager: npm
+            expected-package-manager-version: 12.0.2
+            expected-deno-enabled: "false"
+            expected-bun-enabled: "false"
+            expected-biome-enabled: "false"
+            expected-turbo-enabled: "false"
+            test-command: node --version && npm --version
+            title: 📦 NPM 12 (Restore Cache)
           - pm: pnpm
             fixture: node-pnpm
             install-deps: "true"

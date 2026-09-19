@@ -6,23 +6,23 @@ importers:
   .:
     configDependencies:
       '@effected/pnpm-plugin-effect':
-        specifier: 0.8.14
-        version: 0.8.14
+        specifier: 0.8.15
+        version: 0.8.15
       '@savvy-web/pnpm-plugin-silk':
         specifier: 0.41.0
         version: 0.41.0
 
 packages:
 
-  '@effected/pnpm-plugin-effect@0.8.14':
-    resolution: {integrity: sha512-GS/JHpAcryADmzcT1O81rzY7chst+kesLn5oY2NLenz7q3iJ4rzTSYqKiwd1vzA9tA5oFgTljvNJczx834ekKg==}
+  '@effected/pnpm-plugin-effect@0.8.15':
+    resolution: {integrity: sha512-EO+XieklqdHfrUcOO2JLzQLFQ+jxevcPTFtxhoND0sEW5Y5JOcn4zZvnPmtaM5JK5lv879d87Jl+4X4yQ7e17w==}
 
   '@savvy-web/pnpm-plugin-silk@0.41.0':
     resolution: {integrity: sha512-94fD7aw32YFMvrqn82EhvyGrf6i7jGo8zYfxf0B9XtTZcJBHSec6u27WT/5MW8AaF3BlJMP6eAtp4NzN50Pjdg==}
 
 snapshots:
 
-  '@effected/pnpm-plugin-effect@0.8.14': {}
+  '@effected/pnpm-plugin-effect@0.8.15': {}
 
   '@savvy-web/pnpm-plugin-silk@0.41.0': {}
 
@@ -49,8 +49,8 @@ catalogs:
       specifier: ^0.7.2
       version: 0.7.2
     '@effected/github-actions':
-      specifier: ^0.13.3
-      version: 0.13.3
+      specifier: ^0.13.4
+      version: 0.13.4
     '@effected/jsonc':
       specifier: ^0.11.1
       version: 0.11.1
@@ -61,8 +61,8 @@ catalogs:
       specifier: ^0.7.1
       version: 0.7.1
     '@effected/npm':
-      specifier: ^0.14.1
-      version: 0.14.1
+      specifier: ^0.14.2
+      version: 0.14.2
     '@effected/semver':
       specifier: ^0.7.1
       version: 0.7.1
@@ -89,16 +89,16 @@ importers:
         version: 0.7.2(effect@4.0.0-rc.115)
       '@effected/github-actions':
         specifier: catalog:effected
-        version: 0.13.3(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1))(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/toml@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+        version: 0.13.4(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1))(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/toml@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/jsonc':
         specifier: catalog:effected
         version: 0.11.1(effect@4.0.0-rc.115)
       '@effected/lockfiles':
         specifier: catalog:effected
-        version: 0.9.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/npm@0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(@effected/semver@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+        version: 0.9.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/npm@0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(@effected/semver@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/npm':
         specifier: catalog:effected
-        version: 0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+        version: 0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/semver':
         specifier: catalog:effected
         version: 0.7.1(effect@4.0.0-rc.115)
@@ -501,8 +501,8 @@ packages:
     peerDependencies:
       effect: 4.0.0-rc.115
 
-  '@effected/github-actions@0.13.3':
-    resolution: {integrity: sha512-AXtSeN5McCRkugrv2V1oDuadvY90FA3wUnP1PsQzp9GxB+3iRVTRG9F6zNcuRomFv21gjZRufvBE6fDdcE03MA==}
+  '@effected/github-actions@0.13.4':
+    resolution: {integrity: sha512-NZjQsxxCnhFjzY5/GOwDHRQ/T64/DlHlCtTR2oQIJ2rRT5hMIkhPMkQgad3xuzJcTG8fg8HSh19mW8L+kl7w3A==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       '@effect/platform-node': 4.0.0-rc.115
@@ -564,8 +564,8 @@ packages:
     peerDependencies:
       effect: 4.0.0-rc.115
 
-  '@effected/npm@0.14.1':
-    resolution: {integrity: sha512-0N2ij5cIjHEGbAvA6uTnyDS8TqYfL/nUXI5QMcKcgbECS7bqGBJq6tPHiPZ1HHp/b7A4HZ6BcfGWCST19tHp0A==}
+  '@effected/npm@0.14.2':
+    resolution: {integrity: sha512-TX4SsTR9Oe3bhDBftNj0VffF3sptjzRJEGsuQz2S2ueTFgJ/8xgKKQ89UW0DI6duvQpRsma2XXzL/9QiIHnhcA==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       '@effected/semver': ^0.7.1
@@ -1130,8 +1130,8 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@rsbuild/core@2.2.7':
-    resolution: {integrity: sha512-IpTTwPZVtUBh17/uvxYIuIxNhS8BYgqYXszlXTQ95itGAVwsIitnGJRftwEuDeLqU8aONey6euaz/jno83YAKw==}
+  '@rsbuild/core@2.2.8':
+    resolution: {integrity: sha512-/htjYpZiqZFB/fELguE8nkqKDT/DqHXeXUgdf+X4UlP5BJc1EeolZ9ksDpCw9WNTlcn3zsPOj7UZ0dUUB4FAFA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -1880,8 +1880,8 @@ packages:
   effect@4.0.0-rc.115:
     resolution: {integrity: sha512-ogYulZ5ffeOzrJqQrG0XOkDO5lKn2s9KNHhoxJy/6wKUkF0i12dlVXWA9TgsgQ+zV/JzizyG0+XMPepZEQX6vw==}
 
-  electron-to-chromium@1.5.430:
-    resolution: {integrity: sha512-e1QEj72Y4zd8RlNZVmoTg+iCOSVwpk05IOiiQwdrkwCSVlZfPthevErhE+nckGd2YbsXfp1SkisznhGVIXP2NQ==}
+  electron-to-chromium@1.5.431:
+    resolution: {integrity: sha512-AAVihz2YwJeOdAynX8MUtqpvjY0gaiARp/7+r4kwqgzqXMrfG1qDN7vwT80uxAoOQRPcZH8t73EI+CA/1OJN8A==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -3514,14 +3514,14 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.115
 
-  '@effected/github-actions@0.13.3(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1))(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/toml@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)':
+  '@effected/github-actions@0.13.4(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1))(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/toml@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)':
     dependencies:
       '@azure/storage-blob': 12.33.0
       '@effect/platform-node': 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1)
       '@effected/github': 0.10.2(effect@4.0.0-rc.115)
       '@effected/glob': 0.6.1(effect@4.0.0-rc.115)
       '@effected/markdown': 0.10.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/toml@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
-      '@effected/npm': 0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+      '@effected/npm': 0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/sbom': 0.6.2(effect@4.0.0-rc.115)
       '@effected/semver': 0.7.1(effect@4.0.0-rc.115)
       '@effected/templates': 0.6.1(effect@4.0.0-rc.115)
@@ -3558,10 +3558,10 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.115
 
-  '@effected/lockfiles@0.9.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/npm@0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(@effected/semver@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)':
+  '@effected/lockfiles@0.9.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/npm@0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(@effected/semver@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)':
     dependencies:
       '@effected/jsonc': 0.11.1(effect@4.0.0-rc.115)
-      '@effected/npm': 0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+      '@effected/npm': 0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/semver': 0.7.1(effect@4.0.0-rc.115)
       '@effected/yaml': 0.15.2(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
@@ -3578,7 +3578,7 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.115
 
-  '@effected/npm@0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)':
+  '@effected/npm@0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)':
     dependencies:
       '@effected/commands': 0.7.2(effect@4.0.0-rc.115)
       '@effected/semver': 0.7.1(effect@4.0.0-rc.115)
@@ -3587,7 +3587,7 @@ snapshots:
   '@effected/package-json@0.15.1(effect@4.0.0-rc.115)':
     dependencies:
       '@effected/jsonc': 0.11.1(effect@4.0.0-rc.115)
-      '@effected/npm': 0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+      '@effected/npm': 0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/semver': 0.7.1(effect@4.0.0-rc.115)
       '@effected/spdx': 0.7.1(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
@@ -3640,8 +3640,8 @@ snapshots:
       '@effected/git': 0.15.2(effect@4.0.0-rc.115)
       '@effected/glob': 0.6.1(effect@4.0.0-rc.115)
       '@effected/jsonc': 0.11.1(effect@4.0.0-rc.115)
-      '@effected/lockfiles': 0.9.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/npm@0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(@effected/semver@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
-      '@effected/npm': 0.14.1(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+      '@effected/lockfiles': 0.9.1(@effected/jsonc@0.11.1(effect@4.0.0-rc.115))(@effected/npm@0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115))(@effected/semver@0.7.1(effect@4.0.0-rc.115))(@effected/yaml@0.15.2(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
+      '@effected/npm': 0.14.2(@effected/semver@0.7.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
       '@effected/package-json': 0.15.1(effect@4.0.0-rc.115)
       '@effected/semver': 0.7.1(effect@4.0.0-rc.115)
       '@effected/walker': 0.9.1(@effected/glob@0.6.1(effect@4.0.0-rc.115))(effect@4.0.0-rc.115)
@@ -4078,7 +4078,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@rsbuild/core@2.2.7':
+  '@rsbuild/core@2.2.8':
     dependencies:
       '@rspack/core': 2.2.6(@swc/helpers@0.5.23)
       '@swc/helpers': 0.5.23
@@ -4186,7 +4186,7 @@ snapshots:
     dependencies:
       '@effect/platform-node': 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1)
       '@effected/yaml': 0.15.2(effect@4.0.0-rc.115)
-      '@rsbuild/core': 2.2.7
+      '@rsbuild/core': 2.2.8
       '@types/node': 26.6.1
       effect: 4.0.0-rc.115
       jiti: 2.7.0
@@ -4714,7 +4714,7 @@ snapshots:
     dependencies:
       baseline-browser-mapping: 2.11.25
       caniuse-lite: 1.0.30001810
-      electron-to-chromium: 1.5.430
+      electron-to-chromium: 1.5.431
       node-releases: 2.0.56
       update-browserslist-db: 1.3.3(browserslist@4.29.0)
 
@@ -4835,7 +4835,7 @@ snapshots:
 
   effect@4.0.0-rc.115: {}
 
-  electron-to-chromium@1.5.430: {}
+  electron-to-chromium@1.5.431: {}
 
   emoji-regex@10.6.0: {}
 

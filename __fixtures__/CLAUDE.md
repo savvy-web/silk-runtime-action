@@ -19,6 +19,7 @@ scenario is about. Installed `node_modules` are never committed.
 | Fixture | What it pins |
 | --- | --- |
 | `node-npm` | node + npm, `package-lock.json` |
+| `node-npm-12` | node 26 + npm 12, `package-lock.json` — npm 12's `engines.node` excludes the `node-npm` runtime, so this is the "current" case and `node-npm` stays the "one back" case |
 | `node-pnpm` | node + pnpm, `pnpm-lock.yaml` |
 | `node-yarn` | node + yarn 4, `yarn.lock` + `.pnp.cjs` + `.yarn/` |
 | `node-multi` | three runtimes (node, bun, deno) with pnpm as manager; workspace with `pkgs/pkg-{node,bun,deno}` |
@@ -35,7 +36,7 @@ scenario is about. Installed `node_modules` are never committed.
 pushes to `main` and PRs touching `src/`, `dist/`, `action.yml`, `__fixtures__/` or the
 test actions. Four matrix jobs plus an aggregating `summary`:
 
-* `test-node-create-cache` — npm/pnpm/yarn/multi/bun × ubuntu/macos/windows, cache miss,
+* `test-node-create-cache` — npm/npm12/pnpm/yarn/multi/bun × ubuntu/macos/windows, cache miss,
   plus `bats` (the `bats-kcov` fixture) on ubuntu/macos only — windows is excluded because
   kcov refuses `win32` and the bats install path is POSIX-shaped and unvalidated there
 * `test-node-restore-cache` — the same minus bun, `needs:` the create job, expects a hit
