@@ -1,5 +1,27 @@
 # @savvy-web/silk-runtime-action
 
+## 1.6.8
+
+### CI
+
+- Added a `node-npm-12` fixture (Node 26.9.0 + npm 12.0.2) and `npm12` matrix rows in `test.yml`, verifying npm 12 provisioning end to end across all three runners
+
+### Dependencies
+
+| Dependency | Type | Action | From | To |
+| --- | --- | --- | --- | --- |
+| @effected/pnpm-plugin-effect | config | updated | 0.8.14 | 0.8.15 |
+| @effected/github-actions | dependency | updated | 0.13.3 | 0.13.4 |
+| @effected/npm | dependency | updated | 0.14.1 | 0.14.2 |
+
+- Adopts the kit release that adds npm 12 support (closes #396). [#410][#410]
+
+### Thanks
+
+Thanks to [@spencerbeggs](https://github.com/spencerbeggs) for their contributions!
+
+[#410]: https://github.com/savvy-web/silk-runtime-action/pull/410
+
 ## 1.6.7
 
 ### Dependencies
