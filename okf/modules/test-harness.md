@@ -7,8 +7,8 @@ kind: harness
 resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: 81a5e562af3c6992db7b4cbd736a1808640bf8f1374cb4976980cffbff9f8bef
+  at: 2026-09-19T02:15:07Z
+  body_sha256: ff8c40fa962f0603b9b95bdc0bb23ff58b5c89c52bdb25ccfad3f33bb091d92a
 sources:
   - id: test-fixture-action
     resource: ../../.github/actions/test-fixture/action.yml
@@ -43,6 +43,7 @@ committed.[^fixtures-claude]
 | Fixture | What it pins |
 | --- | --- |
 | `node-npm` | node + npm, `package-lock.json` |
+| `node-npm-12` | node 26 + npm 12, `package-lock.json` — the "current" npm case; `node-npm` stays "one back" |
 | `node-pnpm` | node + pnpm, `pnpm-lock.yaml` |
 | `node-yarn` | node + yarn 4, `yarn.lock` + `.pnp.cjs` + `.yarn/` |
 | `node-multi` | three runtimes (node, bun, deno) with pnpm as manager; workspace with `pkgs/pkg-{node,bun,deno}` |
