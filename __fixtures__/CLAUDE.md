@@ -44,8 +44,9 @@ test actions. Four matrix jobs plus an aggregating `summary`:
 * `test-additional-inputs` — ubuntu only; **newline-separated** multiline inputs are the
   only supported format (bullets, commas and JSON arrays were dropped in the v2 migration)
 
-Each matrix row passes a per-row `cache-bust` (`${pm}-${os}-${run_id}`) so runs cannot
-contaminate each other, and every step is `continue-on-error` so `save-test-results`,
+Each matrix row passes a per-row `cache-bust` (`${pm}-${os}-${run_id}-${run_attempt}`) so
+runs cannot contaminate each other — `run_attempt` is what keeps a re-run's "create cache" job
+from hitting the entry its own first attempt saved — and every step is `continue-on-error` so `save-test-results`,
 `upload-artifact` and `fail-if-test-failed` always run.
 
 **[test-turbo-cache.yml](../.github/workflows/test-turbo-cache.yml)** — `turbo-monorepo`

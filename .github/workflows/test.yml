@@ -127,7 +127,7 @@ jobs:
             install-deps: "false"
             # kcov stays off here: its `auto` default would follow the bats
             # decision and build from source on every PR — this matrix's
-            # cache-bust is scoped to `github.run_id`, so that build can never
+            # cache-bust is scoped to `run_id`-`run_attempt`, so that build can never
             # be restored, and kcov failures degrade to warnings, so a broken
             # build here wouldn't even go red. kcov's end-to-end validation
             # (build, cache, restore) lives on a downstream consumer's CI,
@@ -164,7 +164,7 @@ jobs:
           title: ${{ matrix.title }}
           install-deps: ${{ matrix.install-deps }}
           kcov: ${{ matrix.kcov || '' }}
-          cache-bust: ${{ matrix.pm }}-${{ matrix.os }}-${{ github.run_id }}
+          cache-bust: ${{ matrix.pm }}-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           expected-node-version: ${{ matrix.expected-node-version || '' }}
           expected-node-enabled: ${{ matrix.expected-node-enabled || '' }}
           expected-bun-version: ${{ matrix.expected-bun-version || '' }}
@@ -322,7 +322,7 @@ jobs:
           fixture: ${{ matrix.fixture }}
           title: ${{ matrix.title }}
           install-deps: ${{ matrix.install-deps }}
-          cache-bust: ${{ matrix.pm }}-${{ matrix.os }}-${{ github.run_id }}
+          cache-bust: ${{ matrix.pm }}-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           expected-node-version: ${{ matrix.expected-node-version || '' }}
           expected-node-enabled: ${{ matrix.expected-node-enabled || '' }}
           expected-bun-version: ${{ matrix.expected-bun-version || '' }}
