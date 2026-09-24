@@ -1,5 +1,9 @@
 # Log
 
+## 2026-09-21
+
+* Added Re-running the fixture matrix fails every "create cache" job
+
 ## 2026-09-19
 
 * Updated test-harness

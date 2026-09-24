@@ -44,7 +44,17 @@ export type PackageManagerName = typeof PackageManagerName.Type;
 export const AbsoluteVersion = SemVer.ExactVersionString;
 export type AbsoluteVersion = typeof AbsoluteVersion.Type;
 
-const OnFail = Schema.Literals(["warn", "error", "ignore"]);
+/**
+ * `devEngines` `onFail` values: npm's three, plus pnpm's `download`.
+ *
+ * @remarks
+ * The action installs the pinned versions up front and never acts on `onFail`,
+ * so it is validated only for being a value the declared package manager
+ * understands. `download` is a pnpm extension; `loadConfig` rejects it when
+ * the package manager is anything else.
+ */
+export const OnFail = Schema.Literals(["warn", "error", "ignore", "download"]);
+export type OnFail = typeof OnFail.Type;
 
 /**
  * The normalized three-state form of an optional tool input: `auto` detects
@@ -94,9 +104,11 @@ export class RuntimeConfig extends Schema.Class<RuntimeConfig>("RuntimeConfig")(
  * @remarks
  * Three reasons, one per failure stage. Every schema rejection — an absent
  * `devEngines`, an unsupported name, a semver range where an absolute version
- * belongs — collapses into `invalid-dev-engines` with the parse issue carried
- * as `cause`, matching v1's single message. Finer-grained reasons can be added
- * later without breaking consumers that match on these.
+ * belongs, an `onFail` the package manager does not understand — collapses
+ * into `invalid-dev-engines`, with the parse issue rendered into the message
+ * (the failure annotation prints nothing else) and carried as `cause`.
+ * Finer-grained reasons can be added later without breaking consumers that
+ * match on these.
  */
 export class ConfigError extends Data.TaggedError("ConfigError")<{
 	readonly reason: "missing-package-json" | "malformed-json" | "invalid-dev-engines";
