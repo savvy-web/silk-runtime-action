@@ -25,7 +25,8 @@ Consuming repositories **MUST** have a root `package.json` with:
    (`node`|`bun`|`deno`) + absolute `version`
    ([pnpm format](https://pnpm.io/package_json#devenginesruntime)).
 
-`onFail` is optional on both (parsed, not acted upon). Versions must be exact
+`onFail` is optional on both (parsed, not acted upon): `warn`|`error`|`ignore`, plus
+`download` when the package manager is pnpm. Versions must be exact
 (`"24.11.0"`), never ranges. A top-level corepack `packageManager` pin is ignored —
 `devEngines` is the only source of truth.
 

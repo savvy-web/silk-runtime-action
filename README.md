@@ -50,7 +50,7 @@ Both `devEngines.runtime` and `devEngines.packageManager` are required. `runtime
 
 ### Version rules
 
-Versions must be **absolute** (`"24.10.0"`), never ranges. Anything containing `^`, `~`, `>`, `<`, `=`, `*`, `x` or `X` is rejected before any install runs. `onFail` is optional on both entries; it is parsed for format compatibility but this action does not act on it — a failed install always fails the step.
+Versions must be **absolute** (`"24.10.0"`), never ranges. Anything containing `^`, `~`, `>`, `<`, `=`, `*`, `x` or `X` is rejected before any install runs. `onFail` is optional on both entries and may be `warn`, `error` or `ignore`, or pnpm's `download` when the package manager is pnpm; it is validated but this action does not act on it — the pinned versions are always installed up front, and a failed install always fails the step.
 
 ### What gets installed
 

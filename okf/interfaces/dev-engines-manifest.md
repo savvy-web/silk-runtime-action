@@ -7,8 +7,8 @@ kind: config
 resource: ../../src/schema/domain.ts
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: b0c1fd005b4802a3c9f0ace4314612c01e6334ae72c6f719c3a7d2f8af030904
+  at: 2026-09-24T01:33:32Z
+  body_sha256: 4d39887d96c939640232490d15fdc6309d5747133b91853ebcd6bbc1025b6392
 sources:
   - id: domain-schema
     resource: ../../src/schema/domain.ts
@@ -73,14 +73,16 @@ exercised: pnpm carries an integrity hash in its `devEngines` version
   — `Schema.Struct` decodes only the keys it declares and discards every other manifest key
   along with it, so a repository carrying both a corepack pin and a `devEngines` block gets
   its runtime and package-manager versions from `devEngines` alone.
-- `onFail` (`warn | error | ignore`) is parsed on both `packageManager` and each `runtime`
+- `onFail` (`warn | error | ignore | download`) is parsed on both `packageManager` and each `runtime`
   entry, but the action never acts on it — it decodes and is otherwise inert.
 
 ## Failure
 
 Every rejection — a missing `devEngines` field, an unsupported name, a semver range where an
-absolute version belongs — collapses into one `ConfigError` with `reason:
-"invalid-dev-engines"` and the parse issue carried as `cause` (`domain.ts:101-105`). A missing
+absolute version belongs, `onFail: "download"` under any manager but pnpm — collapses into one
+`ConfigError` with `reason: "invalid-dev-engines"`. The parse issue is rendered into the message,
+naming the field path (`at ["devEngines"]["packageManager"]["version"]`), because the action's
+failure annotation prints the message alone; it is also carried as `cause`. A missing
 or unreadable `package.json` and a JSON parse failure get their own reasons,
 `missing-package-json` and `malformed-json` respectively, so a consumer's failure message can
 tell "no manifest" apart from "manifest present but decode failed."

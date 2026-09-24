@@ -223,9 +223,11 @@ describe("loadConfig — failures", () => {
 		Effect.gen(function* () {
 			const error = yield* failureOf(load(JSON.stringify({ name: "my-project" })));
 			assert.strictEqual(error.reason, "invalid-dev-engines");
-			assert.strictEqual(error.message, "package.json has invalid or missing devEngines field");
-			// The message is deliberately field-blind (oracle 45), so the schema
-			// issue riding in `cause` is the only thing that can say what broke.
+			// The schema issue is rendered into the message: the action's failure
+			// annotation prints the message alone, and a bare "invalid or missing"
+			// left a consumer guessing which field broke.
+			assert.match(error.message, /^package\.json has invalid or missing devEngines field: /);
+			assert.include(error.message, "devEngines");
 			const cause = error.cause as { _tag: string; issue: unknown; message: string };
 			assert.strictEqual(cause._tag, "SchemaError");
 			assert.isDefined(cause.issue);
@@ -233,7 +235,7 @@ describe("loadConfig — failures", () => {
 		}),
 	);
 
-	it.effect("collapses a deep decode failure into the same message as an absent devEngines", () =>
+	it.effect("names the offending field in the message of a deep decode failure", () =>
 		Effect.gen(function* () {
 			const absent = yield* failureOf(load(JSON.stringify({ name: "my-project" })));
 			const deep = yield* failureOf(
@@ -244,9 +246,8 @@ describe("loadConfig — failures", () => {
 				),
 			);
 			assert.strictEqual(deep.reason, "invalid-dev-engines");
-			assert.strictEqual(deep.message, absent.message);
-			// Same collapsed message, different cause: the diagnostic detail the
-			// message drops is not lost, only relocated.
+			assert.include(deep.message, `["devEngines"]["runtime"]["version"]`);
+			assert.notStrictEqual(deep.message, absent.message);
 			const cause = deep.cause as { _tag: string; message: string };
 			assert.strictEqual(cause._tag, "SchemaError");
 			assert.include(cause.message, "version");
@@ -399,7 +400,7 @@ describe("loadConfig — normalization edges", () => {
 
 	// Divergence from legacy, inherited from the Phase A contract: legacy typed
 	// `onFail` as a free-form optional string, `RuntimeSpec` narrows it to the
-	// npm-documented literals. Every fixture and test uses an in-spec value, so
+	// npm-documented literals plus pnpm's `download`. Every fixture and test uses an in-spec value, so
 	// this is a tightening rather than an observed parity break.
 	it.effect("rejects an onFail value outside the documented literals", () =>
 		Effect.gen(function* () {
@@ -411,6 +412,60 @@ describe("loadConfig — normalization edges", () => {
 				),
 			);
 			assert.strictEqual(error.reason, "invalid-dev-engines");
+		}),
+	);
+
+	it.effect('accepts pnpm\'s onFail "download" on both entry kinds when pnpm is the package manager', () =>
+		Effect.gen(function* () {
+			const config = yield* load(
+				JSON.stringify({
+					devEngines: {
+						packageManager: { name: "pnpm", version: "12.6.0+sha512.3ef68f95", onFail: "download" },
+						runtime: { name: "node", version: "24.11.0", onFail: "download" },
+					},
+				}),
+			);
+			assert.strictEqual(config.packageManager.onFail, "download");
+			assert.strictEqual(config.packageManager.version, "12.6.0+sha512.3ef68f95");
+			assert.strictEqual(config.runtimes[0].onFail, "download");
+		}),
+	);
+
+	for (const name of ["npm", "yarn", "bun", "deno"]) {
+		it.effect(`rejects onFail "download" on the packageManager entry for ${name}`, () =>
+			Effect.gen(function* () {
+				const error = yield* failureOf(
+					load(
+						JSON.stringify({
+							devEngines: { ...validDevEngines, packageManager: { name, version: "1.2.3", onFail: "download" } },
+						}),
+					),
+				);
+				assert.strictEqual(error.reason, "invalid-dev-engines");
+				assert.include(error.message, `package manager is ${name}`);
+				assert.include(error.message, "devEngines.packageManager");
+			}),
+		);
+	}
+
+	it.effect('rejects onFail "download" on a runtime entry when the package manager is not pnpm', () =>
+		Effect.gen(function* () {
+			const error = yield* failureOf(
+				load(
+					JSON.stringify({
+						devEngines: {
+							packageManager: { name: "npm", version: "11.6.0" },
+							runtime: [
+								{ name: "node", version: "24.11.0" },
+								{ name: "bun", version: "1.3.3", onFail: "download" },
+							],
+						},
+					}),
+				),
+			);
+			assert.strictEqual(error.reason, "invalid-dev-engines");
+			assert.include(error.message, "devEngines.runtime (bun)");
+			assert.notInclude(error.message, "(node)");
 		}),
 	);
 

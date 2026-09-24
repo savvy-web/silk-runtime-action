@@ -32,7 +32,7 @@ Four jobs, then a summary that aggregates them.
 
 | Job | Axes | Proves |
 | --- | --- | --- |
-| `test-node-create-cache` | `os` × `pm` (`npm`, `pnpm`, `yarn`, `multi`, `bun`, `bats`) | A cold run installs and populates the cache |
+| `test-node-create-cache` | `os` × `pm` (`npm`, `npm12`, `pnpm`, `pnpm12`, `yarn`, `multi`, `bun`, `bats`) | A cold run installs and populates the cache |
 | `test-node-restore-cache` | the same | The second run restores what the first wrote |
 | `test-feature-detection` | `os` × `fixture` (`biome-enabled`, `turbo-enabled`) | Biome auto-detection and turbo detection |
 | `test-additional-inputs` | `format` | `additional-lockfiles` / `additional-cache-paths` reach the key and the restore |

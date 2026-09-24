@@ -7,8 +7,8 @@ kind: harness
 resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
-  at: 2026-09-19T02:15:07Z
-  body_sha256: ff8c40fa962f0603b9b95bdc0bb23ff58b5c89c52bdb25ccfad3f33bb091d92a
+  at: 2026-09-24T01:43:00Z
+  body_sha256: 41687abf5ccabaac3f6787c2661e64ee4047b2bc0d766acc84852f114b56c2bd
 sources:
   - id: test-fixture-action
     resource: ../../.github/actions/test-fixture/action.yml
@@ -45,6 +45,7 @@ committed.[^fixtures-claude]
 | `node-npm` | node + npm, `package-lock.json` |
 | `node-npm-12` | node 26 + npm 12, `package-lock.json` — the "current" npm case; `node-npm` stays "one back" |
 | `node-pnpm` | node + pnpm, `pnpm-lock.yaml` |
+| `node-pnpm-12` | node 26 + pnpm 12 with a hash-pinned version and `onFail: "download"` on both entries, two-document `pnpm-lock.yaml` — the only fixture exercising pnpm's `download` value |
 | `node-yarn` | node + yarn 4, `yarn.lock` + `.pnp.cjs` + `.yarn/` |
 | `node-multi` | three runtimes (node, bun, deno) with pnpm as manager; workspace with `pkgs/pkg-{node,bun,deno}` |
 | `bun-bun` | bun as **both** runtime and package manager, `bun.lock` |

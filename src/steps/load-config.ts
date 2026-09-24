@@ -27,6 +27,32 @@ const decodePackageJson = Schema.decodeUnknownEffect(PackageJsonDevEngines);
 const isRuntimeSpec = Schema.is(RuntimeSpec);
 
 /**
+ * Rejects `onFail: "download"` unless pnpm is the package manager.
+ *
+ * @remarks
+ * The action installs every pinned version itself and never acts on `onFail`,
+ * so the only check is that the value means something to the manager that will
+ * read it. `download` is pnpm's extension to npm's `warn | error | ignore`,
+ * on both `packageManager` and `runtime` entries.
+ */
+const checkOnFail = (config: RuntimeConfig): Effect.Effect<RuntimeConfig, ConfigError> => {
+	if (config.packageManager.name === "pnpm") return Effect.succeed(config);
+	const offending = [
+		...(config.packageManager.onFail === "download" ? ["devEngines.packageManager"] : []),
+		...config.runtimes.flatMap((runtime) =>
+			runtime.onFail === "download" ? [`devEngines.runtime (${runtime.name})`] : [],
+		),
+	];
+	if (offending.length === 0) return Effect.succeed(config);
+	return Effect.fail(
+		new ConfigError({
+			reason: "invalid-dev-engines",
+			message: `onFail "download" is only supported by pnpm, but the package manager is ${config.packageManager.name}: ${offending.join(", ")}`,
+		}),
+	);
+};
+
+/**
  * Reads and decodes `package.json`'s `devEngines` block.
  *
  * @remarks
@@ -74,16 +100,18 @@ export const loadConfig: Effect.Effect<RuntimeConfig, ConfigError, FileSystem.Fi
 				(cause) =>
 					new ConfigError({
 						reason: "invalid-dev-engines",
-						message: "package.json has invalid or missing devEngines field",
+						message: `package.json has invalid or missing devEngines field: ${cause.message}`,
 						cause,
 					}),
 			),
 		);
 
-		const config = RuntimeConfig.make({
-			packageManager: devEngines.packageManager,
-			runtimes: isRuntimeSpec(devEngines.runtime) ? [devEngines.runtime] : devEngines.runtime,
-		});
+		const config = yield* checkOnFail(
+			RuntimeConfig.make({
+				packageManager: devEngines.packageManager,
+				runtimes: isRuntimeSpec(devEngines.runtime) ? [devEngines.runtime] : devEngines.runtime,
+			}),
+		);
 
 		// The group these run in was silent, which made it the one step in the
 		// pipeline whose log said nothing about what it learned — while
