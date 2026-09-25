@@ -67,7 +67,7 @@ aggregate blind to it.
 ## `test-turbo-cache.yml`
 
 Exercises the embedded remote-cache server end to end: a within-job double build on the
-GitHub backend, a cross-job cache hit, an S3 backend run against MinIO, and a real-S3 job
+GitHub backend, a cross-job cache hit, an S3 backend run against SeaweedFS, and a real-S3 job
 gated on the `TURBO_S3_*` secrets being present. Fixtures install their own dependencies in
 `run:` steps (`install-deps: "false"`) because `uses:` steps always execute at the repository
 root.
