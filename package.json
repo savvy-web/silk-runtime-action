@@ -43,10 +43,10 @@
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",
 		"@effected/memfs": "catalog:effected",
-		"@okfit/plugin": "^0.5.0",
-		"@savvy-web/github-action-builder": "^2.4.5",
-		"@savvy-web/silk": "^4.2.6",
-		"@vitest-agent/plugin": "^4.1.6"
+		"@okfit/plugin": "^0.5.2",
+		"@savvy-web/github-action-builder": "^2.4.6",
+		"@savvy-web/silk": "^4.2.9",
+		"@vitest-agent/plugin": "^4.1.7"
 	},
 	"engines": {
 		"node": ">=24.11.0"

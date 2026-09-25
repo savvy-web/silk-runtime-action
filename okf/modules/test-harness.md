@@ -7,8 +7,8 @@ kind: harness
 resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
-  at: 2026-09-24T01:43:00Z
-  body_sha256: 41687abf5ccabaac3f6787c2661e64ee4047b2bc0d766acc84852f114b56c2bd
+  at: 2026-09-25T00:54:05Z
+  body_sha256: cb0397d18c1deaa0cd087b9f0e1392be869f2cddf55b06e52ab5e631fb521b58
 sources:
   - id: test-fixture-action
     resource: ../../.github/actions/test-fixture/action.yml
@@ -60,7 +60,7 @@ committed.[^fixtures-claude]
 | Workflow | Jobs | Covers |
 | --- | --- | --- |
 | `test.yml` (`Fixtures`) | `test-node-create-cache`, `test-node-restore-cache`, `test-feature-detection`, `test-additional-inputs`, plus an aggregating `summary` | Cold install + cache save; cache restore on a second run; Biome/turbo auto-detection; `additional-lockfiles`/`additional-cache-paths` (newline-separated is the only supported multiline format) |
-| `test-turbo-cache.yml` | `double-build`, `dependent-job-hit`, `s3-double-build`, `real-s3-configured`, `real-s3-double-build` | Within-job double build (GitHub backend), a cross-job cache hit via `needs:`, a MinIO-backed S3 double build, a real-S3 secrets-presence gate, and a real-S3 double build[^test-turbo-yml] |
+| `test-turbo-cache.yml` | `double-build`, `dependent-job-hit`, `s3-double-build`, `real-s3-configured`, `real-s3-double-build` | Within-job double build (GitHub backend), a cross-job cache hit via `needs:`, a SeaweedFS-backed S3 double build, a real-S3 secrets-presence gate, and a real-S3 double build[^test-turbo-yml] |
 
 Both `on: pull_request` filters watch `main`, `dev` and `changeset-release/main` — the
 third spelled the way changesets spells it, singular `changeset`. It read
