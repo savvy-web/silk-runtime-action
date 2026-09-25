@@ -52,7 +52,7 @@ from hitting the entry its own first attempt saved — and every step is `contin
 
 **[test-turbo-cache.yml](../.github/workflows/test-turbo-cache.yml)** — `turbo-monorepo`
 only, on PRs and dispatch. Within-job double build (GitHub backend), cross-job cache hit on
-a cold runner, an S3 double build against MinIO, and the same against real S3 behind a
+a cold runner, an S3 double build against SeaweedFS, and the same against real S3 behind a
 secrets-presence gate job so forks skip rather than fail. Each asserts the reported
 `turbo-cache-backend` and `turbo-cache-port` before proving the cache hit.
 

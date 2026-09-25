@@ -90,31 +90,36 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a cross-job remote cache hit"; exit 1; }
 
-  # Job 3: S3 backend via MinIO — real SigV4 signing path.
-  # MinIO runs via `docker run` rather than a services: container so we can use
-  # the official MinIO image, which needs a `server` command that service
-  # containers cannot specify. Images are pulled from quay.io — both bitnami/minio
-  # and minio/minio (and minio/mc) have been removed from Docker Hub.
+  # Job 3: S3 backend via SeaweedFS — real SigV4 signing path.
+  # SeaweedFS runs via `docker run` rather than a services: container because it
+  # needs a `server -s3` command that service containers cannot specify. With
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY set it rejects anonymous and
+  # mis-signed requests. MinIO was used until its images disappeared from both
+  # Docker Hub and quay.io (the upstream project is archived). The bucket is
+  # created with the runner's preinstalled AWS CLI, so no second image is pulled.
   s3-double-build:
-    name: S3 backend double build (MinIO)
+    name: S3 backend double build (SeaweedFS)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: __fixtures__/turbo-monorepo
     steps:
       - uses: actions/checkout@v7
-      - name: Start MinIO
+      - name: Start SeaweedFS
+        env:
+          AWS_ACCESS_KEY_ID: s3admin
+          AWS_SECRET_ACCESS_KEY: s3adminsecret
+          AWS_DEFAULT_REGION: us-east-1
         run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio:latest server /data
-          for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:9000/minio/health/ready; then echo "MinIO ready"; break; fi
-            if [ "$i" -eq 30 ]; then echo "MinIO did not become ready" >&2; docker logs minio; exit 1; fi
+          docker run -d --name seaweedfs -p 9000:8333 \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            chrislusf/seaweedfs:4.47 server -s3 -dir=/data
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:9000/healthz; then echo "SeaweedFS ready"; break; fi
+            if [ "$i" -eq 60 ]; then echo "SeaweedFS did not become ready" >&2; docker logs seaweedfs; exit 1; fi
             sleep 1
           done
-          docker run --rm --network host --entrypoint sh quay.io/minio/mc -c \
-            "mc alias set m http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing m/turbo-cache"
+          aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://turbo-cache
       - uses: ./.github/actions/local
         id: setup
         with:
@@ -123,8 +128,8 @@ jobs:
           turbo-s3-bucket: turbo-cache
           turbo-s3-region: us-east-1
           turbo-s3-endpoint: http://127.0.0.1:9000
-          turbo-s3-access-key-id: minioadmin
-          turbo-s3-secret-access-key: minioadmin
+          turbo-s3-access-key-id: s3admin
+          turbo-s3-secret-access-key: s3adminsecret
       - name: Assert the reported backend and port
         env:
           BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
@@ -175,7 +180,7 @@ jobs:
           fi
 
   # Job 4: the same double build against a real S3-compatible service, so the
-  # signing path is proven against something other than MinIO. Forks and any
+  # signing path is proven against something other than SeaweedFS. Forks and any
   # repository without the org secrets skip it rather than failing.
   real-s3-double-build:
     name: S3 backend double build (real S3)
