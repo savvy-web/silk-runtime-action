@@ -45,7 +45,7 @@
 		"@effected/memfs": "catalog:effected",
 		"@okfit/plugin": "^0.5.2",
 		"@savvy-web/github-action-builder": "^2.4.6",
-		"@savvy-web/silk": "^4.2.8",
+		"@savvy-web/silk": "^4.2.9",
 		"@vitest-agent/plugin": "^4.1.7"
 	},
 	"engines": {
