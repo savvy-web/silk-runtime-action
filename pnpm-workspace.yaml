@@ -4,3 +4,10 @@ autoInstallPeers: true
 configDependencies:
   "@effected/pnpm-plugin-effect": 0.11.1+sha512-m35mtvgU4nbE8ZHd4EFqKu5jJeQY0gPUYHzKTno57JT/QeHzM9RRLNQsIcG0npsFYBxJfJ1tC/NH4zEWc2gdxQ==
   "@savvy-web/pnpm-plugin-silk": 0.44.0+sha512-6GbxZtliXuGHKFzJGFkqqNAbZzErb42XvCLdnr29KVR3OwvwU+D1MxNPpfzKOkde/TlM/KLsciuNqqmCSS/Yag==
+overrides:
+  "@effected/github-actions": 0.17.0-next-20260927062352
+  "@effected/lockfiles": 0.12.0-next-20260927062352
+  "@effected/npm": 0.17.0-next-20260927062352
+  "@effected/package-json": 0.18.0-next-20260927062352
+  "@effected/sbom": 0.8.1-next-20260927062352
+  "@effected/workspaces": 0.28.0-next-20260927062352

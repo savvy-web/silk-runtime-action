@@ -546,6 +546,99 @@ jobs:
           test-passed: ${{ steps.test.outputs.test-passed }}
           test-outcome: ${{ steps.test.outcome }}
           setup-error: ${{ steps.test.outputs.setup-error }}
+  # pnpm-lock.yaml integrity (#436), as a differential: one untouched control
+  # and three tampered copies of `node-pnpm-12`, identical except for the one
+  # integrity each case swaps. The control must install and every tampered case
+  # must fail, so a failure can only come from the integrity check. Each
+  # swapped-in value is a real SRI from the same lockfile (valid shape, wrong
+  # bytes), so the failure is verification, never a malformed-hash parse.
+  test-lockfile-integrity:
+    name: lockfile integrity | ${{ matrix.case }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: control
+            expect: success
+          # The host's native binary: checked against the lockfile, packument skipped.
+          - case: tampered-native
+            expect: failure
+          # The wrapper: the lockfile disagrees with devEngines' inline hash, so
+          # the installer refuses before any download.
+          - case: tampered-wrapper
+            expect: failure
+          # The wrapper with no inline hash: the lockfile is the only source, and
+          # the downloaded tarball does not match it.
+          - case: tampered-wrapper-bare-pin
+            expect: failure
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Prepare fixture
+        shell: python
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          import json, os, re, shutil
+          from pathlib import Path
+
+          for item in Path(".").iterdir():
+              if item.name in (".github", ".git", "__fixtures__"):
+                  continue
+              shutil.rmtree(item) if item.is_dir() else item.unlink()
+          fixture = Path("__fixtures__/node-pnpm-12")
+          for item in fixture.iterdir():
+              shutil.copy2(item, item.name)
+          shutil.rmtree("__fixtures__")
+
+          lock = Path("pnpm-lock.yaml")
+          text = lock.read_text()
+
+          def integrity_of(key):
+              match = re.search(rf"^  {re.escape(key)}:\n    resolution: {{integrity: (\S+)}}", text, re.M)
+              assert match, f"no packages entry for {key}"
+              return match.group(1)
+
+          def swap(key, donor):
+              global text
+              old, new = integrity_of(key), integrity_of(donor)
+              assert old != new
+              text = text.replace(old, new, 1)
+              print(f"{key}: {old} -> {new}")
+
+          case = os.environ["CASE"]
+          if case == "tampered-native":
+              swap("'@pnpm/exe.linux-x64@12.6.0'", "'@pnpm/exe.android-arm64@12.6.0'")
+          elif case in ("tampered-wrapper", "tampered-wrapper-bare-pin"):
+              swap("pnpm@12.6.0", "'@pnpm/exe.win32-x64@12.6.0'")
+          if case == "tampered-wrapper-bare-pin":
+              manifest = json.loads(Path("package.json").read_text())
+              manifest["devEngines"]["packageManager"]["version"] = "12.6.0"
+              Path("package.json").write_text(json.dumps(manifest, indent="\t") + "\n")
+          lock.write_text(text)
+      - name: Run action
+        id: run
+        continue-on-error: true
+        uses: ./.github/actions/local
+        with:
+          cache-bust: integrity-${{ matrix.case }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Assert outcome
+        shell: bash
+        env:
+          EXPECT: ${{ matrix.expect }}
+          OUTCOME: ${{ steps.run.outcome }}
+          PM_VERSION: ${{ steps.run.outputs.package-manager-version }}
+        run: |
+          echo "expected=$EXPECT outcome=$OUTCOME package-manager-version=$PM_VERSION"
+          if [ "$EXPECT" = "success" ]; then
+            # The output echoes devEngines verbatim, inline hash included.
+            [ "$OUTCOME" = "success" ] && [[ "$PM_VERSION" == 12.6.0* ]] || { echo "::error::control run did not install pnpm 12.6.0"; exit 1; }
+            pnpm --version
+          else
+            [ "$OUTCOME" = "failure" ] || { echo "::error::tampered lockfile was not refused"; exit 1; }
+          fi
   summary:
     name: Test Summary
     runs-on: ubuntu-latest

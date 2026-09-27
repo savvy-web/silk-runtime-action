@@ -9,8 +9,10 @@ import {
 	PackageManagerInstallerError,
 	RunnerFileUnavailableError,
 } from "@effected/github-actions";
+import { MemoryFileSystem } from "@effected/memfs";
 import type { PackageManagerPin } from "@effected/npm";
-import { Effect, Layer, Logger, Option } from "effect";
+import type { FileSystem } from "effect";
+import { Effect, Layer, Logger, Option, PlatformError } from "effect";
 
 import type { PackageManagerName } from "../../../src/schema/domain.js";
 import { PackageManagerSpec } from "../../../src/schema/domain.js";
@@ -18,6 +20,115 @@ import { PackageManagerError, setupPackageManager } from "../../../src/steps/set
 
 /** A `devEngines.packageManager` entry, spelled as the config loader produces one. */
 const specOf = (name: PackageManagerName, version: string) => PackageManagerSpec.make({ name, version });
+
+/**
+ * A real-shaped two-document `pnpm-lock.yaml` whose env preamble pins
+ * `pnpm@12.6.0` with a genuine SRI integrity and one native optional
+ * dependency, mirroring the repo's own lockfile (`pnpm-lock.yaml:1-173`).
+ */
+const MATCHING_LOCKFILE = `---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.6.0+sha512.deadbeef
+        version: 12.6.0
+
+packages:
+
+  '@pnpm/exe.linux-x64@12.6.0':
+    resolution: {integrity: sha512-qFWBneHJAJ73W4whtbaFOL1M/7DBC6ILHXuxc7ZPtEhfPuT1zeZiGrmKHoMAfJA+mcm6xhOFljqVTUS+00Jabw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  pnpm@12.6.0:
+    resolution: {integrity: sha512-PvaPlRyxEawgS0paFvCy3fDaVqluBBPoHYVdnwtV75JnFHCQKOHNAMQFwsX7e56OxNxGd3yAXQNzwvL/AP0g7A==}
+    engines: {node: '>=18.*'}
+    hasBin: true
+
+snapshots:
+
+  '@pnpm/exe.linux-x64@12.6.0':
+    optional: true
+
+  pnpm@12.6.0:
+    optionalDependencies:
+      '@pnpm/exe.linux-x64': 12.6.0
+
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .: {}
+`;
+
+/** A single-document lockfile: no `configDependencies`/`packageManagerDependencies`, so no env preamble. */
+const SINGLE_DOC_LOCKFILE = `lockfileVersion: '9.0'
+
+importers:
+
+  .: {}
+`;
+
+/** An env preamble pinning a pnpm version that does not match what `devEngines` names (10.19.0 vs. the pin's 10.20.0). */
+const MISMATCHED_VERSION_LOCKFILE = `---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    packageManagerDependencies:
+      pnpm:
+        specifier: 10.19.0+sha512.deadbeef
+        version: 10.19.0
+
+packages:
+
+  pnpm@10.19.0:
+    resolution: {integrity: sha512-PvaPlRyxEawgS0paFvCy3fDaVqluBBPoHYVdnwtV75JnFHCQKOHNAMQFwsX7e56OxNxGd3yAXQNzwvL/AP0g7A==}
+    engines: {node: '>=18.*'}
+    hasBin: true
+
+snapshots:
+
+  pnpm@10.19.0: {}
+
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .: {}
+`;
+
+/** An env preamble that claims `pnpm@10.20.0` but backs it with no `packages` entry — a claim it cannot back. */
+const MALFORMED_LOCKFILE = `---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    packageManagerDependencies:
+      pnpm:
+        specifier: 10.20.0+sha512.deadbeef
+        version: 10.20.0
+
+packages: {}
+
+snapshots: {}
+
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .: {}
+`;
 
 /** Records what a case's doubles were asked to do, so elision is assertable. */
 interface Recorder {
@@ -49,6 +160,23 @@ const cached = (overrides: Partial<Omit<CachedPackageManager, "source">> = {}): 
 	});
 
 /**
+ * The `FileSystem` half of the step's services: an empty volume by default (no
+ * `pnpm-lock.yaml` — today's behaviour), or one seeded with `lockfile` at the
+ * cwd-relative path the step reads. `seen`, when supplied, records every path
+ * probed so a case can assert the lockfile was — or was not — read at all.
+ */
+const fsLayer = (lockfile?: string, seen?: string[]): Layer.Layer<FileSystem.FileSystem> => {
+	const volume = lockfile === undefined ? {} : { "/pnpm-lock.yaml": lockfile };
+	if (seen === undefined) return MemoryFileSystem.layerWith(volume);
+	return MemoryFileSystem.layerFaulty({
+		readFileString: (path) => {
+			seen.push(path);
+			return undefined;
+		},
+	}).pipe(Layer.provide(MemoryFileSystem.layerWith(volume)));
+};
+
+/**
  * Every service `setupPackageManager` requires, doubled around a happy-path
  * install.
  *
@@ -63,6 +191,8 @@ const layerFor = (
 		readonly install?: PackageManagerInstaller["Service"]["install"];
 		readonly bareInstaller?: boolean;
 		readonly addPath?: ActionOutputs["Service"]["addPath"];
+		readonly lockfile?: string;
+		readonly lockfileSeen?: string[];
 	} = {},
 ) =>
 	Layer.mergeAll(
@@ -72,9 +202,10 @@ const layerFor = (
 				: {
 						install:
 							options.install ??
-							((pin) =>
+							((pin, installOptions) =>
 								Effect.sync(() => {
 									log.pins.push(pin);
+									log.options.push(installOptions);
 									return cached({ name: pin.name, version: pin.version.toString() });
 								})),
 					},
@@ -93,6 +224,7 @@ const layerFor = (
 				log.logs.push(Array.isArray(message) ? message.map(String).join(" ") : String(message));
 			}),
 		]),
+		fsLayer(options.lockfile, options.lockfileSeen),
 	);
 
 describe("setupPackageManager", () => {
@@ -221,6 +353,20 @@ describe("setupPackageManager", () => {
 			// Which npm ran was therefore a function of the runner image. `false` is
 			// what makes it a function of the manifest.
 			assert.strictEqual(log.options[0]?.allowAmbient, false);
+		}),
+	);
+
+	it.effect("never reads pnpm-lock.yaml for a non-pnpm manager", () =>
+		Effect.gen(function* () {
+			const log = recorder();
+			const seen: string[] = [];
+			yield* setupPackageManager(specOf("npm", "11.6.0")).pipe(
+				Effect.provide(layerFor(log, { lockfile: MATCHING_LOCKFILE, lockfileSeen: seen })),
+			);
+
+			assert.deepStrictEqual(seen, []);
+			assert.isUndefined(log.options[0]?.integrity);
+			assert.isUndefined(log.options[0]?.nativeIntegrity);
 		}),
 	);
 
@@ -415,5 +561,105 @@ describe("setupPackageManager", () => {
 		assert.strictEqual(error._tag, "PackageManagerError");
 		assert.strictEqual(error.reason, "activate");
 		assert.strictEqual(error.message, "activation failed");
+	});
+
+	describe("pnpm-lock.yaml verification (issue #436)", () => {
+		it.effect("has no lock-derived options when pnpm-lock.yaml does not exist", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* setupPackageManager(specOf("pnpm", "10.20.0")).pipe(Effect.provide(layerFor(log)));
+
+				assert.isUndefined(log.options[0]?.integrity);
+				assert.isUndefined(log.options[0]?.nativeIntegrity);
+			}),
+		);
+
+		it.effect("passes the lockfile's integrity and nativeIntegrity when its preamble matches the pin", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* setupPackageManager(specOf("pnpm", "12.6.0")).pipe(
+					Effect.provide(layerFor(log, { lockfile: MATCHING_LOCKFILE })),
+				);
+
+				assert.strictEqual(
+					log.options[0]?.integrity,
+					"sha512.3ef68f951cb111ac204b4a5a16f0b2ddf0da56a96e0413e81d855d9f0b55ef926714709028e1cd00c405c2c5fb7b9e8ec4dc46777c805d0373c2f2ff00fd20ec",
+				);
+				assert.deepStrictEqual(log.options[0]?.nativeIntegrity, {
+					"@pnpm/exe.linux-x64":
+						"sha512-qFWBneHJAJ73W4whtbaFOL1M/7DBC6ILHXuxc7ZPtEhfPuT1zeZiGrmKHoMAfJA+mcm6xhOFljqVTUS+00Jabw==",
+				});
+			}),
+		);
+
+		it.effect("has no lock-derived options for a single-document lockfile (no env preamble)", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* setupPackageManager(specOf("pnpm", "10.20.0")).pipe(
+					Effect.provide(layerFor(log, { lockfile: SINGLE_DOC_LOCKFILE })),
+				);
+
+				assert.isUndefined(log.options[0]?.integrity);
+				assert.isUndefined(log.options[0]?.nativeIntegrity);
+			}),
+		);
+
+		it.effect("ignores a lockfile pinning a different pnpm version, with a warning", () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				yield* setupPackageManager(specOf("pnpm", "10.20.0")).pipe(
+					Effect.provide(layerFor(log, { lockfile: MISMATCHED_VERSION_LOCKFILE })),
+				);
+
+				assert.isUndefined(log.options[0]?.integrity);
+				assert.isUndefined(log.options[0]?.nativeIntegrity);
+				assert.isTrue(
+					log.logs.some(
+						(line) => line.includes("10.19.0") && line.includes("10.20.0") && line.includes("pnpm-lock.yaml"),
+					),
+				);
+			}),
+		);
+
+		it.effect('fails the step with reason "install" when the lockfile\'s preamble cannot back its own claim', () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				const error = yield* Effect.flip(
+					setupPackageManager(specOf("pnpm", "10.20.0")).pipe(
+						Effect.provide(layerFor(log, { lockfile: MALFORMED_LOCKFILE })),
+					),
+				);
+
+				assert.strictEqual(error._tag, "PackageManagerError");
+				assert.strictEqual(error.reason, "install");
+			}),
+		);
+
+		it.effect('fails the step with reason "install" when pnpm-lock.yaml exists but cannot be read', () =>
+			Effect.gen(function* () {
+				const log = recorder();
+				const unreadable = MemoryFileSystem.layerFaulty({
+					readFileString: (path) =>
+						Effect.fail(
+							PlatformError.systemError({
+								_tag: "PermissionDenied",
+								module: "FileSystem",
+								method: "readFileString",
+								pathOrDescriptor: path,
+							}),
+						),
+				}).pipe(Layer.provide(MemoryFileSystem.layerWith({ "/pnpm-lock.yaml": MATCHING_LOCKFILE })));
+				const error = yield* Effect.flip(
+					setupPackageManager(specOf("pnpm", "10.20.0")).pipe(
+						Effect.provide(unreadable),
+						Effect.provide(layerFor(log)),
+					),
+				);
+
+				assert.strictEqual(error._tag, "PackageManagerError");
+				assert.strictEqual(error.reason, "install");
+				assert.lengthOf(log.pins, 0);
+			}),
+		);
 	});
 });

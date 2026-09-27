@@ -1,8 +1,15 @@
-import type { ActionOutputError, PackageManagerInstallerError } from "@effected/github-actions";
+import type {
+	ActionOutputError,
+	PackageManagerInstallOptions,
+	PackageManagerInstallerError,
+} from "@effected/github-actions";
 import { ActionLogger, ActionOutputs, PackageManagerInstaller } from "@effected/github-actions";
-import type { InvalidPackageManagerPinError } from "@effected/npm";
-import { PackageManagerPin } from "@effected/npm";
-import { Data, Effect, Option } from "effect";
+import type { LockfileFramingError, LockfileParseError } from "@effected/lockfiles";
+import { PnpmEnvLockfile } from "@effected/lockfiles";
+import type { InvalidPackageManagerPinError, InvalidSriIntegrityHashError } from "@effected/npm";
+import { CorepackIntegrityHash, PackageManagerPin } from "@effected/npm";
+import type { PlatformError } from "effect";
+import { Data, Effect, FileSystem, Option } from "effect";
 
 import type { PackageManagerName, PackageManagerSpec } from "../schema/domain.js";
 
@@ -22,9 +29,21 @@ export class PackageManagerError extends Data.TaggedError("PackageManagerError")
  * @remarks
  * Spelled out rather than inferred so {@link classify} is exhaustive over it: a
  * new failure surfacing from either dependency becomes a type error here rather
- * than a silent fall-through to `"install"`.
+ * than a silent fall-through to `"install"`. `LockfileParseError` and
+ * `LockfileFramingError` come from reading `pnpm-lock.yaml`'s env preamble for
+ * the pnpm case, and `InvalidSriIntegrityHashError` from converting its
+ * recorded integrity (and `PlatformError` from a lockfile that exists but
+ * cannot be read) into the corepack form the installer takes — all three
+ * happen while *acquiring* the manager, same as an unparseable pin.
  */
-type SetupFailure = InvalidPackageManagerPinError | PackageManagerInstallerError | ActionOutputError;
+type SetupFailure =
+	| InvalidPackageManagerPinError
+	| InvalidSriIntegrityHashError
+	| LockfileFramingError
+	| LockfileParseError
+	| PlatformError.PlatformError
+	| PackageManagerInstallerError
+	| ActionOutputError;
 
 /**
  * The `addPath` failure, as a stage.
@@ -46,12 +65,22 @@ const activate = (_: ActionOutputError): PackageManagerError["reason"] => "activ
  * "not activated" means. `verify` is `layoutUnexpected` alone: the artifact
  * downloaded, extracted and cached, and what failed is the check that its
  * contents are the package manager the pin claims. Everything else — an
- * unparseable pin, a download, an extraction, a cache write, an integrity
- * mismatch, a platform with no build — happened while acquiring the manager,
- * which is `install`.
+ * unparseable pin, an unreadable `pnpm-lock.yaml`, a malformed or framing-broken env
+ * preamble, an unconvertible lockfile integrity, a download, an extraction, a
+ * cache write, an integrity mismatch, a platform with no build — happened
+ * while acquiring the manager, which is `install`.
  */
 const classify = (error: SetupFailure): PackageManagerError["reason"] => {
-	if (error._tag === "InvalidPackageManagerPinError") return "install";
+	switch (error._tag) {
+		case "InvalidPackageManagerPinError":
+		case "InvalidSriIntegrityHashError":
+		case "LockfileFramingError":
+		case "LockfileParseError":
+		case "PlatformError":
+			return "install";
+		default:
+			break;
+	}
 	// Upstream split `ActionOutputError` into one class per failure, so the
 	// output failures are matched as the residue rather than named by tag. The
 	// parameter type keeps that residue honest: a failure added to
@@ -83,6 +112,82 @@ const classify = (error: SetupFailure): PackageManagerError["reason"] => {
 };
 
 /**
+ * The `pnpm-lock.yaml` filename, probed cwd-relative — the action runs inside
+ * the checkout, exactly as `load-config` reads `package.json` and
+ * `install-dependencies` probes its own lockfile names.
+ */
+const PNPM_LOCKFILE = "pnpm-lock.yaml";
+
+/**
+ * The `integrity` / `nativeIntegrity` install options `pnpm-lock.yaml`
+ * supplies for `pin`, or none.
+ *
+ * @remarks
+ * pnpm records the package manager a workspace declares in
+ * `devEngines.packageManager` as the root importer's
+ * `packageManagerDependencies` in the lockfile's env preamble, resolved like
+ * any other dependency — the preamble's `packages:` section carries its
+ * integrity, and pnpm itself refuses to run a manager whose identity does not
+ * match. That makes the lockfile, not the pin's own `+sha512.<hex>` tail, the
+ * checksum store for the manager itself; this reads it as a second,
+ * independent source of truth rather than a replacement for the pin's.
+ *
+ * No file (`NotFound` only — any other read failure fails the step), or a
+ * file with no env preamble at all (`Option.none()` from
+ * {@link PnpmEnvLockfile.packageManager}), answers `{}` — today's behaviour,
+ * verified only against the pin's own inline hash. A preamble that names a
+ * different pnpm version than `pin` also answers `{}`, but with a logged
+ * warning: the lockfile's claim does not apply to what `devEngines` pinned, so
+ * it is ignored rather than trusted or treated as a mismatch. A preamble that
+ * parses but cannot back its own claim (no `packages` entry, no integrity)
+ * fails typed, fail-closed, through {@link LockfileParseError} —
+ * {@link classify} routes it to `"install"`.
+ *
+ * `nativeIntegrity` is omitted rather than passed empty: pnpm 11 records none
+ * in the preamble (its platform binaries hang off a separate `@pnpm/exe`
+ * wrapper this model does not carry), and `exactOptionalPropertyTypes` makes
+ * an explicit empty record a different, worse thing to hand the installer than
+ * the key being absent.
+ */
+const pnpmLockOptions = (
+	fs: FileSystem.FileSystem,
+	pin: PackageManagerPin,
+): Effect.Effect<
+	Pick<PackageManagerInstallOptions, "integrity" | "nativeIntegrity">,
+	LockfileFramingError | LockfileParseError | InvalidSriIntegrityHashError | PlatformError.PlatformError
+> =>
+	Effect.gen(function* () {
+		const content = yield* fs.readFileString(PNPM_LOCKFILE, "utf-8").pipe(
+			Effect.map(Option.some),
+			// Only absence means "no lockfile". A lockfile that exists but cannot be
+			// read fails the step: swallowing it would silently skip verification.
+			Effect.catchIf(
+				(error) => error.reason._tag === "NotFound",
+				() => Effect.succeed(Option.none<string>()),
+			),
+		);
+		if (Option.isNone(content)) return {};
+
+		const lock = yield* PnpmEnvLockfile.packageManager(content.value);
+		if (Option.isNone(lock)) return {};
+
+		const pinVersion = pin.version.toString();
+		if (lock.value.version !== pinVersion) {
+			yield* Effect.logWarning(
+				`pnpm-lock.yaml pins pnpm@${lock.value.version}, which does not match devEngines' pnpm@${pinVersion}; ignoring the lockfile's integrity`,
+			);
+			return {};
+		}
+
+		const integrity = yield* CorepackIntegrityHash.fromSri(lock.value.integrity);
+		const nativeIntegrity = lock.value.nativeIntegrity;
+		return {
+			integrity,
+			...(Object.keys(nativeIntegrity).length > 0 ? { nativeIntegrity } : {}),
+		};
+	});
+
+/**
  * Provisions the pinned manager and publishes it to `PATH`.
  *
  * @remarks
@@ -92,11 +197,22 @@ const classify = (error: SetupFailure): PackageManagerError["reason"] => {
  * (`10.20.0+sha512.…`), and the first `+` always begins integrity — so the
  * split is the pin's to make, never this step's.
  *
+ * For pnpm, and pnpm alone, {@link pnpmLockOptions} reads `pnpm-lock.yaml` and
+ * — when its env preamble names the same pnpm version as `pin` — hands the
+ * installer that lockfile's own recorded `integrity` and `nativeIntegrity`
+ * alongside the pin. The lockfile is the primary source of truth once it
+ * applies; the pin's inline hash remains a secondary check the installer
+ * itself reconciles (`integrityMismatch` when the two disagree), and the
+ * installer's own "carries no integrity" warning is the last resort when
+ * neither source applies. npm, yarn, bun and deno never read a lockfile here —
+ * only pnpm's `devEngines.packageManager` entry has a lockfile-recorded
+ * integrity to verify against.
+ *
  * `requireIntegrity` stays off: in-the-wild `devEngines` pins routinely carry no
  * hash, and the installer already warns when one does not. Warnings are not
  * buffered, so that notice reaches the log even on a green run.
  *
- * `allowAmbient: false` is the one option this step does set, and it is the
+ * `allowAmbient: false` is the one option this step always sets, and it is the
  * whole npm ruling (issue #220). Left on, an npm pin may be answered by the
  * *runner's* npm — probed with `npm --version` before this action's PATH
  * assembly exists — and an ambient answer carries no `binDir`, so it contributes
@@ -118,7 +234,10 @@ const provision = (spec: PackageManagerSpec) =>
 		const outputs = yield* ActionOutputs;
 
 		const pin = yield* PackageManagerPin.parse(`${spec.name}@${spec.version}`);
-		const installed = yield* installer.install(pin, { allowAmbient: false });
+		const lockOptions = yield* spec.name === "pnpm"
+			? Effect.flatMap(FileSystem.FileSystem, (fs) => pnpmLockOptions(fs, pin))
+			: Effect.succeed<Pick<PackageManagerInstallOptions, "integrity" | "nativeIntegrity">>({});
+		const installed = yield* installer.install(pin, { allowAmbient: false, ...lockOptions });
 		yield* Effect.logDebug(`${spec.name} ${spec.version}: ${installed.source}`);
 
 		// Every install through this step now answers `tool-cache`: `allowAmbient:
@@ -197,14 +316,18 @@ export interface ActivatedPackageManager {
  * `R` is what the step actually touches. `ToolInstaller` and
  * `ChildProcessSpawner` are gone from it: both were there for the corepack
  * machinery rulings 20-27 dropped, and the tool cache is now the installer's
- * business, behind its own layer.
+ * business, behind its own layer. `FileSystem.FileSystem` joined `R` for
+ * issue #436: the pnpm branch reads `pnpm-lock.yaml` cwd-relative, the same way
+ * `load-config` reads `package.json` — a service `program.ts`'s `MainLive`
+ * already supplies via `ActionServices`, so this widens the step's own
+ * contract without touching layer composition.
  */
 export const setupPackageManager = (
 	spec: PackageManagerSpec,
 ): Effect.Effect<
 	ActivatedPackageManager,
 	PackageManagerError,
-	PackageManagerInstaller | ActionOutputs | ActionLogger
+	PackageManagerInstaller | ActionOutputs | ActionLogger | FileSystem.FileSystem
 > =>
 	Effect.gen(function* () {
 		const echo = { name: spec.name, version: spec.version };
