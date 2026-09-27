@@ -148,6 +148,16 @@ export interface RestoredCaches {
  * is never worth failing a run over. Root-only archives less than it might and
  * nothing it should not; `additional-cache-paths` is the escape hatch, and the
  * warning names the reason so a consumer can find it.
+ *
+ * The two ways discovery can fail are not read the same way, though.
+ * `WorkspaceRootNotFoundError` is what a plain `package.json` with no
+ * `workspaces` field and no `pnpm-workspace.yaml` reports — an ordinary
+ * single-package repository, not a problem — so it degrades to `["."]`
+ * silently, at `Debug`: a diagnostic for whoever is already reading debug
+ * output, not a warning every such run has to explain away. Every other
+ * `WorkspaceDiscoveryFailure` (`WorkspaceDiscoveryError`,
+ * `WorkspacePatternError`) means a layout the kit attempted to parse and
+ * could not — that keeps the warning, unchanged.
  */
 const packageDirs = (): Effect.Effect<ReadonlyArray<string>, never, WorkspaceDiscovery> =>
 	Effect.gen(function* () {
@@ -157,6 +167,11 @@ const packageDirs = (): Effect.Effect<ReadonlyArray<string>, never, WorkspaceDis
 		// at least its root package — so it is read the same way a failure is.
 		return packages.length === 0 ? ["."] : packages.map((workspacePackage) => workspacePackage.relativePath);
 	}).pipe(
+		Effect.catchTag("WorkspaceRootNotFoundError", (cause) =>
+			Effect.logDebug(
+				`No workspace root found above ${cause.searchPath}; treating the repository as a single package.`,
+			).pipe(Effect.as<ReadonlyArray<string>>(["."])),
+		),
 		Effect.catch((cause) =>
 			Effect.logWarning(
 				`Workspace discovery failed (${cause._tag}): ${cause.message}. Caching the root node_modules only; ` +

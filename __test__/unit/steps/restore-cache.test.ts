@@ -9,7 +9,13 @@ import {
 	ActionStateError,
 } from "@effected/github-actions";
 import { MemoryFileSystem } from "@effected/memfs";
-import { WorkspaceDiscovery, WorkspacePackage } from "@effected/workspaces";
+import type { WorkspaceDiscoveryFailure } from "@effected/workspaces";
+import {
+	WorkspaceDiscovery,
+	WorkspaceDiscoveryError,
+	WorkspacePackage,
+	WorkspaceRootNotFoundError,
+} from "@effected/workspaces";
 import type { FileSystem } from "effect";
 import { Effect, Layer, Logger, Option, Path, References } from "effect";
 
@@ -132,6 +138,12 @@ const makeLayer = (options: {
 	readonly fs?: Layer.Layer<FileSystem.FileSystem>;
 	/** The workspace membership discovery reports, as root-relative directories. */
 	readonly packages?: ReadonlyArray<string>;
+	/**
+	 * A failure `listPackages` reports instead of succeeding — a single-package
+	 * repository's {@link WorkspaceRootNotFoundError}, or some other discovery
+	 * failure the kit could not parse. Takes precedence over `packages`.
+	 */
+	readonly discoveryFailure?: WorkspaceDiscoveryFailure;
 }) =>
 	Layer.mergeAll(
 		// The workspace archive names each member's node_modules, so the step asks
@@ -139,7 +151,11 @@ const makeLayer = (options: {
 		// step reads as root-only — the shape every case that is not about the
 		// membership wants.
 		WorkspaceDiscovery.layerTest(
-			options.packages === undefined ? {} : { listPackages: () => Effect.succeed(discovered(options.packages ?? [])) },
+			options.discoveryFailure !== undefined
+				? { listPackages: () => Effect.fail(options.discoveryFailure as WorkspaceDiscoveryFailure) }
+				: options.packages === undefined
+					? {}
+					: { listPackages: () => Effect.succeed(discovered(options.packages ?? [])) },
 		),
 		cacheTest(options.restores ?? [], options.answer),
 		stateTest(options.saves ?? [], options.save),
@@ -568,6 +584,52 @@ describe("restoreCache", () => {
 			const plain: Array<string> = [];
 			yield* run(makeLayer({ logs: plain }));
 			assert.include(plain.join("\n"), "Cache bust: (none)");
+		}),
+	);
+
+	it.effect("treats a single-package repository as normal, with no warning", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const restores: Array<Restore> = [];
+			const state = yield* run(
+				makeLayer({
+					logs,
+					restores,
+					discoveryFailure: new WorkspaceRootNotFoundError({ searchPath: WORKSPACE, markers: [] }),
+				}),
+			);
+
+			// A plain package.json with no workspace file is the ordinary shape, so
+			// the archive is root-only just as an empty answer would be — but the
+			// diagnostic is a debug line, not a warning a consumer has to explain.
+			assert.include(restores[0]?.paths ?? [], "node_modules");
+			assert.deepStrictEqual(state.workspace.paths, restores[0]?.paths);
+			assert.notInclude(logs.join("\n"), "Workspace discovery failed");
+		}),
+	);
+
+	it.effect("still warns about a discovery failure the kit could not parse", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const restores: Array<Restore> = [];
+			const state = yield* run(
+				makeLayer({
+					logs,
+					restores,
+					discoveryFailure: new WorkspaceDiscoveryError({
+						root: WORKSPACE,
+						path: `${WORKSPACE}/packages/broken/package.json`,
+						kind: "invalidJson",
+						cause: undefined,
+					}),
+				}),
+			);
+
+			// Same root-only degradation as the single-package case — but this is a
+			// layout the kit attempted to parse and could not, so the warning stays.
+			assert.deepStrictEqual(restores[0]?.paths, state.workspace.paths);
+			assert.include(restores[0]?.paths ?? [], "node_modules");
+			assert.include(logs.join("\n"), "Workspace discovery failed");
 		}),
 	);
 
