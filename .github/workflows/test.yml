@@ -625,20 +625,62 @@ jobs:
         with:
           cache-bust: integrity-${{ matrix.case }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Assert outcome
-        shell: bash
+        id: test
+        shell: python
         env:
           EXPECT: ${{ matrix.expect }}
           OUTCOME: ${{ steps.run.outcome }}
           PM_VERSION: ${{ steps.run.outputs.package-manager-version }}
         run: |
-          echo "expected=$EXPECT outcome=$OUTCOME package-manager-version=$PM_VERSION"
-          if [ "$EXPECT" = "success" ]; then
-            # The output echoes devEngines verbatim, inline hash included.
-            [ "$OUTCOME" = "success" ] && [[ "$PM_VERSION" == 12.6.0* ]] || { echo "::error::control run did not install pnpm 12.6.0"; exit 1; }
-            pnpm --version
-          else
-            [ "$OUTCOME" = "failure" ] || { echo "::error::tampered lockfile was not refused"; exit 1; }
-          fi
+          import json, os, subprocess
+
+          expect = os.environ["EXPECT"]
+          outcome = os.environ["OUTCOME"]
+          pm_version = os.environ["PM_VERSION"]
+          print(f"expected={expect} outcome={outcome} package-manager-version={pm_version}")
+
+          def check(actual, expected, ok):
+              return {"actual": actual, "expected": expected, "status": "passed" if ok else "failed"}
+
+          results = {"outcome": check(outcome, expect, outcome == expect)}
+          if expect == "success":
+              # The output echoes devEngines verbatim, inline hash included.
+              results["package-manager-version"] = check(pm_version, "12.6.0*", pm_version.startswith("12.6.0"))
+              probe = subprocess.run("pnpm --version", shell=True, capture_output=True, text=True)
+              results["pnpm-on-path"] = check(probe.stdout.strip(), "12.6.0", probe.stdout.strip() == "12.6.0")
+          else:
+              # A refused install publishes no outputs, so a tampered case that reports a version got through.
+              results["package-manager-version"] = check(pm_version, "", pm_version == "")
+
+          passed = all(r["status"] == "passed" for r in results.values())
+          for key, r in results.items():
+              print(f"{'✅' if r['status'] == 'passed' else '❌'} {key}: expected {r['expected']!r}, got {r['actual']!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"test-passed={'true' if passed else 'false'}\n")
+              out.write(f"test-results={json.dumps(results)}\n")
+      - name: Save test results
+        if: always()
+        uses: ./.github/actions/save-test-results
+        with:
+          test-passed: ${{ steps.test.outputs.test-passed }}
+          test-results: ${{ steps.test.outputs.test-results }}
+          test-name: lockfile-integrity-${{ matrix.case }}
+          os: ubuntu-latest
+          title: 🔒 Lockfile Integrity (${{ matrix.case }})
+          fixture: node-pnpm-12
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-lockfile-integrity-${{ matrix.case }}
+          path: test-results/
+          retention-days: 1
+      - name: Fail job if test failed
+        if: always()
+        uses: ./.github/actions/fail-if-test-failed
+        with:
+          test-passed: ${{ steps.test.outputs.test-passed }}
+          test-outcome: ${{ steps.test.outcome }}
   summary:
     name: Test Summary
     runs-on: ubuntu-latest
@@ -648,6 +690,7 @@ jobs:
       - test-node-restore-cache
       - test-feature-detection
       - test-additional-inputs
+      - test-lockfile-integrity
     if: always()
     steps:
       - name: Download all test results
