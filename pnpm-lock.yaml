@@ -209,12 +209,12 @@ catalogs:
 overrides:
   '@effect/vitest>vitest': ^5.0.1
   '@microsoft/api-extractor>typescript': ^6.0.3
-  '@effected/github-actions': 0.17.0-next-20260927062352
-  '@effected/lockfiles': 0.12.0-next-20260927062352
-  '@effected/npm': 0.17.0-next-20260927062352
-  '@effected/package-json': 0.18.0-next-20260927062352
-  '@effected/sbom': 0.8.1-next-20260927062352
-  '@effected/workspaces': 0.28.0-next-20260927062352
+  '@effected/github-actions': 0.17.0-next-20260927071821
+  '@effected/lockfiles': 0.12.0-next-20260927071821
+  '@effected/npm': 0.17.0-next-20260927071821
+  '@effected/package-json': 0.18.0-next-20260927071821
+  '@effected/sbom': 0.8.1-next-20260927071821
+  '@effected/workspaces': 0.28.0-next-20260927071821
 
 importers:
 
@@ -227,23 +227,23 @@ importers:
         specifier: catalog:effected
         version: 0.9.0(effect@4.0.0-rc.117)
       '@effected/github-actions':
-        specifier: 0.17.0-next-20260927062352
-        version: 0.17.0-next-20260927062352(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+        specifier: 0.17.0-next-20260927071821
+        version: 0.17.0-next-20260927071821(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/jsonc':
         specifier: catalog:effected
         version: 0.13.0(effect@4.0.0-rc.117)
       '@effected/lockfiles':
-        specifier: 0.12.0-next-20260927062352
-        version: 0.12.0-next-20260927062352(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/npm@0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/semver@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+        specifier: 0.12.0-next-20260927071821
+        version: 0.12.0-next-20260927071821(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/npm@0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/semver@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/npm':
-        specifier: 0.17.0-next-20260927062352
-        version: 0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+        specifier: 0.17.0-next-20260927071821
+        version: 0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/semver':
         specifier: catalog:effected
         version: 0.9.0(effect@4.0.0-rc.117)
       '@effected/workspaces':
-        specifier: 0.28.0-next-20260927062352
-        version: 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+        specifier: 0.28.0-next-20260927071821
+        version: 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/yaml':
         specifier: catalog:effected
         version: 0.17.0(effect@4.0.0-rc.117)
@@ -656,8 +656,8 @@ packages:
     peerDependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/github-actions@0.17.0-next-20260927062352':
-    resolution: {integrity: sha512-zFjmwzm6OeYf+idbZGUHA9tuTMI8+yUyU1gIVpyH87IupVrLxa40s+fJrKf5M+UpfBqhyjopMXwjAZsh6wRHZg==}
+  '@effected/github-actions@0.17.0-next-20260927071821':
+    resolution: {integrity: sha512-zHQj5VgLM6hoxjsIZ9EGzjpDSx+uWNo/AHL5sbSl8JvSObGXhMDa8QkTkVwd/MYWWV5IG04iVhrxLPCjHrBVWw==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       '@effect/platform-node': 4.0.0-rc.117
@@ -687,12 +687,12 @@ packages:
     peerDependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/lockfiles@0.12.0-next-20260927062352':
-    resolution: {integrity: sha512-G/kIvjtEd3Llf7TtpE7Vz29DpYHWSrpFOGP6DcBTGhwdLY/sICawCDdjQUhGAyy9V1RFTT9OylktdVHdHwR69A==}
+  '@effected/lockfiles@0.12.0-next-20260927071821':
+    resolution: {integrity: sha512-nR9jUu5SxfxF4vSuHJYThOyWQaEOGNBRotWpreK13lT/muv+CcaSSo3zBJvj54C9pYWBmvhfRfUUVvA3N/m8Hw==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       '@effected/jsonc': ^0.13.0
-      '@effected/npm': 0.17.0-next-20260927062352
+      '@effected/npm': 0.17.0-next-20260927071821
       '@effected/semver': ^0.9.0
       '@effected/yaml': ^0.17.0
       effect: 4.0.0-rc.117
@@ -733,21 +733,21 @@ packages:
     peerDependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/npm@0.17.0-next-20260927062352':
-    resolution: {integrity: sha512-gs3qL0Z1meAPO91bbEOpa3Qgv8WTPIgCi6xXVoCkzDl6R0bWbLADF3kmDdvX4v+iD+oZtljwd3RxCOWZIaczXw==}
+  '@effected/npm@0.17.0-next-20260927071821':
+    resolution: {integrity: sha512-rqUPauNIiuGLO30edEru3A/zRGE/kQicNV2pyTQLvUBleieGei+mifRtybQ9TF6b5L8G9n1ratJdmL203Bo69g==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       '@effected/semver': ^0.9.0
       effect: 4.0.0-rc.117
 
-  '@effected/package-json@0.18.0-next-20260927062352':
-    resolution: {integrity: sha512-6Rr8iY7kFAldQpj0s5BBf5PzPXwTtK9v3zlj5+PUN4Aw7Jo/o1CUx6n2oyUEhb0Mywm2FJEKy/zQLToLKP1BMA==}
+  '@effected/package-json@0.18.0-next-20260927071821':
+    resolution: {integrity: sha512-xU608bDzSnHps69RAQK/HNdYrNTNTONGxDN9ULB6QG79xsjawL/vUD6BxNk0/L6iqlIDxCoEHaiW/STG0L7VTA==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/sbom@0.8.1-next-20260927062352':
-    resolution: {integrity: sha512-DXMBNF9QlIrQ2nnSWzi/vjQlHtOTuLzwel+vflbxpjQvCqc4LxnWq15+K9PtzEgnMsQviTQwc02j12Lxoa7jKw==}
+  '@effected/sbom@0.8.1-next-20260927071821':
+    resolution: {integrity: sha512-oPKuDcH36h5JVCTZ9aKjPDPXNJd8w4m0JJWMS2a8GX64ytf/IHEbtQCGip9kknB1veDJlQGn9f+nyQAufW898Q==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       effect: 4.0.0-rc.117
@@ -795,8 +795,8 @@ packages:
       '@effected/glob': ^0.8.0
       effect: 4.0.0-rc.117
 
-  '@effected/workspaces@0.28.0-next-20260927062352':
-    resolution: {integrity: sha512-ENxTkBuYktzU+aMq8XwqnzXuxY9e2g6GCYdhwCG6zZnkJ7YXVud/L38dri0O75hFuMo/Q2vsiPx19Rq3MFZfiA==}
+  '@effected/workspaces@0.28.0-next-20260927071821':
+    resolution: {integrity: sha512-kPt+aaFN1bY2Wd/l2BzFhjE6T2aqnLGWr6vhpqlk6lfDH9WS3gKmz36MBW+9cle1bYMjxhImC1332qpacmClSQ==}
     engines: {node: '>=24.11.0'}
     peerDependencies:
       effect: 4.0.0-rc.117
@@ -1428,7 +1428,7 @@ packages:
     resolution: {integrity: sha512-xTA1rCTiV73Q8eJ6o6tO4mqmFl06l6ulZbsaJYNuKt96E/7GGYnM7WeNS/nKBKQEJ7Xfvy6Y/yCeJFMoE4UlKg==}
     peerDependencies:
       '@effected/templates': ^0.8.0
-      '@effected/workspaces': 0.28.0-next-20260927062352
+      '@effected/workspaces': 0.28.0-next-20260927071821
       effect: 4.0.0-rc.117
 
   '@savvy-web/silk-effects@9.1.4':
@@ -1437,7 +1437,7 @@ packages:
       '@effected/commands': ^0.9.0
       '@effected/git': ^0.17.0
       '@effected/templates': ^0.8.0
-      '@effected/workspaces': 0.28.0-next-20260927062352
+      '@effected/workspaces': 0.28.0-next-20260927071821
       effect: 4.0.0-rc.117
 
   '@savvy-web/silk@4.2.10':
@@ -3723,15 +3723,15 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/github-actions@0.17.0-next-20260927062352(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
+  '@effected/github-actions@0.17.0-next-20260927071821(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
     dependencies:
       '@azure/storage-blob': 12.34.0
       '@effect/platform-node': 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)
       '@effected/github': 0.13.0(effect@4.0.0-rc.117)
       '@effected/glob': 0.8.0(effect@4.0.0-rc.117)
       '@effected/markdown': 0.12.1(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/npm': 0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/sbom': 0.8.1-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/npm': 0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/sbom': 0.8.1-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/semver': 0.9.0(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
       '@effected/walker': 0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
@@ -3767,10 +3767,10 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/lockfiles@0.12.0-next-20260927062352(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/npm@0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/semver@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
+  '@effected/lockfiles@0.12.0-next-20260927071821(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/npm@0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/semver@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
     dependencies:
       '@effected/jsonc': 0.13.0(effect@4.0.0-rc.117)
-      '@effected/npm': 0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/npm': 0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/semver': 0.9.0(effect@4.0.0-rc.117)
       '@effected/yaml': 0.17.0(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
@@ -3797,23 +3797,23 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.117
 
-  '@effected/npm@0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
+  '@effected/npm@0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
     dependencies:
       '@effected/commands': 0.9.0(effect@4.0.0-rc.117)
       '@effected/semver': 0.9.0(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
 
-  '@effected/package-json@0.18.0-next-20260927062352(effect@4.0.0-rc.117)':
+  '@effected/package-json@0.18.0-next-20260927071821(effect@4.0.0-rc.117)':
     dependencies:
       '@effected/jsonc': 0.13.0(effect@4.0.0-rc.117)
-      '@effected/npm': 0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/npm': 0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/semver': 0.9.0(effect@4.0.0-rc.117)
       '@effected/spdx': 0.9.0(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
 
-  '@effected/sbom@0.8.1-next-20260927062352(effect@4.0.0-rc.117)':
+  '@effected/sbom@0.8.1-next-20260927071821(effect@4.0.0-rc.117)':
     dependencies:
-      '@effected/package-json': 0.18.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/package-json': 0.18.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/spdx': 0.9.0(effect@4.0.0-rc.117)
       '@sigstore/bundle': 5.0.0
       '@sigstore/sign': 5.0.0
@@ -3853,15 +3853,15 @@ snapshots:
       '@effected/glob': 0.8.0(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
 
-  '@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117)':
+  '@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117)':
     dependencies:
       '@effected/commands': 0.9.0(effect@4.0.0-rc.117)
       '@effected/git': 0.17.0(effect@4.0.0-rc.117)
       '@effected/glob': 0.8.0(effect@4.0.0-rc.117)
       '@effected/jsonc': 0.13.0(effect@4.0.0-rc.117)
-      '@effected/lockfiles': 0.12.0-next-20260927062352(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/npm@0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/semver@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/npm': 0.17.0-next-20260927062352(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/package-json': 0.18.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/lockfiles': 0.12.0-next-20260927071821(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/npm@0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/semver@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/npm': 0.17.0-next-20260927071821(@effected/semver@0.9.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/package-json': 0.18.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/semver': 0.9.0(effect@4.0.0-rc.117)
       '@effected/walker': 0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/yaml': 0.17.0(effect@4.0.0-rc.117)
@@ -4406,8 +4406,8 @@ snapshots:
       '@effected/commands': 0.9.0(effect@4.0.0-rc.117)
       '@effected/git': 0.17.0(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
-      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
+      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
     transitivePeerDependencies:
       - supports-color
@@ -4421,9 +4421,9 @@ snapshots:
       '@effected/git': 0.17.0(effect@4.0.0-rc.117)
       '@effected/jsonc': 0.13.0(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/yaml': 0.17.0(effect@4.0.0-rc.117)
-      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
     transitivePeerDependencies:
       - '@effected/config-file'
@@ -4457,8 +4457,8 @@ snapshots:
       '@effected/git': 0.17.0(effect@4.0.0-rc.117)
       '@effected/mcp': 0.2.0(@effected/engine@0.1.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
-      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
+      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
     transitivePeerDependencies:
       - bufferutil
@@ -4466,14 +4466,14 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@savvy-web/silk-core@0.4.6(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
+  '@savvy-web/silk-core@0.4.6(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
     dependencies:
       '@effected/github-references': 0.5.0(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
 
-  '@savvy-web/silk-effects@9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
+  '@savvy-web/silk-effects@9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)':
     dependencies:
       '@changesets/apply-release-plan': 8.1.1
       '@changesets/changelog-git': 1.0.0
@@ -4486,14 +4486,14 @@ snapshots:
       '@effected/glob': 0.8.0(effect@4.0.0-rc.117)
       '@effected/jsonc': 0.13.0(effect@4.0.0-rc.117)
       '@effected/markdown': 0.12.1(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/package-json': 0.18.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/package-json': 0.18.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
       '@effected/toml': 0.9.0(effect@4.0.0-rc.117)
       '@effected/walker': 0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/yaml': 0.17.0(effect@4.0.0-rc.117)
       '@manypkg/get-packages': 3.1.0
-      '@savvy-web/silk-core': 0.4.6(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@savvy-web/silk-core': 0.4.6(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       effect: 4.0.0-rc.117
       mdast-util-heading-range: 4.0.0
       mdast-util-to-string: 4.0.0
@@ -4515,11 +4515,11 @@ snapshots:
       '@effected/commands': 0.9.0(effect@4.0.0-rc.117)
       '@effected/git': 0.17.0(effect@4.0.0-rc.117)
       '@effected/templates': 0.8.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@savvy-web/changelog': 1.0.8
       '@savvy-web/cli': 3.4.0(@effected/config-file@0.12.0(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/walker@0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(redis@6.2.1)
       '@savvy-web/mcp': 3.4.0(redis@6.2.1)
-      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927062352(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
+      '@savvy-web/silk-effects': 9.1.4(@effected/commands@0.9.0(effect@4.0.0-rc.117))(@effected/git@0.17.0(effect@4.0.0-rc.117))(@effected/templates@0.8.0(effect@4.0.0-rc.117))(@effected/workspaces@0.28.0-next-20260927071821(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@types/bun': 1.4.2
       '@types/node': 26.6.3
       '@vitest/coverage-istanbul': 5.0.2(vitest@5.0.2)
@@ -4719,7 +4719,7 @@ snapshots:
       '@effect/sql-sqlite-node': 4.0.0-rc.117(effect@4.0.0-rc.117)
       '@effected/cli': 0.9.0(@effected/config-file@0.12.0(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/walker@0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/engine': 0.1.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@vitest-agent/engine': 0.2.7(redis@6.2.1)
       '@vitest-agent/sdk': 5.1.2
       '@vitest-agent/sidecar': 2.2.2
@@ -4740,7 +4740,7 @@ snapshots:
       '@effected/jsonc': 0.13.0(effect@4.0.0-rc.117)
       '@effected/toml': 0.9.0(effect@4.0.0-rc.117)
       '@effected/walker': 0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@effected/xdg': 0.7.0(@effected/config-file@0.12.0(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/walker@0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/walker@0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(effect@4.0.0-rc.117)
       '@effected/yaml': 0.17.0(effect@4.0.0-rc.117)
       '@vitest-agent/sdk': 5.1.2
@@ -4770,7 +4770,7 @@ snapshots:
     dependencies:
       '@effect/platform-node': 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)
       '@effected/glob': 0.8.0(effect@4.0.0-rc.117)
-      '@effected/workspaces': 0.28.0-next-20260927062352(effect@4.0.0-rc.117)
+      '@effected/workspaces': 0.28.0-next-20260927071821(effect@4.0.0-rc.117)
       '@vitest-agent/cli': 3.2.0(@effected/config-file@0.12.0(@effected/jsonc@0.13.0(effect@4.0.0-rc.117))(@effected/toml@0.9.0(effect@4.0.0-rc.117))(@effected/walker@0.12.0(@effected/glob@0.8.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(@effected/yaml@0.17.0(effect@4.0.0-rc.117))(effect@4.0.0-rc.117))(redis@6.2.1)
       '@vitest-agent/engine': 0.2.7(redis@6.2.1)
       '@vitest-agent/mcp': 5.0.0(redis@6.2.1)(vitest@5.0.2)

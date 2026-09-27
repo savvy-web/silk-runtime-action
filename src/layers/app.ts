@@ -39,11 +39,23 @@ import { Layer } from "effect";
  * the action resolves a workspace root, so there is no second consumer to keep
  * it visible for. Both are memoized per layer, so the discovery walk happens
  * once however many times the step asks.
+ *
+ * `stopAt: "."` caps the upward search at the checkout, so discovery never
+ * steps outside it. Without the cap, a single-package checkout sitting inside
+ * a directory with its own `pnpm-workspace.yaml` or `workspaces` manifest (a
+ * self-hosted runner, or `actions/checkout` with a nested `path:`) adopted
+ * that outer workspace, and its member list became cache paths joined onto
+ * this checkout. The ceiling is relative and inclusive, and is resolved when
+ * the lookup runs, the same way the default `cwd` is, so it always names the
+ * directory the action runs in. A checkout that is its own workspace root
+ * still resolves. Finding nothing below the ceiling is
+ * `WorkspaceRootNotFoundError`, which `restoreCache` reads as a
+ * single-package repository.
  */
 export const MainLive = Layer.mergeAll(
 	ActionCache.layer,
 	PackageManagerInstaller.layer,
-	WorkspaceDiscovery.layer().pipe(Layer.provide(WorkspaceRoot.layer)),
+	WorkspaceDiscovery.layer({ stopAt: "." }).pipe(Layer.provide(WorkspaceRoot.layer)),
 ).pipe(Layer.provideMerge(ToolInstaller.layer));
 
 /**
