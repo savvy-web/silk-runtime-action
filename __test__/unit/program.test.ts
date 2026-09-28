@@ -19,8 +19,8 @@ import { MemoryFileSystem } from "@effected/memfs";
 import { WorkspaceDiscovery } from "@effected/workspaces";
 import type { FileSystem } from "effect";
 import { Cause, Effect, Exit, Layer, Logger, Option, Path, Sink, Stream } from "effect";
-import { HttpClient } from "effect/unstable/http";
-import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
+import { HttpClient } from "effect/http";
+import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/process";
 
 import { BATS_CORE_VERSION } from "../../src/descriptors/bats.js";
 import { KCOV_VERSION } from "../../src/descriptors/kcov.js";

@@ -7,8 +7,8 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: cecd892a1a345d90ee77d0bcac051b0db08bcd7f4794194bd456e01609dad2e7
+  at: 2026-09-28T21:44:52Z
+  body_sha256: fac5151e16ca871c81c94ee0844dcaa5757dcb1d73232f71918c38ac8ebb4ddc
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -329,7 +329,7 @@ sentinels so downstream code sees a plain `Option`.
 - `Schema.Literals([...])` for literal unions; `Schema.NonEmptyArray`,
   `Schema.optionalKey`, `Schema.OptionFromNullOr`.
 - `Result` (not `Either`) is what descriptors and `readServerConfig` return.
-- `ChildProcessSpawner` and `ChildProcess` live in `effect/unstable/process`.
+- `ChildProcessSpawner` and `ChildProcess` live in `effect/process`.
 - Platform abstractions (`FileSystem`, `Path`, `Stream`, `HttpClient`) import from core
   `effect`; only `NodeFileSystem` / `NodeHttpClient` come from `@effect/platform-node`.
 - Services are class-based `Context.Service` with exported `*Shape` companion types — but

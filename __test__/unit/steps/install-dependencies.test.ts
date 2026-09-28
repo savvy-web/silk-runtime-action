@@ -4,7 +4,7 @@ import { ActionLogger } from "@effected/github-actions";
 import { MemoryFileSystem } from "@effected/memfs";
 import type { FileSystem } from "effect";
 import { Effect, Layer, Logger, Option, PlatformError, Sink, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import type { PackageManagerName } from "../../../src/schema/domain.js";
 import { InstallError, installDependencies } from "../../../src/steps/install-dependencies.js";

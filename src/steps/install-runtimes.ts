@@ -1,6 +1,6 @@
 import { ActionLogger, ActionOutputs, ToolInstaller } from "@effected/github-actions";
 import { Data, Effect, Option, Path, Result } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { bun } from "../descriptors/bun.js";
 import { deno } from "../descriptors/deno.js";

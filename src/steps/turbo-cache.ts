@@ -7,7 +7,7 @@ import type { ActionOutputError, DetachedProcessOps } from "@effected/github-act
 import { ActionOutputs, ActionState, DetachedProcess, Secret } from "@effected/github-actions";
 import type { Redacted } from "effect";
 import { Data, Effect, Option } from "effect";
-import type { HttpClient } from "effect/unstable/http";
+import type { HttpClient } from "effect/http";
 
 import type { Inputs } from "../schema/inputs.js";
 import { STATE_KEYS, TurboServerState } from "../state.js";
