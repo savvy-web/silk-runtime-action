@@ -1,7 +1,7 @@
 import { ActionLogger, ChildEnv } from "@effected/github-actions";
 import type { PlatformError } from "effect";
 import { Data, Effect, FileSystem, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import type { PackageManagerName } from "../schema/domain.js";
 import type { ActivatedPackageManager } from "./setup-package-manager.js";

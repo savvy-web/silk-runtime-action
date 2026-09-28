@@ -3,9 +3,9 @@ import { ActionCache, ActionEnvironment, PackageManagerInstaller, ToolInstaller 
 import { MemoryFileSystem } from "@effected/memfs";
 import type { FileSystem } from "effect";
 import { Effect, Layer, Path } from "effect";
-import type { HttpClient } from "effect/unstable/http";
-import { FetchHttpClient } from "effect/unstable/http";
-import { ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/unstable/process";
+import type { HttpClient } from "effect/http";
+import { FetchHttpClient } from "effect/http";
+import { ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/process";
 
 import { MainLive, PostLive } from "../../src/layers/app.js";
 

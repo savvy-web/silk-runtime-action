@@ -9,8 +9,8 @@ import { Run } from "@effected/commands";
 import type { ActionLogger } from "@effected/github-actions";
 import { ActionCache, ActionOutputs, ActionState, ToolInstaller } from "@effected/github-actions";
 import { Data, Effect, FileSystem, Option, Path, Result } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
-import { ChildProcess } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
+import { ChildProcess } from "effect/process";
 
 import type { KcovPlan } from "../descriptors/kcov.js";
 import { KCOV_VERSION, kcov, kcovCacheKey } from "../descriptors/kcov.js";

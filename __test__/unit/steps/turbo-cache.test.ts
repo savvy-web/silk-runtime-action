@@ -15,8 +15,8 @@ import {
 	ProcessId,
 } from "@effected/github-actions";
 import { Effect, FileSystem, Layer, Logger, Option, Redacted } from "effect";
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import { ChildProcessSpawner } from "effect/process";
 
 import type { Inputs } from "../../../src/schema/inputs.js";
 import { STATE_KEYS, TurboServerState } from "../../../src/state.js";

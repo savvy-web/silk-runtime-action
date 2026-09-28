@@ -7,8 +7,8 @@ import {
 	ToolInstallerError,
 } from "@effected/github-actions";
 import { Effect, Layer, Logger, Option, Path, Stream } from "effect";
-import type { ChildProcess } from "effect/unstable/process";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import type { ChildProcess } from "effect/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import { RuntimeConfig } from "../../../src/schema/domain.js";
 import type { Host } from "../../../src/steps/install-runtimes.js";

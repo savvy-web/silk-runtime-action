@@ -9,8 +9,8 @@ import { Run } from "@effected/commands";
 import type { ActionLogger, ToolInstallerError } from "@effected/github-actions";
 import { ActionOutputs, ToolInstaller } from "@effected/github-actions";
 import { Data, Effect, FileSystem, Option, Path } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
-import { ChildProcess } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
+import { ChildProcess } from "effect/process";
 
 import type { BatsLibraryPlan } from "../descriptors/bats.js";
 import { batsCorePlan, batsLibraryPlans } from "../descriptors/bats.js";
