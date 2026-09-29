@@ -1,5 +1,17 @@
 # @savvy-web/silk-runtime-action
 
+## 1.8.2
+
+### Features
+
+- Bump to latest effected kit version [#446][#446]
+
+### Thanks
+
+Thanks to [@spencerbeggs](https://github.com/spencerbeggs) for their contributions!
+
+[#446]: https://github.com/savvy-web/silk-runtime-action/pull/446
+
 ## 1.8.1
 
 ### Dependencies
