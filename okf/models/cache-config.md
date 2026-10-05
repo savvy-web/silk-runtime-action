@@ -8,8 +8,8 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: 923636e5c9e90a2d1ce75de668be28a7e7b144b7e24ca5b0449fbcf6f64bc02d
+  at: 2026-10-05T21:46:04Z
+  body_sha256: f6338338b287398b18752a59828bb5bf862188ea0f7756dc2e9750f9b17854fa
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -90,6 +90,11 @@ export const RESTORE_DEPTHS = [4, 3] as const;
 | primary | `{plat}-{arch}-{ver}-{branch}-{lock}` | Exact |
 | 4 | `{plat}-{arch}-{ver}-{branch}-` | Same branch, any lockfile content |
 | 3 | `{plat}-{arch}-{ver}-` | Any branch, same tool versions |
+
+A depth-3 hit whose lockfile digest equals the primary's — the key differs **only** in
+`{branch}` — is treated by `post` as nothing-to-save (`differsOnlyByBranch`,
+`cache-config.ts`): the run reports `partial` and archives nothing. Every other partial hit
+is still saved under the primary key.
 
 Two rungs, not the default every-prefix ladder `CacheKey` derives — the default's remaining
 rungs (`linux-x64-`, `linux-`) drop the *version* digest, and a cache built for a different

@@ -158,6 +158,38 @@ export const turboCacheOutputs = (
 });
 
 /**
+ * Whether the turbo remote cache has to be up before the dependency install
+ * rather than after everything else.
+ *
+ * @remarks
+ * The cache step's default position is last, because a later start shortens the
+ * window in which a detached child holds the runner's short-lived
+ * `ACTIONS_RUNTIME_TOKEN`. That position rests on nothing earlier consuming the
+ * turbo environment, and an install that runs lifecycle scripts breaks the
+ * premise: in a Silk workspace every package depended on through `workspace:*`
+ * carries `"prepare": "turbo run build:dev"`, so the install *is* one turbo
+ * build per package. Started last, the server did not exist yet and every one
+ * of those builds ran with remote caching disabled — 35 of 35 in the effected
+ * jobs that prompted this, at 60–80s of install against roughly 10s when a
+ * local turbo cache happened to be restored instead.
+ *
+ * So the early start is taken exactly when something during the install can
+ * use it, and the late start — with its narrower token window — stays for every
+ * other run: no `turbo.json`, a skipped install, `ignore-scripts`, or deno,
+ * whose install this action never runs.
+ *
+ * A pure function for the reason {@link turboCacheOutputs} is: the step spawns,
+ * so a program run cannot exercise the embedded rows, and the decision is the
+ * part worth pinning without one.
+ */
+export const turboCacheBeforeInstall = (run: {
+	readonly turboEnabled: boolean;
+	readonly installDeps: boolean;
+	readonly ignoreScripts: boolean;
+	readonly packageManager: string;
+}): boolean => run.turboEnabled && run.installDeps && !run.ignoreScripts && run.packageManager !== "deno";
+
+/**
  * How the dependency cache restore went, in the three words `cache-hit` is
  * documented to take.
  *
@@ -237,10 +269,25 @@ export const program = Effect.gen(function* () {
 	// `ran` is *truthful* — false for deno, for a disabled install, and for
 	// nothing else — where v1 echoed the raw input back and so reported deno's
 	// skipped install as done (oracle 44, quirk 52).
+	//
+	// The turbo cache is started here, ahead of the install, only when the
+	// install's lifecycle scripts can use it — see `turboCacheBeforeInstall`.
+	// Its environment is handed to the install child directly: `exportVariable`
+	// reaches later workflow steps and never a child of this one.
+	const startTurbo = logger.group("Start turbo remote cache", startTurboCache({ inputs, turbo }));
+	const earlyTurboCache = turboCacheBeforeInstall({
+		turboEnabled: turbo.enabled,
+		installDeps: inputs.installDeps,
+		ignoreScripts: inputs.ignoreScripts,
+		packageManager: activated.name,
+	})
+		? Option.some(yield* startTurbo)
+		: Option.none<StartedTurboCache>();
 	const dependencies = yield* logger.group(
 		"Install dependencies",
 		installDependencies(activated, inputs.installDeps, installPathPrepends(activated, runtimes), {
 			ignoreScripts: inputs.ignoreScripts,
+			env: Option.match(earlyTurboCache, { onNone: () => ({}), onSome: (started) => started.environment }),
 		}),
 	);
 	// Biome is optional, so a failed install degrades to a warning and the run
@@ -281,10 +328,11 @@ export const program = Effect.gen(function* () {
 			),
 		),
 	);
-	// Last in the pipeline deliberately: nothing above consumes the turbo
-	// environment, and a later start shortens the window in which a detached
-	// child holds the runner's short-lived `ACTIONS_RUNTIME_TOKEN`.
-	const turboCache = yield* logger.group("Start turbo remote cache", startTurboCache({ inputs, turbo }));
+	// Last in the pipeline unless the install needed it first: on every other
+	// run nothing above consumes the turbo environment, and a later start
+	// shortens the window in which a detached child holds the runner's
+	// short-lived `ACTIONS_RUNTIME_TOKEN`.
+	const turboCache = Option.isSome(earlyTurboCache) ? earlyTurboCache.value : yield* startTurbo;
 
 	const node = runtimeOutputs(runtimes, "node");
 	const bun = runtimeOutputs(runtimes, "bun");

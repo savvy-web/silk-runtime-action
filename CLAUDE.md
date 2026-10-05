@@ -242,7 +242,9 @@ Where a topic lives:
 Step order: `load-config` → `detect-biome` → `detect-turbo` → `detect-bats` →
 `restore-cache` → `install-runtimes` → `setup-package-manager` → `install-dependencies` →
 `install-biome` → `install-bats` → `install-kcov` → `turbo-cache` → `summary`;
-`cache-config` supplies the key/path derivation.
+`cache-config` supplies the key/path derivation. `turbo-cache` moves to just before
+`install-dependencies` when a `turbo.json` is present and the install will run lifecycle
+scripts, so `prepare` builds reach the remote cache.
 
 ## Action Inputs
 

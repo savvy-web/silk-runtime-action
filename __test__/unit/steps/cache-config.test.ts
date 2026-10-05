@@ -12,6 +12,7 @@ import {
 	activePackageManagers,
 	cachePaths,
 	defaultToolCacheBase,
+	differsOnlyByBranch,
 	keySegments,
 	lockfilePatterns,
 	storeCachePaths,
@@ -529,5 +530,56 @@ describe("RESTORE_DEPTHS", () => {
 		const segments = CacheKey.of("linux", "x64", "aaaaaaaa", "bbbbbbbb", "cccccccc");
 		assert.lengthOf(segments.restoreKeys, 4);
 		assert.lengthOf(segments.withRestoreDepths(RESTORE_DEPTHS).restoreKeys, 2);
+	});
+});
+
+describe("differsOnlyByBranch", () => {
+	const primary = "linux-x64-aaaaaaaa-bbbbbbbb-cccccccc";
+
+	it("is true for the same key under another branch's digest", () => {
+		assert.isTrue(differsOnlyByBranch(primary, "linux-x64-aaaaaaaa-dddddddd-cccccccc"));
+	});
+
+	it("is false when any segment but the branch differs", () => {
+		assert.isFalse(differsOnlyByBranch(primary, "darwin-x64-aaaaaaaa-dddddddd-cccccccc"));
+		assert.isFalse(differsOnlyByBranch(primary, "linux-arm64-aaaaaaaa-dddddddd-cccccccc"));
+		// A different version digest is a different runtime, manager or install policy.
+		assert.isFalse(differsOnlyByBranch(primary, "linux-x64-eeeeeeee-dddddddd-cccccccc"));
+		// The depth-4 rung: this branch, an older lockfile.
+		assert.isFalse(differsOnlyByBranch(primary, "linux-x64-aaaaaaaa-bbbbbbbb-eeeeeeee"));
+		assert.isFalse(differsOnlyByBranch(primary, "linux-x64-aaaaaaaa-dddddddd-eeeeeeee"));
+	});
+
+	it("is false without a lockfile digest to vouch for the trees", () => {
+		// Two runs that hashed nothing agree on the literal and on nothing else.
+		assert.isFalse(
+			differsOnlyByBranch(
+				`linux-x64-aaaaaaaa-bbbbbbbb-${EMPTY_LOCKFILE_SEGMENT}`,
+				`linux-x64-aaaaaaaa-dddddddd-${EMPTY_LOCKFILE_SEGMENT}`,
+			),
+		);
+	});
+
+	it("is false for a key of any other shape", () => {
+		assert.isFalse(differsOnlyByBranch(primary, "store-linux-x64-aaaaaaaa-cccccccc-extra"));
+		assert.isFalse(differsOnlyByBranch(primary, "linux-x64-aaaaaaaa-cccccccc"));
+	});
+
+	it("agrees with the keys keySegments actually builds", () => {
+		const base = {
+			platform: "linux",
+			arch: "x64",
+			tools: [{ name: "node", version: "24.11.0" }],
+			packageManager: { name: "pnpm", version: "10.20.0" },
+			lockfileHash: Option.some("0123456789abcdef"),
+			cacheBust: Option.none<string>(),
+			install: { deps: true, ignoreScripts: false },
+		};
+		const key = (branch: string, overrides: object = {}) =>
+			CacheKey.of(...keySegments({ ...base, branch, ...overrides })).key;
+
+		assert.isTrue(differsOnlyByBranch(key("feat/a"), key("main")));
+		assert.isFalse(differsOnlyByBranch(key("feat/a"), key("main", { lockfileHash: Option.some("fedcba9876543210") })));
+		assert.isFalse(differsOnlyByBranch(key("feat/a"), key("main", { install: { deps: true, ignoreScripts: true } })));
 	});
 });

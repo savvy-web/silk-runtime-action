@@ -22,6 +22,7 @@ import { Effect, FileSystem, Option } from "effect";
 
 import { PostLive } from "./layers/app.js";
 import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState, isExactHit } from "./state.js";
+import { differsOnlyByBranch } from "./steps/cache-config.js";
 import { CacheError } from "./steps/restore-cache.js";
 
 /**
@@ -31,8 +32,15 @@ import { CacheError } from "./steps/restore-cache.js";
  * Saved on a partial restore as well as a miss, and always under the *primary*
  * key rather than whichever key matched: a partial restore left the archive
  * short of what this run installed, so the key this run asked for is the one
- * that has to end up populated. Only an exact hit skips — that archive is
- * already what this run would write, and cache entries are immutable anyway.
+ * that has to end up populated. An exact hit skips — that archive is already
+ * what this run would write, and cache entries are immutable anyway.
+ *
+ * One partial restore skips too: an entry that differs from the primary key
+ * only in its branch segment. Same tool versions, same install policy, same
+ * lockfile digest — the install had nothing to add to it, so re-archiving it
+ * under this branch's name buys a second copy of the same trees. The run still
+ * reports `cache-hit: partial`, on this run and every later one on the branch,
+ * because that is what the restore was. See `differsOnlyByBranch`.
  *
  * Legacy read the state back and re-checked the same flag inside its save
  * (oracle 35); one guard, here, is the whole of it.
@@ -51,6 +59,12 @@ const saveDependencyCache = (saved: CacheState) =>
 	Effect.gen(function* () {
 		if (isExactHit(saved)) {
 			yield* Effect.logInfo("Cache was an exact hit — skipping save");
+			return;
+		}
+		if (Option.isSome(saved.restoredKey) && differsOnlyByBranch(saved.primaryKey, saved.restoredKey.value)) {
+			yield* Effect.logInfo(
+				`Cache was restored from another branch's entry for the same lockfile (${saved.restoredKey.value}) — skipping save`,
+			);
 			return;
 		}
 		if (saved.paths.length === 0) {

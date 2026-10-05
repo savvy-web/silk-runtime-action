@@ -24,7 +24,7 @@ import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effe
 
 import { BATS_CORE_VERSION } from "../../src/descriptors/bats.js";
 import { KCOV_VERSION } from "../../src/descriptors/kcov.js";
-import { program, turboCacheOutputs } from "../../src/program.js";
+import { program, turboCacheBeforeInstall, turboCacheOutputs } from "../../src/program.js";
 import { OUTPUT_NAMES } from "../../src/schema/outputs.js";
 import type { StartedTurboCache } from "../../src/steps/turbo-cache.js";
 
@@ -752,16 +752,82 @@ describe("program", () => {
 		// can only reach the `off` row, and the other three rows differ only in
 		// what this function is handed.
 		const rows: ReadonlyArray<readonly [StartedTurboCache, string, string]> = [
-			[{ backend: "none", port: Option.none(), state: Option.none() }, "none", ""],
-			[{ backend: "remote", port: Option.none(), state: Option.none() }, "remote", ""],
-			[{ backend: "github", port: Option.some(41230), state: Option.none() }, "github", "41230"],
-			[{ backend: "s3", port: Option.some(41230), state: Option.none() }, "s3", "41230"],
+			[{ backend: "none", port: Option.none(), state: Option.none(), environment: {} }, "none", ""],
+			[{ backend: "remote", port: Option.none(), state: Option.none(), environment: {} }, "remote", ""],
+			[{ backend: "github", port: Option.some(41230), state: Option.none(), environment: {} }, "github", "41230"],
+			[{ backend: "s3", port: Option.some(41230), state: Option.none(), environment: {} }, "s3", "41230"],
 		];
 		for (const [started, backend, port] of rows) {
 			assert.deepStrictEqual(turboCacheOutputs(started), { turboCacheBackend: backend, turboCachePort: port });
 		}
 		return Effect.void;
 	});
+
+	it.effect("starts the turbo cache ahead of the install only when lifecycle scripts can use it", () => {
+		const run = { turboEnabled: true, installDeps: true, ignoreScripts: false, packageManager: "pnpm" };
+		assert.isTrue(turboCacheBeforeInstall(run));
+		// Every other run keeps the late start, and with it the narrower window in
+		// which a detached child holds the runner's `ACTIONS_RUNTIME_TOKEN`.
+		assert.isFalse(turboCacheBeforeInstall({ ...run, turboEnabled: false }));
+		assert.isFalse(turboCacheBeforeInstall({ ...run, installDeps: false }));
+		assert.isFalse(turboCacheBeforeInstall({ ...run, ignoreScripts: true }));
+		assert.isFalse(turboCacheBeforeInstall({ ...run, packageManager: "deno" }));
+		return Effect.void;
+	});
+
+	/**
+	 * Runs the program over a workspace with a `turbo.json` and Vercel
+	 * passthrough credentials — the one turbo resolution that exports an
+	 * environment without spawning a detached child, and so the one a program
+	 * run can reach.
+	 */
+	const runPassthrough = Effect.fnUntraced(function* (extraInputs: Record<string, string> = {}) {
+		const spawns: Array<Spawned> = [];
+		const events: Array<string> = [];
+		yield* program.pipe(
+			Effect.provide(
+				makeLayer(
+					{
+						set: () => Effect.void,
+						setSecret: () => Effect.void,
+						exportVariable: (name) => Effect.sync(() => void events.push(`export ${name}`)),
+					},
+					undefined,
+					{
+						directory: { turbo: true },
+						spawns,
+						inputs: ActionInput.layer({ "turbo-token": "vercel-token", "turbo-team": "acme", ...extraInputs }),
+					},
+				),
+			),
+		);
+		return { install: spawns.find((spawned) => spawned.args[0] === "install"), events };
+	});
+
+	it.effect("hands the install's child the turbo environment its lifecycle scripts build with", () =>
+		Effect.gen(function* () {
+			const { install, events } = yield* runPassthrough();
+
+			// A `prepare` script running `turbo` is a child of the install, and the
+			// variables `exportVariable` wrote reach only later workflow steps.
+			assert.strictEqual(install?.env?.TURBO_TOKEN, "vercel-token");
+			assert.strictEqual(install?.env?.TURBO_TEAM, "acme");
+			// Started once, not once per position.
+			assert.deepStrictEqual(events, ["export TURBO_TOKEN", "export TURBO_TEAM"]);
+		}),
+	);
+
+	it.effect("keeps the turbo environment out of an install that runs no lifecycle scripts", () =>
+		Effect.gen(function* () {
+			const { install, events } = yield* runPassthrough({ "ignore-scripts": "true" });
+
+			assert.isTrue(install?.args.includes("--ignore-scripts"));
+			assert.isUndefined(install?.env?.TURBO_TOKEN);
+			assert.isUndefined(install?.env?.TURBO_TEAM);
+			// The cache still starts — last, for the consumer's later steps.
+			assert.deepStrictEqual(events, ["export TURBO_TOKEN", "export TURBO_TEAM"]);
+		}),
+	);
 
 	it.effect("leaves every other output at its all-disabled default", () =>
 		Effect.gen(function* () {

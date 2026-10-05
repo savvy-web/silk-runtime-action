@@ -27,7 +27,7 @@ const facts = (overrides: Partial<SummaryFacts> = {}): SummaryFacts => ({
 		restoredKey: Option.some("silk-linux-x64-abc"),
 		lockfiles: ["pnpm-lock.yaml"],
 	}),
-	turboCache: { backend: "github", port: Option.some(41230), state: Option.none() },
+	turboCache: { backend: "github", port: Option.some(41230), state: Option.none(), environment: {} },
 	dependenciesInstalled: true,
 	bats: Option.none(),
 	kcov: Option.none(),

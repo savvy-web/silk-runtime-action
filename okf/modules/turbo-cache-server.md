@@ -7,8 +7,8 @@ kind: action
 resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: 402112dcb52977f34346a90016beb73e33b1684d14492f4dd883bb77d18d9a8d
+  at: 2026-10-05T21:46:04Z
+  body_sha256: f4f99a901d8ab871c7bec8b730890da755e2d4dd0dd9a559ae711456a97f9322
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -105,7 +105,7 @@ the two answers differ.
 ## Server lifecycle
 
 ```text
-main — program.ts "Start turbo remote cache" group (LAST in the pipeline)
+main — program.ts "Start turbo remote cache" group (LAST, or just before the install when its scripts will run)
   maskSuppliedSecrets(inputs)            # unconditional, BEFORE the table
   resolveTurboCache(...)
     off          -> DISABLED

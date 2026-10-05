@@ -463,6 +463,49 @@ export const keySegments = (options: KeySegmentOptions): readonly [string, ...Re
 	];
 };
 
+/** Where the branch digest sits in a {@link keySegments} key. */
+const BRANCH_SEGMENT = 3;
+
+/**
+ * Whether `restoredKey` names an archive this run would only re-create: the
+ * same key as `primaryKey` in every segment but the branch.
+ *
+ * @remarks
+ * The first run on a new branch misses its primary key and restores through
+ * the depth-3 rung of {@link RESTORE_DEPTHS}, which reaches across branches.
+ * When what it lands on carries the same platform, architecture, version
+ * digest **and lockfile digest**, the linked trees and the tool cache in it are
+ * what this run's install would produce — the install has nothing to add — and
+ * archiving them again under this branch's key costs most of a minute and a
+ * few hundred megabytes of the repository's cache quota for an entry that
+ * differs from its source only in name. Measured on `spencerbeggs/effected`:
+ * 40–56s and roughly 260 MB on the first run of every branch.
+ *
+ * What a skipped save gives up is the same thing an exact hit already gives up:
+ * turbo's local cache and any `additional-cache-paths` are archived once per
+ * key and never refreshed while the lockfile stands still. A branch that skips
+ * simply keeps reading the base branch's snapshot of them instead of taking one
+ * of its own.
+ *
+ * A lockfile-less key never qualifies. Two runs that both hashed nothing agree
+ * on {@link EMPTY_LOCKFILE_SEGMENT} without agreeing on a single dependency,
+ * so the digest is not evidence that the trees match.
+ *
+ * The comparison is by segment rather than by prefix because the branch sits in
+ * the middle of the key. Splitting on `-` is safe for the keys
+ * {@link keySegments} builds: `process.platform` and `process.arch` values
+ * carry no hyphen, and the other three segments are hex digests or the literal
+ * above. A key of any other shape — a different segment count, a store or kcov
+ * key — is simply not equivalent.
+ */
+export const differsOnlyByBranch = (primaryKey: string, restoredKey: string): boolean => {
+	const primary = primaryKey.split("-");
+	const restored = restoredKey.split("-");
+	if (primary.length !== 5 || restored.length !== 5) return false;
+	if (primary[4] === EMPTY_LOCKFILE_SEGMENT) return false;
+	return primary.every((segment, index) => index === BRANCH_SEGMENT || segment === restored[index]);
+};
+
 /** Everything {@link storeKeySegments} derives the store cache key from. */
 export interface StoreKeySegmentOptions {
 	readonly platform: string;

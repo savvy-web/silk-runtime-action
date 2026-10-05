@@ -7,8 +7,8 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-09-28T21:44:52Z
-  body_sha256: fac5151e16ca871c81c94ee0844dcaa5757dcb1d73232f71918c38ac8ebb4ddc
+  at: 2026-10-05T21:46:04Z
+  body_sha256: 7fbba70e82563b0c444610808a24fb9632c86fcb570758b036d103180f075e30
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -180,7 +180,9 @@ having actually *landed*
 (`installKcov(batsDecision.installKcov && Option.isSome(bats))`, `src/program.ts:278`), not
 merely on the decision that asked for it; and the turbo cache starts last, so the window
 in which a detached child holds the runner's short-lived `ACTIONS_RUNTIME_TOKEN` is as
-short as possible (`src/program.ts:284-287`).
+short as possible — except on a run whose install executes lifecycle scripts in a turbo
+workspace, where it starts just before the install and its environment is handed to the
+install child (`turboCacheBeforeInstall`, `src/program.ts`).
 
 Before step 1 the program sets four variables **on this process only**
 (`NPM_CONFIG_UPDATE_NOTIFIER`, `NPM_CONFIG_FUND`, `HUSKY`,

@@ -1,5 +1,13 @@
 # Log
 
+## 2026-09-25
+
+* Updated test-harness
+
+## 2026-09-24
+
+* Updated devEngines manifest — the config shape consumers must satisfy
+
 ## 2026-09-21
 
 * Added Re-running the fixture matrix fails every "create cache" job

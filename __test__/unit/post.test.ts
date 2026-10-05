@@ -378,6 +378,39 @@ describe("post", () => {
 		}),
 	);
 
+	it.effect("skips the save when the restore came from another branch's entry for the same lockfile", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const crossBranch = CacheState.make({
+				...missed,
+				restoredKey: Option.some("linux-x64-aaaaaaaa-dddddddd-cccccccc"),
+			});
+			// Every `ActionCache` member is unstubbed, so a save would die.
+			const exit = yield* runPost({
+				state: stateWith(Option.some(crossBranch)),
+				cache: ActionCache.layerTest({}),
+				logs,
+			});
+
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(
+				logs.join("\n"),
+				"another branch's entry for the same lockfile (linux-x64-aaaaaaaa-dddddddd-cccccccc)",
+			);
+		}),
+	);
+
+	it.effect("still saves when the other branch's entry was built from a different lockfile", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const stale = CacheState.make({ ...missed, restoredKey: Option.some("linux-x64-aaaaaaaa-dddddddd-eeeeeeee") });
+			yield* runPost({ state: stateWith(Option.some(stale)), cache: cacheTest(saves) });
+
+			// The install topped that archive up, so this run's key has to be populated.
+			assert.deepStrictEqual(saves, [{ paths: stale.paths, key: stale.primaryKey }]);
+		}),
+	);
+
 	it.effect("skips the save after an exact hit", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];

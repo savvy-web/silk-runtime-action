@@ -5,8 +5,8 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: f0f88f25627d467b85fc21658b46a2d80efca6d3d4f46bedf8cfd3029d6e6bfa
+  at: 2026-10-05T21:46:04Z
+  body_sha256: 5f2bc9bd24f1f6ddcb0b1bf9bbfadc7879d4c190d6bc842386a06fc2449f8186
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -106,6 +106,18 @@ entries preserves, not one it introduces.[^cache-config]
 empty path set, and otherwise saves under the **primary** key — not whichever key matched —
 because a partial restore left the archive short of what this run installed, so the key this
 run asked for is the one that has to end up populated.[^post]
+
+One partial restore skips the save as well: an entry whose key differs from the primary
+**only in the branch segment** (`differsOnlyByBranch` in `cache-config.ts`). Same version
+digest — so the same tools and the same install policy — and the same lockfile digest mean
+the install had nothing to add, and re-archiving under this branch's name bought a second
+copy of the same trees: 40–56s of post step and roughly 260 MB of cache quota on the first
+run of every branch, measured on `spencerbeggs/effected`. The run still reports
+`cache-hit: partial`, on that run and every later one on the branch. A lockfile-less key
+never qualifies, because two runs that hashed nothing agree on the `"empty"` literal without
+agreeing on any dependency. The accepted cost is that turbo's local cache and any
+`additional-cache-paths` on such a branch stay at the base branch's snapshot — the same
+staleness an exact hit already has, since an entry is written once per key.[^post][^cache-config]
 
 ## Alternatives rejected
 
