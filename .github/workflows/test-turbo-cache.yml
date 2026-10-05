@@ -297,10 +297,14 @@ jobs:
       - name: Clear local turbo state and the build output
         shell: bash
         run: rm -rf .turbo packages/app/.turbo node_modules/.cache/turbo packages/app/dist
+      # turbo is run through `node` rather than `pnpm exec`: on Windows the
+      # package-manager shim on PATH is `pnpm.cmd`, which Git Bash does not
+      # resolve from a bare `pnpm`, and this step is bash so one script serves
+      # all three platforms.
       - name: Build again (must hit what the prepare script uploaded)
         shell: bash
         run: |
-          OUT=$(pnpm exec turbo run build --remote-only)
+          OUT=$(node node_modules/turbo/bin/turbo run build --remote-only)
           echo "$OUT"
           echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a remote hit on the artifact the prepare build uploaded"; exit 1; }
 
