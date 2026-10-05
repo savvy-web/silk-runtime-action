@@ -324,6 +324,11 @@ export const installDependencies = (
 			...(options.ignoreScripts === true ? ignoreScriptsArgs(pm) : []),
 		];
 
+		// Names only, never values: this is the line that says whether lifecycle
+		// scripts in this install could reach the turbo remote cache at all.
+		const handed = Object.keys(options.env ?? {});
+		if (handed.length > 0) yield* Effect.logInfo(`Passing ${handed.join(", ")} to the install's environment`);
+
 		// The buffer holds the echoed stderr rather than the install itself, whose
 		// stdout is inherited and never passes through the logger. Held so an
 		// interleaved dribble of warnings does not scramble the live transcript,

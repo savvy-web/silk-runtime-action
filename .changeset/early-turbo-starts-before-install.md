@@ -30,3 +30,12 @@ The post step no longer re-saves the workspace cache when the entry it restored 
 * The post step logs `Cache was restored from another branch's entry for the same lockfile (<key>) — skipping save`.
 * Turbo's local artifact cache and anything named in `additional-cache-paths` are part of the same archive, so on such a branch they stay at the base branch's snapshot.
 * A partial restore from a different lockfile digest is saved exactly as before, and a workspace with no lockfile never skips.
+
+### Turbo remote cache activity in the workflow log
+
+The embedded cache server previously logged nothing per request, and its log file stayed in the runner's temp directory where nobody could read it. A job whose Turbo tasks all missed and a job whose Turbo never reached the server looked the same.
+
+* The server now writes one line per artifact request: method, task hash, HTTP status, outcome (`hit`, `miss`, `stored`, `exists`, `absent`, `unauthorized`, `error`), artifact size and elapsed time. It also logs the address, backend and prefix it is listening with.
+* The post step prints that log in a collapsed `Turbo remote cache activity` group, headed by the totals, for example `Turbo remote cache (github, port 41230): 34 hits, 1 miss, 1 upload, 0 errors`. Only the last 1000 lines are printed; the totals cover the whole log.
+* The group appears whenever a server was spawned, including one that never became ready, so the reason for a failed start is in the workflow log.
+* The main step logs when the cache was started ahead of the dependency install, and the install logs the names of the `TURBO_*` variables it was handed. Values are never printed.

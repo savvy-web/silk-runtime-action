@@ -281,7 +281,18 @@ export const program = Effect.gen(function* () {
 		ignoreScripts: inputs.ignoreScripts,
 		packageManager: activated.name,
 	})
-		? Option.some(yield* startTurbo)
+		? Option.some(
+				yield* logger.group(
+					"Start turbo remote cache",
+					startTurboCache({ inputs, turbo }).pipe(
+						Effect.tap((started) =>
+							started.backend === "none"
+								? Effect.void
+								: Effect.logInfo("Started ahead of the dependency install, so its lifecycle scripts can use the cache"),
+						),
+					),
+				),
+			)
 		: Option.none<StartedTurboCache>();
 	const dependencies = yield* logger.group(
 		"Install dependencies",

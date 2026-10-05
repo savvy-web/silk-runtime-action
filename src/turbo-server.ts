@@ -19,6 +19,7 @@
 import { createServer } from "node:http";
 import { ManagedRuntime, Result } from "effect";
 
+import { SERVER_LOG_PREFIX, accessLine } from "./turbo-cache/access-log.js";
 import type { TurboRequest } from "./turbo-cache/handler.js";
 import { makeTurboHandler } from "./turbo-cache/handler.js";
 import { isAuthShapedFailure, readServerConfig, serverBlobStoreLayer } from "./turbo-cache/server-config.js";
@@ -30,7 +31,7 @@ const SHUTDOWN_DEADLINE_MS = 2_000;
 
 /** Everything this process says, so a shared log file stays readable. */
 const say = (message: string): void => {
-	console.error(`turbo-server: ${message}`);
+	console.error(`${SERVER_LOG_PREFIX}${message}`);
 };
 
 const configured = readServerConfig(process.env);
@@ -89,10 +90,15 @@ const server = createServer((req, res) => {
 			artifactDuration: typeof duration === "string" ? Number(duration) || 0 : 0,
 			body: new Uint8Array(Buffer.concat(chunks)),
 		};
+		const started = performance.now();
 		runtime.runPromise(handler(request)).then(
 			(response) => {
 				res.writeHead(response.status, response.headers);
 				res.end(response.body ? Buffer.from(response.body) : undefined);
+				// One line per artifact request, which `post` prints and tallies: the
+				// only account of what turbo asked this server for and what it got.
+				const line = accessLine(request, response, performance.now() - started);
+				if (line !== null) say(line);
 			},
 			() => {
 				// The handler answers 500 for everything it can name; a rejection here
@@ -141,6 +147,10 @@ process.on("SIGTERM", () => {
 });
 
 // Loopback only: the cache server is for this runner's turbo and nothing else.
-server.listen(config.port, "127.0.0.1");
+server.listen(config.port, "127.0.0.1", () => {
+	say(
+		`listening on 127.0.0.1:${config.port} (backend ${config.backend}, prefix ${config.prefix === "" ? "none" : config.prefix})`,
+	);
+});
 
 /* v8 ignore stop */

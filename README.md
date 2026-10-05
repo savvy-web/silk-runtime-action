@@ -276,6 +276,8 @@ The embedded server is torn down in the action's post step. On the GitHub backen
 
 The action writes a panel to the workflow's job summary listing the runtimes and package manager it set up, whether Biome was installed, the active Turbo cache backend and mode, the dependency cache hit status and the install outcome, with a collapsed section carrying the cache key and the matched lockfiles. Collapsed step groups also report their result inline, so the detected configuration, the Turbo backend and the cache hit are readable without expanding anything. Writing the summary is non-fatal — a failure logs a warning and the run continues.
 
+When the embedded Turbo cache server ran, the post step adds a collapsed `Turbo remote cache activity` group to the log. It opens with the totals — for example `Turbo remote cache (github, port 41230): 34 hits, 1 miss, 1 upload, 0 errors` — followed by the server's own log: one line per artifact request with the task hash, the HTTP status, the outcome, the artifact size and the time taken, plus any backend failure the server reported. A server that failed to start leaves its reason there too. The main step also says when the cache was started ahead of the dependency install, and the install names the `TURBO_*` variables it was handed (names only, never values).
+
 ## Troubleshooting
 
 ### `package.json not found` or `invalid devEngines`

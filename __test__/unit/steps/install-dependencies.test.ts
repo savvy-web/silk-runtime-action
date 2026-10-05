@@ -543,6 +543,10 @@ describe("installDependencies", () => {
 			yield* run(log, activated("npm"), { prepends: [], env: { TURBO_TEAM: "acme" } });
 
 			assert.deepStrictEqual(log.spawns[0]?.env, { TURBO_TEAM: "acme" });
+			// Names only: the line that says whether lifecycle scripts could reach
+			// the turbo remote cache, without ever printing a credential.
+			assert.include(log.logs, "Passing TURBO_TEAM to the install's environment");
+			assert.notInclude(log.logs.join("\n"), "acme");
 			// The kit's pair is absent with no prepend, so the merge flag is this
 			// step's own to write — without it the child would run with one variable.
 			assert.strictEqual(log.spawns[0]?.extendEnv, true);

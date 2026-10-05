@@ -784,29 +784,33 @@ describe("program", () => {
 	const runPassthrough = Effect.fnUntraced(function* (extraInputs: Record<string, string> = {}) {
 		const spawns: Array<Spawned> = [];
 		const events: Array<string> = [];
+		const logs: Array<string> = [];
 		yield* program.pipe(
 			Effect.provide(
-				makeLayer(
-					{
-						set: () => Effect.void,
-						setSecret: () => Effect.void,
-						exportVariable: (name) => Effect.sync(() => void events.push(`export ${name}`)),
-					},
-					undefined,
-					{
-						directory: { turbo: true },
-						spawns,
-						inputs: ActionInput.layer({ "turbo-token": "vercel-token", "turbo-team": "acme", ...extraInputs }),
-					},
+				Layer.merge(
+					makeLayer(
+						{
+							set: () => Effect.void,
+							setSecret: () => Effect.void,
+							exportVariable: (name) => Effect.sync(() => void events.push(`export ${name}`)),
+						},
+						undefined,
+						{
+							directory: { turbo: true },
+							spawns,
+							inputs: ActionInput.layer({ "turbo-token": "vercel-token", "turbo-team": "acme", ...extraInputs }),
+						},
+					),
+					Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 				),
 			),
 		);
-		return { install: spawns.find((spawned) => spawned.args[0] === "install"), events };
+		return { install: spawns.find((spawned) => spawned.args[0] === "install"), events, logs };
 	});
 
 	it.effect("hands the install's child the turbo environment its lifecycle scripts build with", () =>
 		Effect.gen(function* () {
-			const { install, events } = yield* runPassthrough();
+			const { install, events, logs } = yield* runPassthrough();
 
 			// A `prepare` script running `turbo` is a child of the install, and the
 			// variables `exportVariable` wrote reach only later workflow steps.
@@ -814,18 +818,22 @@ describe("program", () => {
 			assert.strictEqual(install?.env?.TURBO_TEAM, "acme");
 			// Started once, not once per position.
 			assert.deepStrictEqual(events, ["export TURBO_TOKEN", "export TURBO_TEAM"]);
+			// And the log says which position was taken, and what the install got.
+			assert.include(logs, "Started ahead of the dependency install, so its lifecycle scripts can use the cache");
+			assert.include(logs, "Passing TURBO_TOKEN, TURBO_TEAM to the install's environment");
 		}),
 	);
 
 	it.effect("keeps the turbo environment out of an install that runs no lifecycle scripts", () =>
 		Effect.gen(function* () {
-			const { install, events } = yield* runPassthrough({ "ignore-scripts": "true" });
+			const { install, events, logs } = yield* runPassthrough({ "ignore-scripts": "true" });
 
 			assert.isTrue(install?.args.includes("--ignore-scripts"));
 			assert.isUndefined(install?.env?.TURBO_TOKEN);
 			assert.isUndefined(install?.env?.TURBO_TEAM);
 			// The cache still starts — last, for the consumer's later steps.
 			assert.deepStrictEqual(events, ["export TURBO_TOKEN", "export TURBO_TEAM"]);
+			assert.notInclude(logs, "Started ahead of the dependency install, so its lifecycle scripts can use the cache");
 		}),
 	);
 

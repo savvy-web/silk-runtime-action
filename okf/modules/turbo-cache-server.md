@@ -7,8 +7,8 @@ kind: action
 resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
-  at: 2026-10-05T21:46:04Z
-  body_sha256: f4f99a901d8ab871c7bec8b730890da755e2d4dd0dd9a559ae711456a97f9322
+  at: 2026-10-05T22:00:53Z
+  body_sha256: f8055fff18d28cf3e3247add91727e0cc622a0f4b7c036515dc6faebf5fab7e4
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -101,6 +101,17 @@ was **spawned**, including when it never became ready
 (`src/steps/turbo-cache.ts:85-100`) — `backend` and `port` report what turbo can use,
 while `state` reports what `post` has to clean up, and the degraded case is exactly where
 the two answers differ.
+
+## Access log
+
+The worker writes one line per artifact request to its log file (`accessLine`,
+`src/turbo-cache/access-log.ts`): method, task hash, status, an outcome word, the
+artifact's size and the elapsed time. The readiness probe and the telemetry sink are left
+out. `post` reads the file back after the reap and prints it in a collapsed
+`Turbo remote cache activity` group headed by `tallyAccessLog`'s totals; the writer and the
+reader live in one module so the outcome words cannot drift. The group is the only place
+the detached worker's output is ever visible on a hosted runner, and it is emitted for a
+server that never became ready as well. The bearer token is never part of a line.
 
 ## Server lifecycle
 
