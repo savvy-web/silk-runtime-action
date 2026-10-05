@@ -237,6 +237,8 @@ This is what a lockfile change invalidates: the `node_modules` each workspace pa
 
 The key is the runner platform and architecture, a digest of every installed tool version (runtimes, package manager and Biome), a digest of what the install is going to do (`install-deps` and `ignore-scripts`), a digest of the branch name, and a digest of the matched lockfiles. Any of those changing produces a new key. Two restore keys back it up: the first drops the lockfile digest and matches an earlier cache for the same tool versions on this branch, the second drops the branch as well and reaches across branches. Either reports `partial` on the `cache-hit` output.
 
+A partial restore is saved again under the run's own key when the job ends, with one exception: when the entry that matched differs only in its branch digest — same tool versions, same install policy, same lockfile digest — the save is skipped, because the install had nothing to add to it. A branch whose lockfile matches its base branch's therefore keeps restoring the base branch's entry and reports `partial` on every run, without archiving a copy of its own. Turbo's local artifact cache and anything named in `additional-cache-paths` travel with that entry, so on such a branch they stay at the base branch's snapshot.
+
 The `node_modules` directories come from the workspace's own membership, so only the packages your manager actually links are archived — not every `node_modules` that happens to exist under the checkout.
 
 ### The package-manager store
@@ -273,6 +275,8 @@ The embedded server is torn down in the action's post step. On the GitHub backen
 ## Job summary
 
 The action writes a panel to the workflow's job summary listing the runtimes and package manager it set up, whether Biome was installed, the active Turbo cache backend and mode, the dependency cache hit status and the install outcome, with a collapsed section carrying the cache key and the matched lockfiles. Collapsed step groups also report their result inline, so the detected configuration, the Turbo backend and the cache hit are readable without expanding anything. Writing the summary is non-fatal — a failure logs a warning and the run continues.
+
+When the embedded Turbo cache server ran, the post step adds a collapsed `Turbo remote cache activity` group to the log. It opens with the totals — for example `Turbo remote cache (github, port 41230): 34 hits, 1 miss, 1 upload, 0 errors` — followed by the server's own log: one line per artifact request with the task hash, the HTTP status, the outcome, the artifact size and the time taken, plus any backend failure the server reported. A server that failed to start leaves its reason there too. The main step also says when the cache was started ahead of the dependency install, and the install names the `TURBO_*` variables it was handed (names only, never values).
 
 ## Troubleshooting
 

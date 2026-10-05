@@ -1,5 +1,20 @@
 # Log
 
+## 2026-10-05
+
+* Updated Cache config — key formats, ladders, lockfile patterns, and archived paths
+* Updated Three pipeline orderings are load-bearing
+* Updated Two cache entries — the workspace archive and the package-manager store — keyed independently
+* Updated silk-runtime-action
+
+## 2026-09-25
+
+* Updated test-harness
+
+## 2026-09-24
+
+* Updated devEngines manifest — the config shape consumers must satisfy
+
 ## 2026-09-21
 
 * Added Re-running the fixture matrix fails every "create cache" job

@@ -96,6 +96,17 @@ const artifactHash = (pathname: string): string | null => {
 };
 
 /**
+ * The artifact hash a raw request path names — query string and all — or `null`
+ * when the path names something else. What the access log identifies a request by.
+ */
+export const artifactHashOf = (path: string): string | null => {
+	const pathname = pathnameOf(path);
+	// The two fixed routes sit under the same prefix and are matched first by the
+	// handler, so they are not hashes here either.
+	return pathname === STATUS_PATH || pathname === EVENTS_PATH ? null : artifactHash(pathname);
+};
+
+/**
  * Whether a request carries the expected bearer token.
  *
  * @remarks

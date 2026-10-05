@@ -97,10 +97,28 @@ export interface StartedTurboCache {
 	 * two answers differ (oracle 34, 39 row 4).
 	 */
 	readonly state: Option.Option<TurboServerState>;
+	/**
+	 * The variables this step exported for turbo, by name — empty when it
+	 * exported none.
+	 *
+	 * @remarks
+	 * `ActionOutputs.exportVariable` writes `GITHUB_ENV`, which configures the
+	 * job's *later* steps and never this process. So a child this run spawns
+	 * itself — the dependency install, whose `prepare` scripts are where a Silk
+	 * workspace runs one turbo build per package — sees none of it unless it is
+	 * handed the same values directly. This is that handoff: the exact set that
+	 * was exported, so the install's children and the consumer's later steps
+	 * cannot be configured differently.
+	 *
+	 * Plaintext by necessity, the passthrough `TURBO_TOKEN` included: it is the
+	 * same string `Secret.forRunnerFile` already declassified for the export, so
+	 * it is masked in the log before it exists here.
+	 */
+	readonly environment: Readonly<Record<string, string>>;
 }
 
 /** No server, no environment, nothing for `post` to do. */
-const DISABLED: StartedTurboCache = { backend: "none", port: Option.none(), state: Option.none() };
+const DISABLED: StartedTurboCache = { backend: "none", port: Option.none(), state: Option.none(), environment: {} };
 
 /**
  * Where the detached server writes its stdout and stderr.
@@ -323,13 +341,21 @@ const startEmbeddedServer = (
 			),
 		);
 		if (!ready) {
-			const degraded: StartedTurboCache = { backend: "none", port: Option.none(), state: Option.some(saved) };
+			const degraded: StartedTurboCache = {
+				backend: "none",
+				port: Option.none(),
+				state: Option.some(saved),
+				environment: {},
+			};
 			return degraded;
 		}
 
-		yield* outputs.exportVariable("TURBO_API", `http://127.0.0.1:${port}`);
-		yield* outputs.exportVariable("TURBO_TOKEN", credential);
-		yield* outputs.exportVariable("TURBO_TEAM", credential);
+		const exported = {
+			TURBO_API: `http://127.0.0.1:${port}`,
+			TURBO_TOKEN: credential,
+			TURBO_TEAM: credential,
+		};
+		for (const [name, value] of Object.entries(exported)) yield* outputs.exportVariable(name, value);
 		// The step's own line, in the same words the job summary's row uses — one
 		// formatter renders both, so the log and the panel cannot disagree about
 		// what the cache ended up being (oracle 30).
@@ -338,6 +364,7 @@ const startEmbeddedServer = (
 			backend: resolution.backend,
 			port: Option.some(port),
 			state: Option.some(saved),
+			environment: exported,
 		};
 		return started;
 	});
@@ -348,11 +375,14 @@ const startEmbeddedServer = (
  * table selects one.
  *
  * @remarks
- * Runs **last** in the pipeline, and deliberately so: nothing earlier consumes
- * the turbo environment, and starting the server here rather than before the
- * cache restore shortens the window in which the runner's short-lived
- * `ACTIONS_RUNTIME_TOKEN` is held by a detached child (a ruled deviation from
- * v1, which started it first).
+ * Runs as late as its consumers allow, and `program.ts` decides which of two
+ * positions that is. Starting the server late shortens the window in which the
+ * runner's short-lived `ACTIONS_RUNTIME_TOKEN` is held by a detached child (a
+ * ruled deviation from v1, which started it before the cache restore), so the
+ * default position is **last**. The one earlier consumer is a dependency
+ * install that runs lifecycle scripts — a `prepare` that calls `turbo run` is a
+ * turbo build like any other — and on those runs the step moves to just before
+ * the install, which is handed {@link StartedTurboCache.environment}.
  *
  * **It cannot fail.** The declared `TurboCacheError` is the shape a failure
  * takes before it is logged, not something a caller handles: the typed channel
@@ -402,11 +432,16 @@ export const startTurboCache = (
 			);
 		}
 		if (resolution.mode === "passthrough") {
-			yield* outputs.exportVariable("TURBO_TOKEN", yield* Secret.forRunnerFile(resolution.token));
-			yield* outputs.exportVariable("TURBO_TEAM", resolution.team);
+			const exported = { TURBO_TOKEN: yield* Secret.forRunnerFile(resolution.token), TURBO_TEAM: resolution.team };
+			for (const [name, value] of Object.entries(exported)) yield* outputs.exportVariable(name, value);
 			yield* Effect.logDebug(`Turbo remote cache: passthrough to team ${resolution.team}`);
 			yield* Effect.logInfo(formatTurboLine("remote", Option.none()));
-			const passthrough: StartedTurboCache = { backend: "remote", port: Option.none(), state: Option.none() };
+			const passthrough: StartedTurboCache = {
+				backend: "remote",
+				port: Option.none(),
+				state: Option.none(),
+				environment: exported,
+			};
 			return passthrough;
 		}
 		return yield* startEmbeddedServer(resolution, args);

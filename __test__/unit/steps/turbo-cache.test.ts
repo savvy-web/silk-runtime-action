@@ -372,6 +372,15 @@ describe("startTurboCache: passthrough", () => {
 		}),
 	);
 
+	it.effect("reports the same two variables it exported, for a child of this run", () =>
+		Effect.gen(function* () {
+			const { started } = yield* run({ inputs: passthroughInputs });
+			// What the dependency install is handed: `exportVariable` configures later
+			// workflow steps, never a process this one spawns.
+			assert.deepStrictEqual(started.environment, { TURBO_TOKEN: "vercel-token", TURBO_TEAM: "acme" });
+		}),
+	);
+
 	it.effect("says what the cache resolved to, in the panel's own words", () =>
 		Effect.gen(function* () {
 			// Oracle 30: the step emitted debug lines only, so a run's log said
@@ -531,6 +540,17 @@ describe("startTurboCache: embedded", () => {
 		}),
 	);
 
+	it.effect("reports exactly the variables it exported, for a child of this run", () =>
+		Effect.gen(function* () {
+			const { started, recorded } = yield* run({});
+
+			assert.strictEqual(started.environment.TURBO_API, "http://127.0.0.1:41230");
+			assert.strictEqual(started.environment.TURBO_TOKEN, exported(recorded, "TURBO_TOKEN"));
+			assert.strictEqual(started.environment.TURBO_TEAM, exported(recorded, "TURBO_TEAM"));
+			assert.lengthOf(Object.keys(started.environment), recorded.exported.length);
+		}),
+	);
+
 	it.effect("saves the server's state before waiting for it to be ready", () =>
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({});
@@ -673,6 +693,8 @@ describe("startTurboCache: degraded", () => {
 			// Oracle 39 row 4: nothing is exported, because a `TURBO_API` pointing at
 			// a dead port turns every later cache operation into a connection error.
 			assert.deepStrictEqual(recorded.exported, []);
+			// And nothing is handed to the install's children either, for the same reason.
+			assert.deepStrictEqual(started.environment, {});
 			// The state was saved anyway, so post can still reap the half-started child.
 			assert.lengthOf(recorded.saved, 1);
 			assert.strictEqual(Option.isSome(started.state), true);

@@ -44,7 +44,7 @@ const postReaping = (reap: DetachedProcessOps["reap"]) => makePost(DetachedProce
 const makeLayer = (
 	read: Array<string>,
 	cache: Layer.Layer<ActionCache> = ActionCache.layerTest({}),
-): Layer.Layer<ActionCache | ActionState | FileSystem.FileSystem> =>
+): Layer.Layer<ActionCache | ActionLogger | ActionState | FileSystem.FileSystem> =>
 	Layer.mergeAll(
 		fileSystemTest(),
 		ActionState.layerTest({
@@ -59,6 +59,16 @@ const makeLayer = (
 		// `Effect.log*`, so `post`'s debug lines do not leak into the reporter.
 		ActionLogger.layerSilent,
 	);
+
+/**
+ * The `ActionLogger` service alone, with groups running their body in place.
+ *
+ * @remarks
+ * `ActionLogger.layerSilent` also silences `Effect.log*`, which the cases that
+ * capture log lines cannot afford. This is the service double without that
+ * half, so a group's lines still reach the capturing logger beside it.
+ */
+const actionLoggerTest = ActionLogger.layerTest({ group: (_name, effect) => effect });
 
 /** One `ActionCache.save` call, as this suite cares about it. */
 interface Saved {
@@ -145,6 +155,7 @@ const runPost = (options: {
 						"/home/runner/.local/share/pnpm/store": ["v11"],
 					},
 				),
+				actionLoggerTest,
 				Logger.layer([Logger.make(({ message }) => void (options.logs ?? []).push(String(message)))]),
 			),
 		),
@@ -378,6 +389,39 @@ describe("post", () => {
 		}),
 	);
 
+	it.effect("skips the save when the restore came from another branch's entry for the same lockfile", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const crossBranch = CacheState.make({
+				...missed,
+				restoredKey: Option.some("linux-x64-aaaaaaaa-dddddddd-cccccccc"),
+			});
+			// Every `ActionCache` member is unstubbed, so a save would die.
+			const exit = yield* runPost({
+				state: stateWith(Option.some(crossBranch)),
+				cache: ActionCache.layerTest({}),
+				logs,
+			});
+
+			assert.strictEqual(exit._tag, "Success");
+			assert.include(
+				logs.join("\n"),
+				"another branch's entry for the same lockfile (linux-x64-aaaaaaaa-dddddddd-cccccccc)",
+			);
+		}),
+	);
+
+	it.effect("still saves when the other branch's entry was built from a different lockfile", () =>
+		Effect.gen(function* () {
+			const saves: Array<Saved> = [];
+			const stale = CacheState.make({ ...missed, restoredKey: Option.some("linux-x64-aaaaaaaa-dddddddd-eeeeeeee") });
+			yield* runPost({ state: stateWith(Option.some(stale)), cache: cacheTest(saves) });
+
+			// The install topped that archive up, so this run's key has to be populated.
+			assert.deepStrictEqual(saves, [{ paths: stale.paths, key: stale.primaryKey }]);
+		}),
+	);
+
 	it.effect("skips the save after an exact hit", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
@@ -449,6 +493,75 @@ describe("post", () => {
 		}),
 	);
 
+	/** Runs `post` after a server run whose log file holds `log` (or does not exist). */
+	const runWithServerLog = (log: string | undefined, logs: Array<string>, groups: Array<string> = []) =>
+		postReaping(() => Effect.succeed(true)).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					MemoryFileSystem.layerWith(log === undefined ? {} : { [server.logFile]: log }),
+					serverOnly,
+					ActionCache.layerTest({}),
+					ActionLogger.layerTest({
+						group: (name, effect) =>
+							Effect.suspend(() => {
+								groups.push(name);
+								return effect;
+							}),
+					}),
+					Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
+				),
+			),
+			Effect.exit,
+		);
+
+	it.effect("prints what the cache server did, headed by the totals", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const groups: Array<string> = [];
+			const log = [
+				"turbo-server: listening on 127.0.0.1:41230 (backend github, prefix none)",
+				"turbo-server: GET aaa 200 hit 1.0 kB 4ms",
+				"turbo-server: GET bbb 404 miss 2ms",
+				"turbo-server: PUT bbb 202 stored 2.0 kB 9ms",
+				"",
+			].join("\n");
+			const exit = yield* runWithServerLog(log, logs, groups);
+
+			assert.strictEqual(exit._tag, "Success");
+			// The server's log file is in the temp directory of a machine nobody can
+			// reach once the job ends; this group is the only place it is ever seen.
+			assert.deepStrictEqual(groups, ["Turbo remote cache activity"]);
+			assert.include(logs, "Turbo remote cache (github, port 41230): 1 hit, 1 miss, 1 upload, 0 errors");
+			assert.include(logs, "turbo-server: GET aaa 200 hit 1.0 kB 4ms");
+			assert.include(logs, "turbo-server: PUT bbb 202 stored 2.0 kB 9ms");
+		}),
+	);
+
+	it.effect("prints only the tail of a very long server log, and says so", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const log = Array.from({ length: 1005 }, (_, index) => `turbo-server: GET h${index} 200 hit 1 B 1ms`).join("\n");
+			yield* runWithServerLog(log, logs);
+
+			// The totals still cover the whole file.
+			assert.include(logs, "Turbo remote cache (github, port 41230): 1005 hits, 0 misses, 0 uploads, 0 errors");
+			assert.include(logs, "Showing the last 1000 of 1005 server log lines");
+			assert.notInclude(logs, "turbo-server: GET h4 200 hit 1 B 1ms");
+			assert.include(logs, "turbo-server: GET h1004 200 hit 1 B 1ms");
+		}),
+	);
+
+	it.effect("carries on without a report when the server log cannot be read", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = [];
+			const groups: Array<string> = [];
+			const exit = yield* runWithServerLog(undefined, logs, groups);
+
+			assert.strictEqual(exit._tag, "Success");
+			assert.deepStrictEqual(groups, []);
+		}),
+	);
+
 	it.effect("reaps the server and saves the cache when both keys are present", () =>
 		Effect.gen(function* () {
 			const saves: Array<Saved> = [];
@@ -489,6 +602,7 @@ describe("post", () => {
 						fileSystemTest(),
 						serverOnly,
 						ActionCache.layerTest({}),
+						actionLoggerTest,
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 					),
 				),
@@ -512,6 +626,7 @@ describe("post", () => {
 						fileSystemTest(),
 						serverOnly,
 						ActionCache.layerTest({}),
+						actionLoggerTest,
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 					),
 				),
@@ -552,6 +667,7 @@ describe("post", () => {
 								)) as ActionState["Service"]["getOptional"],
 						}),
 						cacheTest(saves),
+						actionLoggerTest,
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 					),
 				),
@@ -609,6 +725,7 @@ describe("post", () => {
 										)) as ActionState["Service"]["getOptional"],
 						}),
 						cacheTest(saves),
+						actionLoggerTest,
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 					),
 				),
@@ -802,6 +919,7 @@ describe("kcov cache save", () => {
 										)) as ActionState["Service"]["getOptional"],
 						}),
 						cacheTest(saves),
+						actionLoggerTest,
 						Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 					),
 				),

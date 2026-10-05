@@ -161,11 +161,13 @@ const run = (
 		readonly prepends?: ReadonlyArray<string>;
 		readonly platform?: string;
 		readonly ignoreScripts?: boolean;
+		readonly env?: Readonly<Record<string, string>>;
 	} = {},
 ) =>
 	installDependencies(pm, options.enabled ?? true, options.prepends ?? [], {
 		ignoreScripts: options.ignoreScripts === true,
 		platform: options.platform ?? "linux",
+		...(options.env === undefined ? {} : { env: options.env }),
 	}).pipe(Effect.provide(layerFor(log, options)));
 
 describe("installDependencies", () => {
@@ -504,6 +506,65 @@ describe("installDependencies", () => {
 
 			assert.isUndefined(log.spawns[0]?.env);
 			assert.isUndefined(log.spawns[0]?.extendEnv);
+		}),
+	);
+
+	it.effect("hands the child the variables it was given, beside the PATH prepend", () =>
+		Effect.gen(function* () {
+			const log = recorder();
+			const previous = process.env.PATH;
+			process.env.PATH = "/usr/bin";
+			try {
+				yield* run(log, activated("pnpm", "/opt/toolcache/pnpm/10.20.0/.bin"), {
+					present: ["pnpm-lock.yaml"],
+					prepends: ["/opt/toolcache/pnpm/10.20.0/.bin"],
+					env: { TURBO_API: "http://127.0.0.1:41230", TURBO_TOKEN: "credential", TURBO_TEAM: "credential" },
+				});
+			} finally {
+				process.env.PATH = previous;
+			}
+
+			// `exportVariable` reaches later workflow steps and never this process,
+			// so a `prepare` script running `turbo` only sees the remote cache when
+			// the install child is handed it directly.
+			assert.deepStrictEqual(log.spawns[0]?.env, {
+				TURBO_API: "http://127.0.0.1:41230",
+				TURBO_TOKEN: "credential",
+				TURBO_TEAM: "credential",
+				PATH: `/opt/toolcache/pnpm/10.20.0/.bin${delimiter}/usr/bin`,
+			});
+			assert.strictEqual(log.spawns[0]?.extendEnv, true);
+		}),
+	);
+
+	it.effect("merges the variables over the inherited environment when there is nothing to prepend", () =>
+		Effect.gen(function* () {
+			const log = recorder();
+			yield* run(log, activated("npm"), { prepends: [], env: { TURBO_TEAM: "acme" } });
+
+			assert.deepStrictEqual(log.spawns[0]?.env, { TURBO_TEAM: "acme" });
+			// Names only: the line that says whether lifecycle scripts could reach
+			// the turbo remote cache, without ever printing a credential.
+			assert.include(log.logs, "Passing TURBO_TEAM to the install's environment");
+			assert.notInclude(log.logs.join("\n"), "acme");
+			// The kit's pair is absent with no prepend, so the merge flag is this
+			// step's own to write — without it the child would run with one variable.
+			assert.strictEqual(log.spawns[0]?.extendEnv, true);
+		}),
+	);
+
+	it.effect("never lets a supplied variable displace the PATH prepend", () =>
+		Effect.gen(function* () {
+			const log = recorder();
+			const previous = process.env.PATH;
+			process.env.PATH = "/usr/bin";
+			try {
+				yield* run(log, activated("pnpm", "/opt/pnpm"), { prepends: ["/opt/pnpm"], env: { PATH: "/nowhere" } });
+			} finally {
+				process.env.PATH = previous;
+			}
+
+			assert.deepStrictEqual(log.spawns[0]?.env, { PATH: `/opt/pnpm${delimiter}/usr/bin` });
 		}),
 	);
 

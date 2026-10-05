@@ -17,12 +17,14 @@
  */
 
 import type { DetachedProcessOps } from "@effected/github-actions";
-import { Action, ActionCache, ActionState, DetachedProcess } from "@effected/github-actions";
+import { Action, ActionCache, ActionLogger, ActionState, DetachedProcess } from "@effected/github-actions";
 import { Effect, FileSystem, Option } from "effect";
 
 import { PostLive } from "./layers/app.js";
 import { CacheState, KcovCacheState, STATE_KEYS, StoreCacheState, TurboServerState, isExactHit } from "./state.js";
+import { differsOnlyByBranch } from "./steps/cache-config.js";
 import { CacheError } from "./steps/restore-cache.js";
+import { formatAccessTally, tallyAccessLog } from "./turbo-cache/access-log.js";
 
 /**
  * Archives what `main` restored, when a save is still needed.
@@ -31,8 +33,15 @@ import { CacheError } from "./steps/restore-cache.js";
  * Saved on a partial restore as well as a miss, and always under the *primary*
  * key rather than whichever key matched: a partial restore left the archive
  * short of what this run installed, so the key this run asked for is the one
- * that has to end up populated. Only an exact hit skips — that archive is
- * already what this run would write, and cache entries are immutable anyway.
+ * that has to end up populated. An exact hit skips — that archive is already
+ * what this run would write, and cache entries are immutable anyway.
+ *
+ * One partial restore skips too: an entry that differs from the primary key
+ * only in its branch segment. Same tool versions, same install policy, same
+ * lockfile digest — the install had nothing to add to it, so re-archiving it
+ * under this branch's name buys a second copy of the same trees. The run still
+ * reports `cache-hit: partial`, on this run and every later one on the branch,
+ * because that is what the restore was. See `differsOnlyByBranch`.
  *
  * Legacy read the state back and re-checked the same flag inside its save
  * (oracle 35); one guard, here, is the whole of it.
@@ -51,6 +60,12 @@ const saveDependencyCache = (saved: CacheState) =>
 	Effect.gen(function* () {
 		if (isExactHit(saved)) {
 			yield* Effect.logInfo("Cache was an exact hit — skipping save");
+			return;
+		}
+		if (Option.isSome(saved.restoredKey) && differsOnlyByBranch(saved.primaryKey, saved.restoredKey.value)) {
+			yield* Effect.logInfo(
+				`Cache was restored from another branch's entry for the same lockfile (${saved.restoredKey.value}) — skipping save`,
+			);
 			return;
 		}
 		if (saved.paths.length === 0) {
@@ -274,6 +289,57 @@ const reapCacheServer = (saved: TurboServerState, reap: DetachedProcessOps["reap
 		),
 	);
 
+/** How many trailing server-log lines the activity group prints. */
+const SERVER_LOG_TAIL_LINES = 1000;
+
+/**
+ * Prints what the embedded cache server did during the job.
+ *
+ * @remarks
+ * The server is detached and logs to a file in the temp directory, which on a
+ * hosted runner nobody can read once the job ends. Without this the only
+ * account of the remote cache is turbo's own per-task output, scattered through
+ * every step that ran it, and a server that failed to start left nothing but a
+ * path. So the file is read back here — after the reap, so the server has
+ * stopped writing — and printed in one collapsed group headed by the totals.
+ *
+ * The group is emitted whenever a server was spawned, including one that never
+ * became ready: that is exactly the run where the file holds the reason.
+ *
+ * Reporting only. Every failure is absorbed into a debug line, on the same
+ * terms as the reap above it: an unreadable log must not cost the cache saves
+ * that follow.
+ */
+const reportCacheActivity = (saved: TurboServerState) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const logger = yield* ActionLogger;
+		const log = yield* fs.readFileString(saved.logFile);
+		const lines = log.split("\n").filter((line) => line.trim() !== "");
+		const tail = lines.slice(-SERVER_LOG_TAIL_LINES);
+		yield* logger.group(
+			"Turbo remote cache activity",
+			Effect.gen(function* () {
+				yield* Effect.logInfo(
+					`Turbo remote cache (${saved.backend}, port ${saved.port}): ${formatAccessTally(tallyAccessLog(log))}`,
+				);
+				if (tail.length < lines.length) {
+					yield* Effect.logInfo(`Showing the last ${tail.length} of ${lines.length} server log lines`);
+				}
+				for (const line of tail) yield* Effect.logInfo(line);
+			}),
+		);
+	}).pipe(
+		Effect.catch((error) =>
+			Effect.logDebug(`Turbo cache server log could not be read (${saved.logFile}): ${error.message}`),
+		),
+		Effect.catchDefect((defect) =>
+			Effect.logDebug(
+				`Turbo cache server log could not be reported: ${defect instanceof Error ? defect.message : String(defect)}`,
+			),
+		),
+	);
+
 /**
  * The post phase, over the kit's injectable detached-process seam.
  *
@@ -307,7 +373,7 @@ const reapCacheServer = (saved: TurboServerState, reap: DetachedProcessOps["reap
  */
 export const makePost = (
 	ops: DetachedProcessOps = DetachedProcess.ops,
-): Effect.Effect<void, never, ActionCache | ActionState | FileSystem.FileSystem> =>
+): Effect.Effect<void, never, ActionCache | ActionLogger | ActionState | FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const state = yield* ActionState;
 		yield* Effect.logDebug("Running post-action script");
@@ -331,7 +397,7 @@ export const makePost = (
 			);
 		yield* Option.match(server, {
 			onNone: () => Effect.logDebug("No embedded turbo cache server was started; nothing to reap"),
-			onSome: (saved) => reapCacheServer(saved, ops.reap),
+			onSome: (saved) => reapCacheServer(saved, ops.reap).pipe(Effect.andThen(reportCacheActivity(saved))),
 		});
 
 		// Absorbed the same way the turbo-server read above is: state written by a

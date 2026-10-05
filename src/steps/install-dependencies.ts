@@ -137,11 +137,26 @@ const anyLockfile = (fs: FileSystem.FileSystem, lockfiles: ReadonlyArray<string>
  * The empty case is this function's own, because the kit's signature refuses it
  * by construction — nothing to prepend means no `env` key at all, not an entry
  * holding only the inherited value.
+ *
+ * `extra` is merged in beside the `PATH` entry, under the same `extendEnv: true`
+ * — which this function now writes itself rather than spreading the kit's pair,
+ * because the pair is only there when there is something to prepend and the
+ * merge has to hold either way. It exists for the turbo environment: a variable
+ * exported with `ActionOutputs.exportVariable` reaches later workflow steps and
+ * never this process, for the same reason `addPath` does not, so a lifecycle
+ * script that runs `turbo` only sees the remote cache when the install child is
+ * handed it here.
  */
-const childEnv = (pathPrepends: ReadonlyArray<string>, platform: string): ChildProcess.CommandOptions => {
+const childEnv = (
+	pathPrepends: ReadonlyArray<string>,
+	platform: string,
+	extra: Readonly<Record<string, string>>,
+): ChildProcess.CommandOptions => {
 	const [first, ...rest] = pathPrepends;
-	if (first === undefined) return {};
-	return ChildEnv.prependPath([first, ...rest], { base: process.env, platform });
+	const path = first === undefined ? {} : ChildEnv.prependPath([first, ...rest], { base: process.env, platform }).env;
+	// `PATH` is spread last so no caller-supplied variable can displace it.
+	const env = { ...extra, ...path };
+	return Object.keys(env).length === 0 ? {} : { env, extendEnv: true };
 };
 
 /**
@@ -178,13 +193,14 @@ const spawnInstall = (
 	args: ReadonlyArray<string>,
 	pathPrepends: ReadonlyArray<string>,
 	platform: string,
+	env: Readonly<Record<string, string>>,
 ) =>
 	Effect.gen(function* () {
 		const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 		const command = ChildProcess.make(name, [...args], {
 			stdout: "inherit",
 			stderr: "pipe",
-			...childEnv(pathPrepends, platform),
+			...childEnv(pathPrepends, platform, env),
 			...(ChildEnv.needsShell(platform) ? { shell: true } : {}),
 		});
 
@@ -224,6 +240,11 @@ const exitDetail = (
 export interface InstallOptions {
 	/** Skip the packages' lifecycle scripts — the `ignore-scripts` input. */
 	readonly ignoreScripts?: boolean;
+	/**
+	 * Variables the install child — and every lifecycle script it spawns — is
+	 * given on top of the inherited environment. Never displaces `PATH`.
+	 */
+	readonly env?: Readonly<Record<string, string>>;
 	/** The host platform; defaults to `process.platform`. A test seam. */
 	readonly platform?: string;
 }
@@ -264,6 +285,11 @@ export interface InstallOptions {
  * the input's "no effect unless `install-deps` is true" documented rule a
  * property of the code rather than a note.
  *
+ * `options.env` is merged over the inherited environment for the install child,
+ * beside the `PATH` prepends and never over them. The caller decides what goes
+ * in it; today that is the turbo remote-cache environment, on runs where the
+ * cache was started ahead of the install.
+ *
  * `options.platform` decides whether the manager is launched through a shell
  * (`ChildEnv.needsShell`) and which delimiter joins the `PATH` prepends. It is
  * an argument with a `process.platform` default rather
@@ -298,13 +324,21 @@ export const installDependencies = (
 			...(options.ignoreScripts === true ? ignoreScriptsArgs(pm) : []),
 		];
 
+		// Names only, never values: this is the line that says whether lifecycle
+		// scripts in this install could reach the turbo remote cache at all.
+		const handed = Object.keys(options.env ?? {});
+		if (handed.length > 0) yield* Effect.logInfo(`Passing ${handed.join(", ")} to the install's environment`);
+
 		// The buffer holds the echoed stderr rather than the install itself, whose
 		// stdout is inherited and never passes through the logger. Held so an
 		// interleaved dribble of warnings does not scramble the live transcript,
 		// and flushed on every exit path so a failing install still shows all of
 		// it — not just the tail the message carries.
 		const { exitCode, tail } = yield* logger
-			.withBuffer(pm.name, spawnInstall(pm.name, args, pathPrepends, options.platform ?? process.platform))
+			.withBuffer(
+				pm.name,
+				spawnInstall(pm.name, args, pathPrepends, options.platform ?? process.platform, options.env ?? {}),
+			)
 			.pipe(
 				Effect.catch((cause: PlatformError.PlatformError) =>
 					Effect.fail(

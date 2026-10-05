@@ -1,0 +1,6 @@
+packages:
+  - packages/*
+# The `prepare` script runs `turbo run build`, and turbo runs each task through
+# `pnpm run`. With this on, that `pnpm run` re-installs first, which runs
+# `prepare` again: an install that never ends. pnpm 12 turns it on by default.
+verifyDepsBeforeRun: false

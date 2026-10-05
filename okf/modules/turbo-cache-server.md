@@ -7,8 +7,8 @@ kind: action
 resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: 402112dcb52977f34346a90016beb73e33b1684d14492f4dd883bb77d18d9a8d
+  at: 2026-10-05T22:00:53Z
+  body_sha256: f8055fff18d28cf3e3247add91727e0cc622a0f4b7c036515dc6faebf5fab7e4
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -102,10 +102,21 @@ was **spawned**, including when it never became ready
 while `state` reports what `post` has to clean up, and the degraded case is exactly where
 the two answers differ.
 
+## Access log
+
+The worker writes one line per artifact request to its log file (`accessLine`,
+`src/turbo-cache/access-log.ts`): method, task hash, status, an outcome word, the
+artifact's size and the elapsed time. The readiness probe and the telemetry sink are left
+out. `post` reads the file back after the reap and prints it in a collapsed
+`Turbo remote cache activity` group headed by `tallyAccessLog`'s totals; the writer and the
+reader live in one module so the outcome words cannot drift. The group is the only place
+the detached worker's output is ever visible on a hosted runner, and it is emitted for a
+server that never became ready as well. The bearer token is never part of a line.
+
 ## Server lifecycle
 
 ```text
-main — program.ts "Start turbo remote cache" group (LAST in the pipeline)
+main — program.ts "Start turbo remote cache" group (LAST, or just before the install when its scripts will run)
   maskSuppliedSecrets(inputs)            # unconditional, BEFORE the table
   resolveTurboCache(...)
     off          -> DISABLED
