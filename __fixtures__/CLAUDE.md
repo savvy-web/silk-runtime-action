@@ -30,6 +30,7 @@ scenario is about. Installed `node_modules` are never committed.
 | `bats-kcov` | `hello.sh` + `test/hello.bats` — the `*.bats` glob detection signal, and `bats_load_library` resolving against the exported `BATS_LIB_PATH` |
 | `additional-inputs` | `custom.lock` / `vendor.lock` and `build/` / `dist/` for the `additional-lockfiles` and `additional-cache-paths` inputs |
 | `turbo-monorepo` | a real pnpm + turbo workspace with a buildable package — used only by the turbo remote-cache e2e |
+| `turbo-prepare` | `turbo-monorepo` plus a `prepare` script in `packages/app` that records the `TURBO_*` variables it can see and runs `turbo run build` — the install-time build the cache has to be up for. `verifyDepsBeforeRun: false` in its `pnpm-workspace.yaml` is load-bearing: without it turbo's `pnpm run` re-installs, which re-runs `prepare`, forever |
 
 ## How they run
 
@@ -55,6 +56,13 @@ only, on PRs and dispatch. Within-job double build (GitHub backend), cross-job c
 a cold runner, an S3 double build against SeaweedFS, and the same against real S3 behind a
 secrets-presence gate job so forks skip rather than fail. Each asserts the reported
 `turbo-cache-backend` and `turbo-cache-port` before proving the cache hit.
+
+Two more jobs run `turbo-prepare` **at the workspace root with the action's own install on**
+— the only jobs in the suite where turbo runs inside the install. `prepare-script-build`
+(ubuntu/macos/windows) asserts the `prepare` script saw `TURBO_API`/`TURBO_TOKEN`/`TURBO_TEAM`,
+then clears local turbo state and requires a remote hit on a hash made unique to the run by
+a nonce file — an artifact only the install-time build could have uploaded.
+`ignore-scripts-install` asserts the cache still starts when no lifecycle script runs.
 
 ## The harness
 

@@ -224,3 +224,126 @@ jobs:
           OUT=$(pnpm exec turbo run build --remote-only)
           echo "$OUT"
           echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a real-S3 cache hit"; exit 1; }
+
+  # Job 6: the install's own lifecycle scripts reach the remote cache.
+  #
+  # Every job above passes `install-deps: false` and builds from a later step,
+  # so none of them runs turbo *inside* the action's install — the one place
+  # where the exported TURBO_* variables do not reach, because `GITHUB_ENV` is
+  # read between steps and a `prepare` script is a child of this one. The action
+  # starts the cache ahead of the install and hands the install child the
+  # variables directly; when that regresses nothing fails, installs just get
+  # slow, which is why it needs a job of its own.
+  #
+  # The fixture is moved to the workspace root because a `uses:` step ignores
+  # `working-directory`, and here the action's install is the thing under test.
+  prepare-script-build:
+    name: Prepare-script build during install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Move the fixture to the workspace root
+        shell: python
+        env:
+          NONCE: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.os }}
+        run: |
+          import os
+          import shutil
+          from pathlib import Path
+
+          keep = {".github", ".git", "__fixtures__"}
+          for item in Path(".").iterdir():
+              if item.name in keep:
+                  continue
+              if item.is_dir() and not item.is_symlink():
+                  shutil.rmtree(item)
+              else:
+                  item.unlink()
+          for item in (Path("__fixtures__") / "turbo-prepare").iterdir():
+              if item.is_dir():
+                  shutil.copytree(item, item.name, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(item, item.name)
+          shutil.rmtree("__fixtures__")
+          # A file inside the package, so it is part of the build's task hash:
+          # no earlier run can have put this hash in the remote cache, and the
+          # only build that can upload it before the assertion below is the one
+          # the `prepare` script runs during the install.
+          Path("packages/app/nonce.txt").write_text(os.environ["NONCE"])
+      - uses: ./.github/actions/local
+        id: setup
+        with:
+          turbo-cache: auto
+          cache-bust: prepare-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Assert the reported backend and port
+        shell: bash
+        env:
+          BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
+          PORT: ${{ steps.setup.outputs.turbo-cache-port }}
+        run: |
+          [ "$BACKEND" = "github" ] || { echo "Expected backend 'github', got '$BACKEND'"; exit 1; }
+          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+      - name: Assert the prepare script saw the remote cache environment
+        shell: bash
+        run: |
+          [ -f turbo-prepare-env.json ] || { echo "The prepare script did not run during the install"; exit 1; }
+          cat turbo-prepare-env.json; echo
+          EXPECTED='{"TURBO_API":"http://127.0.0.1:41230","TURBO_TOKEN":true,"TURBO_TEAM":true}'
+          [ "$(cat turbo-prepare-env.json)" = "$EXPECTED" ] || { echo "Expected $EXPECTED"; exit 1; }
+      - name: Clear local turbo state and the build output
+        shell: bash
+        run: rm -rf .turbo packages/app/.turbo node_modules/.cache/turbo packages/app/dist
+      - name: Build again (must hit what the prepare script uploaded)
+        shell: bash
+        run: |
+          OUT=$(pnpm exec turbo run build --remote-only)
+          echo "$OUT"
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a remote hit on the artifact the prepare build uploaded"; exit 1; }
+
+  # Job 7: the other side of job 6. With `ignore-scripts` nothing during the
+  # install can use the cache, so the action keeps the late start — which this
+  # cannot observe — but the cache must still come up for the steps after it.
+  ignore-scripts-install:
+    name: Install with ignore-scripts still starts the cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Move the fixture to the workspace root
+        shell: python
+        run: |
+          import shutil
+          from pathlib import Path
+
+          keep = {".github", ".git", "__fixtures__"}
+          for item in Path(".").iterdir():
+              if item.name in keep:
+                  continue
+              if item.is_dir() and not item.is_symlink():
+                  shutil.rmtree(item)
+              else:
+                  item.unlink()
+          for item in (Path("__fixtures__") / "turbo-prepare").iterdir():
+              if item.is_dir():
+                  shutil.copytree(item, item.name, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(item, item.name)
+          shutil.rmtree("__fixtures__")
+      - uses: ./.github/actions/local
+        id: setup
+        with:
+          turbo-cache: auto
+          ignore-scripts: "true"
+          cache-bust: ignore-scripts-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Assert the cache started and no lifecycle script ran
+        env:
+          BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
+          PORT: ${{ steps.setup.outputs.turbo-cache-port }}
+        run: |
+          [ "$BACKEND" = "github" ] || { echo "Expected backend 'github', got '$BACKEND'"; exit 1; }
+          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+          [ ! -e turbo-prepare-env.json ] || { echo "A lifecycle script ran despite ignore-scripts"; exit 1; }
+          [ -n "$TURBO_API" ] || { echo "TURBO_API was not exported for later steps"; exit 1; }

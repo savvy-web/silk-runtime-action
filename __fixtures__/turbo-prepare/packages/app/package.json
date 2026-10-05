@@ -1,0 +1,9 @@
+{
+	"name": "@turbo-prepare-test/app",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"prepare": "node ../../record-turbo-env.cjs && node ../../node_modules/turbo/bin/turbo run build",
+		"build": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/out.txt','built')\""
+	}
+}
