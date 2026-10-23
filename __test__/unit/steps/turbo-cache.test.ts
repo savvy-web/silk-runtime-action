@@ -540,6 +540,17 @@ describe("startTurboCache: embedded", () => {
 		}),
 	);
 
+	it.effect("masks the embedded server's credential before it is exported", () =>
+		Effect.gen(function* () {
+			const { recorded } = yield* run({});
+
+			// The value is per-run and loopback-only, but every later step echoes
+			// TURBO_TOKEN in its env block, so it is masked like any other secret.
+			const credential = (recorded.spawns[0] as DetachedSpawnOptions).env?.TURBOGHA_TOKEN ?? "";
+			assert.include(recorded.masked, credential);
+		}),
+	);
+
 	it.effect("reports exactly the variables it exported, for a child of this run", () =>
 		Effect.gen(function* () {
 			const { started, recorded } = yield* run({});
