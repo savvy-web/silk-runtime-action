@@ -5,8 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import type { ActionOutputError, DetachedProcessOps } from "@effected/github-actions";
 import { ActionOutputs, ActionState, DetachedProcess, Secret } from "@effected/github-actions";
-import type { Redacted } from "effect";
-import { Data, Effect, Option } from "effect";
+import { Data, Effect, Option, Redacted } from "effect";
 import type { HttpClient } from "effect/http";
 
 import type { Inputs } from "../schema/inputs.js";
@@ -286,7 +285,9 @@ const startEmbeddedServer = (
 		const detached = args.detached ?? DetachedProcess.ops;
 		const port = args.port ?? DEFAULT_TURBO_SERVER_PORT;
 		const logFile = serverLogPath(port);
-		const credential = randomUUID();
+		// Masked before the spawn: every later step echoes TURBO_TOKEN in its env
+		// block, and a per-run loopback credential is still a credential.
+		const credential = yield* Secret.forRunnerFile(Redacted.make(randomUUID()));
 		const environment = yield* spawnEnvironment(resolution, {
 			port,
 			prefix: args.inputs.turboCachePrefix,
