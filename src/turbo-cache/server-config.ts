@@ -1,4 +1,4 @@
-import { NodeFileSystem, NodeHttpClient } from "@effect/platform-node";
+import { NodeCrypto, NodeFileSystem, NodeHttpClient } from "@effect/platform-node";
 import type { BlobEnvelopeError, BlobStoreError, S3Config } from "@effected/github-actions";
 import { ActionEnvironment, ActionOutputs, BlobStore, GitHubCacheBlobStore } from "@effected/github-actions";
 import { Layer, Redacted, Result } from "effect";
@@ -160,7 +160,7 @@ export const readServerConfig = (env: Environment): Result.Result<TurboServerCon
 const platform = (() => {
 	const fileSystem = NodeFileSystem.layer;
 	const environment = ActionEnvironment.layer.pipe(Layer.provide(fileSystem));
-	return Layer.mergeAll(NodeHttpClient.layerUndici, environment, ActionOutputs.layerDetached);
+	return Layer.mergeAll(NodeHttpClient.layerUndici, NodeCrypto.layer, environment, ActionOutputs.layerDetached);
 })();
 
 /**
