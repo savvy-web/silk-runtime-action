@@ -197,6 +197,24 @@ jobs:
         if: matrix.test-command != ''
         continue-on-error: true
         run: ${{ matrix.test-command }}
+      # Git Bash does not apply PATHEXT, so on Windows a `.cmd`-only shim
+      # directory leaves a bare `pnpm` unresolvable from a `shell: bash` step
+      # (#476). The step above runs under the default shell, which is pwsh on
+      # Windows, so it cannot see that. This one runs under bash on every OS,
+      # resolves the manager by name, and is not continue-on-error, so a
+      # regression fails the job.
+      - name: Run the package manager by name under bash
+        if: steps.test.outputs.test-passed == 'true' && matrix.expected-package-manager != ''
+        shell: bash
+        env:
+          PM: ${{ matrix.expected-package-manager }}
+          EXPECTED: ${{ matrix.expected-package-manager-version }}
+        run: |
+          command -v "$PM" || { echo "::error::$PM is not resolvable by name from a bash step"; exit 1; }
+          ACTUAL=$("$PM" --version | tr -d '\r')
+          # A pinned version may carry a `+sha512.<hash>` integrity suffix; the
+          # manager reports the bare version.
+          [ "$ACTUAL" = "${EXPECTED%%+*}" ] || { echo "::error::expected $PM ${EXPECTED%%+*}, got $ACTUAL"; exit 1; }
       - name: Save test results
         if: always()
         uses: ./.github/actions/save-test-results

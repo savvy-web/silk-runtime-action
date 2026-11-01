@@ -21,7 +21,12 @@ runs:
     - name: Fail job if test failed
       if: always() && (inputs.test-passed == 'false' || inputs.test-passed == '')
       shell: python
+      # Through env, not `${{ }}` in the script: the message is arbitrary text,
+      # and a quote in it would end the Python string literal.
+      env:
+        SETUP_ERROR: ${{ inputs.setup-error }}
       run: |
+        import os
         import sys
 
         print("::group::Test Failure Details")
@@ -35,7 +40,7 @@ runs:
         # Determine failure reason
         outcome = "${{ inputs.test-outcome }}"
         test_passed = "${{ inputs.test-passed }}"
-        setup_error = "${{ inputs.setup-error }}"
+        setup_error = os.environ.get("SETUP_ERROR", "")
 
         if setup_error:
             print(f"::error::Test fixture setup failed: {setup_error}")
