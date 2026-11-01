@@ -1,7 +1,7 @@
 import { ActionLogger, ChildEnv } from "@effected/github-actions";
 import type { PlatformError } from "effect";
 import { Data, Effect, FileSystem, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { ChildProcess, ChildProcessSpawner, CommandLine } from "effect/process";
 
 import type { PackageManagerName } from "../schema/domain.js";
 import type { ActivatedPackageManager } from "./setup-package-manager.js";
@@ -181,12 +181,16 @@ const childEnv = (
  * direct spawn found — and buys one launch path to reason about instead of two.
  * Legacy reached the same place by shelling every command on win32.
  *
- * Under `shell`, Node concatenates the command and its arguments into a single
- * `cmd.exe` command line rather than passing an argv, which is a quoting hazard
- * for anything containing a space or a shell metacharacter. It is not one here:
+ * Under `shell` the whole command line is the command, with no separate
+ * arguments: since Effect 4.1 the spawner refuses `shell` combined with an
+ * argument list rather than letting Node concatenate them. The line is built by
+ * `CommandLine.join` in its `windows` format, which quotes for the program's
+ * own argv parser. It does not escape for `cmd.exe`, which still expands
+ * `%NAME%` and reads `^ & | < >` first, and that is safe here only because
  * every argument comes from `PLANS` or {@link ignoreScriptsArgs}, both of which
  * yield static flag literals — no path, no version, nothing derived from an
- * input.
+ * input. A `CommandLineError` (a NUL byte, which no literal holds) fails the
+ * launch the same way a spawn failure does.
  */
 const spawnInstall = (
 	name: PackageManagerName,
@@ -197,12 +201,17 @@ const spawnInstall = (
 ) =>
 	Effect.gen(function* () {
 		const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-		const command = ChildProcess.make(name, [...args], {
+		const options: ChildProcess.CommandOptions = {
 			stdout: "inherit",
 			stderr: "pipe",
 			...childEnv(pathPrepends, platform, env),
-			...(ChildEnv.needsShell(platform) ? { shell: true } : {}),
-		});
+		};
+		const command = ChildEnv.needsShell(platform)
+			? ChildProcess.make(yield* Effect.fromResult(CommandLine.join([name, ...args], { format: "windows" })), [], {
+					...options,
+					shell: true,
+				})
+			: ChildProcess.make(name, [...args], options);
 
 		const handle = yield* spawner.spawn(command);
 		const tail: Array<string> = [];
@@ -340,7 +349,7 @@ export const installDependencies = (
 				spawnInstall(pm.name, args, pathPrepends, options.platform ?? process.platform, options.env ?? {}),
 			)
 			.pipe(
-				Effect.catch((cause: PlatformError.PlatformError) =>
+				Effect.catch((cause: PlatformError.PlatformError | CommandLine.CommandLineError) =>
 					Effect.fail(
 						new InstallError({
 							reason: "spawn",
