@@ -8,7 +8,6 @@ resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
   at: 2026-10-05T22:00:53Z
-  body_sha256: f8055fff18d28cf3e3247add91727e0cc622a0f4b7c036515dc6faebf5fab7e4
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -24,6 +23,9 @@ sources:
     resource: ../../src/turbo-server.ts
   - id: state
     resource: ../../src/state.ts
+integrity:
+  generated:
+    body: f8055fff18d28cf3
 ---
 
 # turbo-cache-server

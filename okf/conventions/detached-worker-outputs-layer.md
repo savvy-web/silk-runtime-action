@@ -8,12 +8,14 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: daab88b150eefb60f6294d22d548a5567268558fabc0ea9d2efe5952000c68b9
 sources:
   - id: server-config-platform-layer
     resource: ../../src/turbo-cache/server-config.ts
   - id: turbo-server-entry
     resource: ../../src/turbo-server.ts
+integrity:
+  generated:
+    body: daab88b150eefb60
 ---
 
 # A detached worker never gets the real `ActionOutputs` layer

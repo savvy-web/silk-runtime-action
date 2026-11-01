@@ -7,10 +7,12 @@ tags: [architecture, caching]
 generated:
   by: okfit/claude-code
   at: 2026-10-05T21:46:04Z
-  body_sha256: da8d99f34665e1b34bfe219dc65bd378c01fec37fbce35c920bc6da857685ae1
 sources:
   - id: program
     resource: ../../src/program.ts
+integrity:
+  generated:
+    body: da8d99f34665e1b3
 ---
 
 # Three pipeline orderings are load-bearing

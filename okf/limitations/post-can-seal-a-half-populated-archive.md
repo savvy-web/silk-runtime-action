@@ -7,12 +7,14 @@ bounds: ../modules/silk-runtime-action.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 17e23768c0e008ec805be72da56dac964aad61281c419015d92beaa9bd45f926
 sources:
   - id: post
     resource: ../../src/post.ts
 tags:
   - caching
+integrity:
+  generated:
+    body: 17e23768c0e008ec
 ---
 
 # post can seal a half-populated dependency cache after a failed install

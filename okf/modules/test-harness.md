@@ -8,7 +8,6 @@ resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
   at: 2026-09-25T00:54:05Z
-  body_sha256: cb0397d18c1deaa0cd087b9f0e1392be869f2cddf55b06e52ab5e631fb521b58
 sources:
   - id: test-fixture-action
     resource: ../../.github/actions/test-fixture/action.yml
@@ -22,6 +21,9 @@ sources:
     resource: ../../.github/workflows/test-turbo-cache.yml
   - id: vitest-config
     resource: ../../vitest.config.ts
+integrity:
+  generated:
+    body: cb0397d18c1deaa0
 ---
 
 # test-harness

@@ -6,8 +6,7 @@ status: draft
 stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: df0631e73d7f9aae432f8ad5a55852148381a8051655810bc0df4ddf52b3ba87
+  at: 2026-11-01T19:11:54Z
 resource: ../../pnpm-workspace.yaml
 sources:
   - id: pnpm-workspace
@@ -17,6 +16,9 @@ sources:
 tags:
   - deps
   - dx
+integrity:
+  generated:
+    body: e66fea1de5437414
 ---
 
 # A green install after unlinking a dogfooded package does not mean the code still typechecks
@@ -63,8 +65,8 @@ the actual published version is the check; a pipeline's own self-report is not.
 
 `pnpm-workspace.yaml` carries an `overrides:` entry while any `file:` link from the dogfood
 protocol is active, and carries none when it is not — there is no other way to tell, because
-every declared range in `package.json` is a `catalog:effected` / `catalog:effect` reference
-resolved by the `@effected/pnpm-plugin-effect` config dependency rather than a hand-written
+every declared range in `package.json` is a `catalog:effected` reference
+resolved by the `@effected/pnpm-plugin-effected` config dependency rather than a hand-written
 caret a reader could compare against a known-good value. The current file has no `overrides:`
 key at all.[^pnpm-workspace] The governing rule, stated once and worth repeating here: never
 push while linked — unlink, restore the published range, run a **cold** install, and only

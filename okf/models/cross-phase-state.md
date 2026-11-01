@@ -9,7 +9,6 @@ tags:
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 9cea61548325729c2e08cf9b415c492759687682cf6ffa3cb235a68d17cf303f
 sources:
   - id: state
     resource: ../../src/state.ts
@@ -17,6 +16,9 @@ sources:
     resource: ../../src/post.ts
   - id: state-test
     resource: ../../__test__/unit/state.test.ts
+integrity:
+  generated:
+    body: 9cea61548325729c
 ---
 
 # Cross-phase state — STATE_KEYS and the four Schema.Class bundles

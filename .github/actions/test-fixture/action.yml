@@ -155,6 +155,9 @@ outputs:
   test-results:
     description: JSON string of test results
     value: ${{ steps.verify.outputs.test-results }}
+  setup-error:
+    description: Why the fixture could not be set up; empty when setup succeeded
+    value: ${{ steps.setup-fixture.outputs.setup-error }}
 runs:
   using: composite
   steps:
@@ -384,6 +387,10 @@ runs:
     - name: Verify outputs
       id: verify
       shell: python
+      # Through env, not `${{ }}` in the script: the message is arbitrary text,
+      # and a quote in it would end the Python string literal.
+      env:
+        SETUP_ERROR: ${{ steps.setup-fixture.outputs.setup-error }}
       run: |
         import json
         import os
@@ -396,7 +403,7 @@ runs:
             failed = False
             results = {}
             test_cache = "${{ inputs.test-cache }}"
-            setup_error = "${{ steps.setup-fixture.outputs.setup-error }}"
+            setup_error = os.environ.get("SETUP_ERROR", "")
 
             # Check for setup fixture error first
             if setup_error:

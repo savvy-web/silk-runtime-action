@@ -7,7 +7,6 @@ repository: spencerbeggs/effected
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 2225497fde827dfb689a7751f677d8df1d416e86978a124caee190feede375cb
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -16,6 +15,9 @@ sources:
 tags:
   - deps
   - testing
+integrity:
+  generated:
+    body: 2225497fde827dfb
 ---
 
 # spencerbeggs/effected

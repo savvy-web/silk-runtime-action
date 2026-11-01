@@ -7,7 +7,6 @@ tags: [architecture, testing, dx]
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 7c6ccb981f83ce86650dcc3a7927c5ab5261e6df8b2d55d3cd3dc60b9649b7a5
 sources:
   - id: turbo-cache-step
     resource: ../../src/steps/turbo-cache.ts
@@ -19,6 +18,9 @@ sources:
     resource: ../../src/steps/install-biome.ts
   - id: install-dependencies
     resource: ../../src/steps/install-dependencies.ts
+integrity:
+  generated:
+    body: 7c6ccb981f83ce86
 ---
 
 # Seams as defaulted parameters, not services

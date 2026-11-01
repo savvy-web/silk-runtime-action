@@ -7,7 +7,6 @@ stale_after: 2027-03-21T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-21T20:35:07Z
-  body_sha256: 5b59297bd0195fb2823dca3f058c4ca200af279fafa51c259067dae296879b2a
 resource: ../../.github/workflows/test.yml
 sources:
   - id: test-workflow
@@ -20,6 +19,9 @@ tags:
   - ci
   - caching
   - testing
+integrity:
+  generated:
+    body: 5b59297bd0195fb2
 ---
 
 # Re-running the fixture matrix fails every "create cache" job

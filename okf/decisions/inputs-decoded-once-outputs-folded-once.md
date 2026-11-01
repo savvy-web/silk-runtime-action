@@ -7,12 +7,14 @@ tags: [architecture, dx]
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: d2cbadfc64b79c7f9ec43b081c09fa2b468df6bd491be55126962db8d1e748c1
 sources:
   - id: schema-inputs
     resource: ../../src/schema/inputs.ts
   - id: program
     resource: ../../src/program.ts
+integrity:
+  generated:
+    body: d2cbadfc64b79c7f
 ---
 
 # Inputs decoded once, outputs folded once

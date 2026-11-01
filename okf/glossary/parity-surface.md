@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 17c4ba67b7949d8cac8af178c81b03d23898e3db51c1275e48f4ba9664184cc6
 sources:
   - id: inputs-test
     resource: ../../__test__/unit/schema/inputs.test.ts
@@ -23,6 +22,9 @@ sources:
 tags:
   - testing
   - dx
+integrity:
+  generated:
+    body: 17c4ba67b7949d8c
 ---
 
 # Parity surface

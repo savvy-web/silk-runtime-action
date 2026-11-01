@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 3fd2b2f41d92650cf496618b1bc6b44c192bcf4ca01d5347d6fa95411142669e
 sources:
   - id: step-contract-modules
     resource: ../../src/steps
@@ -18,6 +17,9 @@ sources:
     resource: ../../src/layers/app.ts
   - id: steps-shared-shape-test
     resource: ../../__test__/unit/steps/steps.test.ts
+integrity:
+  generated:
+    body: 3fd2b2f41d92650c
 ---
 
 # The step-contract rule

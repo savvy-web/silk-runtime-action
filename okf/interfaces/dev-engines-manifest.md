@@ -8,12 +8,14 @@ resource: ../../src/schema/domain.ts
 generated:
   by: okfit/claude-code
   at: 2026-09-24T01:33:32Z
-  body_sha256: 4d39887d96c939640232490d15fdc6309d5747133b91853ebcd6bbc1025b6392
 sources:
   - id: domain-schema
     resource: ../../src/schema/domain.ts
   - id: domain-test
     resource: ../../__test__/unit/schema/domain.test.ts
+integrity:
+  generated:
+    body: 4d39887d96c93964
 ---
 
 # devEngines manifest — the config shape consumers must satisfy

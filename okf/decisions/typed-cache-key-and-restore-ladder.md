@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 6af5ae179ca821983375a13423bd346a8b8efca95f3d6c2c84c52da053219334
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -15,6 +14,9 @@ sources:
 tags:
   - caching
   - architecture
+integrity:
+  generated:
+    body: 6af5ae179ca82198
 ---
 
 # A typed CacheKey carries the restore-ladder policy, never a bare string

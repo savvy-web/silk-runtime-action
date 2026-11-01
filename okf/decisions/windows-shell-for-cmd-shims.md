@@ -5,8 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: 49f8f889873365a7deda37d294b15871a8e1c1c803f84694490da13708b1c34c
+  at: 2026-11-01T19:18:29Z
 sources:
   - id: install-dependencies
     resource: ../../src/steps/install-dependencies.ts
@@ -15,6 +14,9 @@ sources:
 tags:
   - compat
   - security
+integrity:
+  generated:
+    body: d44e029eecc00d89
 ---
 
 # Windows launches every manager through a shell; POSIX never does
@@ -51,11 +53,18 @@ including reading stderr and waiting on the exit code — while `exit-code` is r
 command that ran and reported failure; the shell moves "manager not found" from the first
 bucket to the second on Windows only.[^install-dependencies]
 
-**Argument quoting is not a hazard here**, even though Node concatenates the command and its
-arguments into a single `cmd.exe` command line under `shell: true`, which is ordinarily a
-quoting risk for anything containing a space or a shell metacharacter. It is not one in this
-action because every argument comes from the static `PLANS` table or `ignoreScriptsArgs` —
-no path, no version, nothing derived from a workflow input reaches the argv.[^install-dependencies]
+**Under the shell the whole command line is the command.** Since Effect 4.1 the Node spawner
+refuses `shell` combined with an argument list (`The shell option cannot be combined with
+arguments`), so `spawnInstall` builds one line with `CommandLine.join(…, { format: "windows" })`
+and spawns it with no arguments. That spawn-time refusal failed every Windows install the
+first time this action ran on 4.1. The unit suite's recording spawner now refuses the same
+shape, because only a Windows runner ever reaches this branch.[^install-dependencies]
+
+**Argument quoting is not a hazard here.** The `windows` format quotes for a program's own
+argv parser, not for `cmd.exe`, which still expands `%NAME%` and reads `^ & | < >` first, so
+it would not make an untrusted value safe. None reaches the line: every argument comes from
+the static `PLANS` table or `ignoreScriptsArgs` — no path, no version, nothing derived from a
+workflow input.[^install-dependencies]
 
 ## Alternatives rejected
 

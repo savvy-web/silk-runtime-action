@@ -8,12 +8,14 @@ resource: ../../src/turbo-cache/handler.ts
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 24a5efa491257fcc6db310ea7a4182be3d17635c83f9d712d06259699b6bd15a
 sources:
   - id: handler
     resource: ../../src/turbo-cache/handler.ts
   - id: meta
     resource: ../../src/turbo-cache/meta.ts
+integrity:
+  generated:
+    body: 24a5efa491257fcc
 ---
 
 # Turbo artifacts wire protocol — routes, auth, keys, and metadata

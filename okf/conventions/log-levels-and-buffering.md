@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: e6f00dabf25831b9e06a3f140a0a630e403ce7149a0bc45e10fdbd233aac8308
 sources:
   - id: program-src
     resource: ../../src/program.ts
@@ -22,6 +21,9 @@ sources:
     resource: ../../src/steps/restore-cache.ts
   - id: format-src
     resource: ../../src/summary/format.ts
+integrity:
+  generated:
+    body: e6f00dabf25831b9
 ---
 
 # Log levels and buffering

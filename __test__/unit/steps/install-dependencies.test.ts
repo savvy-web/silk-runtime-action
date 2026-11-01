@@ -4,6 +4,7 @@ import { ActionLogger } from "@effected/github-actions";
 import { MemoryFileSystem } from "@effected/memfs";
 import type { FileSystem } from "effect";
 import { Effect, Layer, Logger, Option, PlatformError, Sink, Stream } from "effect";
+import type { CommandLine } from "effect/process";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import type { PackageManagerName } from "../../../src/schema/domain.js";
@@ -31,8 +32,8 @@ const activated = (name: PackageManagerName, binDir?: string): ActivatedPackageM
 /** One recorded `spawn`, down to the fields the command's correctness lives in. */
 interface Invocation {
 	readonly command: string;
-	readonly args: ReadonlyArray<string>;
-	readonly env: Record<string, string | undefined> | undefined;
+	readonly args: ReadonlyArray<CommandLine.Word>;
+	readonly env: Record<string, CommandLine.Word | undefined> | undefined;
 	readonly extendEnv: boolean | undefined;
 	readonly stdout: unknown;
 	readonly shell: boolean | string | undefined;
@@ -87,6 +88,19 @@ const spawnerRecording = (log: Recorder, outcome: Outcome = {}): Layer.Layer<Chi
 		spawn: (command) => {
 			if (!ChildProcess.isStandardCommand(command)) {
 				return Effect.die(new Error("expected a standard command, not a pipeline"));
+			}
+			// The real Node spawner refuses this since Effect 4.1, and only a Windows
+			// runner reaches the shell branch, so the double refuses it the same way
+			// rather than letting the unit suite pass a launch the platform rejects.
+			const shell = command.options.shell;
+			if (shell !== undefined && shell !== false && command.args.length > 0) {
+				return Effect.fail(
+					PlatformError.badArgument({
+						module: "ChildProcess",
+						method: "spawn",
+						description: "The shell option cannot be combined with arguments; pass the whole script as the command",
+					}),
+				);
 			}
 			log.spawns.push({
 				command: command.command,
@@ -594,9 +608,11 @@ describe("installDependencies", () => {
 			// not even hand it over without a shell — a direct spawn died at launch
 			// with `NotFound: ChildProcess.spawn`, before the install ran.
 			assert.strictEqual(log.spawns[0]?.shell, true);
-			// The bare name and the argv are untouched by the shell.
-			assert.strictEqual(log.spawns[0]?.command, "pnpm");
-			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
+			// Under a shell the whole line is the command and there is no argv: the
+			// Effect 4.1 spawner refuses `shell` combined with arguments, which is
+			// what failed every Windows install the first time this ran on 4.1.
+			assert.strictEqual(log.spawns[0]?.command, "pnpm install --frozen-lockfile");
+			assert.deepStrictEqual(log.spawns[0]?.args, []);
 			// And so is the PATH the child gets: `cmd.exe` resolves the bare name
 			// off the *child's* environment, so the prepends are what make the
 			// manager findable at all under a shell. Keyed by whatever spelling
@@ -628,8 +644,22 @@ describe("installDependencies", () => {
 			// same executable in the same prepended directory. One launch path for
 			// all four managers, at no cost to the one that was already fine.
 			assert.strictEqual(log.spawns[0]?.shell, true);
-			assert.strictEqual(log.spawns[0]?.command, "bun");
-			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--frozen-lockfile"]);
+			assert.strictEqual(log.spawns[0]?.command, "bun install --frozen-lockfile");
+			assert.deepStrictEqual(log.spawns[0]?.args, []);
+		}),
+	);
+
+	it.effect("joins yarn Berry's skip-build flag into the Windows command line unquoted", () =>
+		Effect.gen(function* () {
+			const log = recorder();
+			const berry: ActivatedPackageManager = { ...activated("yarn"), version: "4.6.0" };
+			yield* run(log, berry, { present: ["yarn.lock"], ignoreScripts: true, platform: "win32" });
+
+			// The one flag carrying a metacharacter-adjacent `=`. The windows format
+			// quotes only what its argv parser would split, so it reaches cmd.exe as
+			// typed, and the error detail still names the original argv.
+			assert.strictEqual(log.spawns[0]?.command, "yarn install --immutable --mode=skip-build");
+			assert.deepStrictEqual(log.spawns[0]?.args, []);
 		}),
 	);
 

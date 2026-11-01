@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 7286ba00d4eb3adb08b03420de2b8d2da95d3dd6bde0b5b1ee7b01e0bbff5558
 sources:
   - id: state-test
     resource: ../../__test__/unit/state.test.ts
@@ -16,6 +15,9 @@ sources:
     resource: ../../vitest.config.ts
 tags:
   - testing
+integrity:
+  generated:
+    body: 7286ba00d4eb3adb
 ---
 
 # Kit test layers over hand-rolled mocks, and a real in-memory filesystem

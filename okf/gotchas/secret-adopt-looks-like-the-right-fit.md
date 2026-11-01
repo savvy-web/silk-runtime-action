@@ -7,7 +7,6 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 594af42b7183ac9ee9ea938453a06e3b3b47428f516663f34fa261787a13890b
 resource: ../../src/turbo-cache/server-config.ts
 sources:
   - id: server-config
@@ -15,6 +14,9 @@ sources:
 tags:
   - security
   - dx
+integrity:
+  generated:
+    body: 594af42b7183ac9e
 ---
 
 # `Secret.adopt` looks like the right member for the turbo server's config reader, and is wrong twice over

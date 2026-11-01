@@ -7,7 +7,6 @@ repository: spencerbeggs/vitest-bats
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: f65e49a4088a23552b8a6bb3956d832c61c2cd9d60d1b67205529ff4a6b66ad1
 sources:
   - id: install-bats
     resource: ../../src/steps/install-bats.ts
@@ -18,6 +17,9 @@ sources:
 tags:
   - testing
   - compat
+integrity:
+  generated:
+    body: f65e49a4088a2355
 ---
 
 # spencerbeggs/vitest-bats

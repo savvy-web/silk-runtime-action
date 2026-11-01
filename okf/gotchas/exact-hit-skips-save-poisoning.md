@@ -7,7 +7,6 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 1650adb2f3ae6c4de7a034deffb89517346aa98fcd6455c4defba503b65d7d5b
 resource: ../../src/post.ts
 sources:
   - id: post
@@ -15,6 +14,9 @@ sources:
 tags:
   - caching
   - ci
+integrity:
+  generated:
+    body: 1650adb2f3ae6c4d
 ---
 
 # An "exact hit" that installs from the network anyway is a poisoned cache, not a fast one

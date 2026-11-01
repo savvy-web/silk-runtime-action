@@ -6,13 +6,15 @@ description: Why the action is built on Effect v4 and the first-party @effected 
 tags: [architecture, deps, dx]
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: 10910ed6c46b082a5c6ec9de900343d2bb570fab2871388502a7bdd3b2f9f651
+  at: 2026-11-01T19:11:54Z
 sources:
   - id: package-json
     resource: ../../package.json
   - id: layers-app
     resource: ../../src/layers/app.ts
+integrity:
+  generated:
+    body: 80125f11059e5e56
 ---
 
 # Effect v4 over the @effected suite, zero @actions/* dependencies
@@ -30,7 +32,7 @@ tool-installer contract) has to be implemented by something.
 
 ## Decision
 
-Build on Effect v4 (via `catalog:effect`) and the first-party `@effected/*`
+Build on Effect v4 (via `catalog:effected`) and the first-party `@effected/*`
 suite — `@effected/github-actions` for every GitHub Actions runtime
 interaction, plus `@effected/npm`, `@effected/semver`, `@effected/jsonc`,
 `@effected/lockfiles`, `@effected/workspaces` and `@effected/commands`

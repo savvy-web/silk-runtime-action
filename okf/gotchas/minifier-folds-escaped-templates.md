@@ -7,7 +7,6 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 3fcfaf894712f1564fda4de9c2e4f5f7d7a3943635d22f9b8d063ddf0312b5e9
 resource: ../../src/steps/install-bats.ts
 sources:
   - id: install-bats
@@ -15,6 +14,9 @@ sources:
 tags:
   - bundle
   - ci
+integrity:
+  generated:
+    body: 3fcfaf894712f156
 ---
 
 # A green tsc, Biome, unit suite and two reviews still shipped a dead bundle

@@ -6,13 +6,15 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: ec48625c30bcc3f928780ef0f334e8c4c1b5ddae1630648286ea8d3b09d4f311
 sources:
   - id: branch-sync
     resource: ../../.github/workflows/branch-sync.yml
 tags:
   - ci
   - release
+integrity:
+  generated:
+    body: ec48625c30bcc3f9
 ---
 
 # dev/main sync resets by content comparison, never by commit-level history

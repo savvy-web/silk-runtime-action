@@ -7,7 +7,6 @@ resource: ../../src/descriptors
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: deb264c46574d6187e655487be224f102d8dabf3138a61f302fd3e79762864e1
 sources:
   - id: descriptor
     resource: ../../src/descriptors/descriptor.ts
@@ -23,6 +22,9 @@ sources:
     resource: ../../src/descriptors/bats.ts
   - id: kcov
     resource: ../../src/descriptors/kcov.ts
+integrity:
+  generated:
+    body: deb264c46574d618
 ---
 
 # Runtime descriptors — the per-tool download plans installs derive from

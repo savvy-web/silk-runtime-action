@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 07b3621245ece011d30ba2ef7bfd216b773e3032c0a699f0f5e8513353e8a511
 sources:
   - id: install-runtimes-verify
     resource: ../../src/steps/install-runtimes.ts
@@ -16,6 +15,9 @@ sources:
     resource: ../../src/steps/install-dependencies.ts
   - id: program-path-joins
     resource: ../../src/program.ts
+integrity:
+  generated:
+    body: 07b3621245ece011
 ---
 
 # PATH publication rules

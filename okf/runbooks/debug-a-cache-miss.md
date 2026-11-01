@@ -7,7 +7,6 @@ resource: ../../src/steps/restore-cache.ts
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 1ff0d9c739acb7551aa75ddab1440b27d3014d8e9264c3152bbe5931baec6532
 sources:
   - id: restore-cache
     resource: ../../src/steps/restore-cache.ts
@@ -18,6 +17,9 @@ sources:
 tags:
   - caching
   - observability
+integrity:
+  generated:
+    body: 1ff0d9c739acb755
 ---
 
 # Debug a cache miss or partial hit

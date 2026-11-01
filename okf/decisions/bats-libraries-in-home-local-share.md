@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: fb62372727033faf6c4118c0222ff2d8d0aafbaa59df5ba82cfe56c3eca7a9e3
 sources:
   - id: install-bats
     resource: ../../src/steps/install-bats.ts
@@ -16,6 +15,9 @@ tags:
   - compat
   - dx
   - caching
+integrity:
+  generated:
+    body: fb62372727033faf
 ---
 
 # BATS helper libraries go to $HOME/.local/share, the one location two consumers agree on

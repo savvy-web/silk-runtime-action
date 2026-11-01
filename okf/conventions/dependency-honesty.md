@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 4a223fce66231e62601f097054a1d8dd2879ff82775ac9708981ac5a84b6c678
 sources:
   - id: package-json
     resource: ../../package.json
@@ -22,6 +21,9 @@ sources:
     resource: ../../src/steps/install-kcov.ts
   - id: root-claude-deps
     resource: ../../CLAUDE.md
+integrity:
+  generated:
+    body: 4a223fce66231e62
 ---
 
 # Dependency honesty

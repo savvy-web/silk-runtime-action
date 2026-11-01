@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 8e095d0660f301a3ce3ef99c4d25cddd9555541be3bd6f95b6f2cb4c9f2bb835
 sources:
   - id: detect-bats
     resource: ../../src/steps/detect-bats.ts
@@ -16,6 +15,9 @@ tags:
   - architecture
   - compat
   - dx
+integrity:
+  generated:
+    body: 8e095d0660f301a3
 ---
 
 # Two BATS detection signals, neither a fallback for the other

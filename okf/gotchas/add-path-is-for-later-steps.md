@@ -7,7 +7,6 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: ea66eaabf6a3970dbe39f99cf53813376b85daf8a30ce93195514d9c8d7cfb75
 resource: ../../src/steps/install-runtimes.ts
 sources:
   - id: install-runtimes
@@ -15,6 +14,9 @@ sources:
 tags:
   - compat
   - dx
+integrity:
+  generated:
+    body: ea66eaabf6a3970d
 ---
 
 # `addPath` looks like it updates `PATH`; it only reaches later steps

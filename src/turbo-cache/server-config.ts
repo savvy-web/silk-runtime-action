@@ -160,7 +160,15 @@ export const readServerConfig = (env: Environment): Result.Result<TurboServerCon
 const platform = (() => {
 	const fileSystem = NodeFileSystem.layer;
 	const environment = ActionEnvironment.layer.pipe(Layer.provide(fileSystem));
-	return Layer.mergeAll(NodeHttpClient.layerUndici, NodeCrypto.layer, environment, ActionOutputs.layerDetached);
+	// Only the crypto families `BlobStore.layerS3` requires: SigV4 hashes payloads
+	// through `Digest` and derives its signing key through `Mac`.
+	return Layer.mergeAll(
+		NodeHttpClient.layerUndici,
+		NodeCrypto.layerDigest,
+		NodeCrypto.layerMac,
+		environment,
+		ActionOutputs.layerDetached,
+	);
 })();
 
 /**

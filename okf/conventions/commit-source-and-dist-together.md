@@ -8,12 +8,14 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 825d26529ee792b40fc9eb3fd4ae7498e5515f4a5165b7aa8ef11ed2189b7b36
 sources:
   - id: action-config
     resource: ../../action.config.ts
   - id: root-claude-common-commands
     resource: ../../CLAUDE.md
+integrity:
+  generated:
+    body: 825d26529ee792b4
 ---
 
 # Commit source and dist together

@@ -7,7 +7,6 @@ bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: ed02c032d8652e94520e645a760e6c7196fcafc7712a0a790738b4fca3627736
 sources:
   - id: server-config
     resource: ../../src/turbo-cache/server-config.ts
@@ -16,6 +15,9 @@ sources:
 tags:
   - caching
   - ci
+integrity:
+  generated:
+    body: ed02c032d8652e94
 ---
 
 # "ACTIONS_RUNTIME_TOKEN" expires under a long-running embedded Turbo server

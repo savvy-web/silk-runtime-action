@@ -45,8 +45,10 @@ Consuming repositories **MUST** have a root `package.json` with:
 
 ## Technical Stack
 
-* **Framework:** [Effect](https://effect.website) **v4**, via `catalog:effect` — an exact
-  pin supplied by the `@effected/pnpm-plugin-effect` config dependency, so read the version
+* **Framework:** [Effect](https://effect.website) **v4**, via `catalog:effected` — held to
+  one Effect minor (`~4.1.x`, never a caret) by the `@effected/pnpm-plugin-effected` config
+  dependency, whose install hook folds every Effect-family and kit entry into that single
+  `effected` catalog (there is no `catalog:effect` any more), so read the version
   out of `pnpm-lock.yaml`'s `catalogs:` block rather than from here. In v4
   `@effect/platform` is dissolved into core `effect` (`FileSystem`, `Path`, `HttpClient`
   live there); only Node platform layers ship separately, in `@effect/platform-node`.
@@ -58,7 +60,7 @@ Consuming repositories **MUST** have a root `package.json` with:
   `GitHubMarkdown`, `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
   `GitHubContext.branch` (off `ActionEnvironment.github`) is the branch fallback chain.
   **Do not cite a version here** — every `@effected/*` range is `catalog:effected`, resolved
-  by the `@effected/pnpm-plugin-effect` config dependency, so the installed version is in
+  by the `@effected/pnpm-plugin-effected` config dependency, so the installed version is in
   `pnpm-lock.yaml`'s `catalogs:` block and nowhere else. Re-derive it; a number written into
   this file is stale by the next bump, and kit-surface claims are re-verified against the
   installed version on every bump, not against this paragraph.

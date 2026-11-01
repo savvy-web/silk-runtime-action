@@ -7,13 +7,15 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 5429cce0449be33816d86e7a6e0ae33e74e08cb2e3236fd433c43007426c7395
 resource: ../../.github/workflows/test.yml
 sources:
   - id: test-yml
     resource: ../../.github/workflows/test.yml
 tags:
   - ci
+integrity:
+  generated:
+    body: 5429cce0449be338
 ---
 
 # A workflow trigger filter that matches no branch fails open into silence
