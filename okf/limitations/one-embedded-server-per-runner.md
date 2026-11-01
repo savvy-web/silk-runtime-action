@@ -7,7 +7,6 @@ bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: a8830aef7eeca580b4f16a2ac540ff54dc1656b9777992bd2fe9738ea0d4e7a4
 sources:
   - id: server-config
     resource: ../../src/turbo-cache/server-config.ts
@@ -15,6 +14,9 @@ sources:
     resource: ../../src/turbo-server.ts
 tags:
   - ci
+integrity:
+  generated:
+    body: a8830aef7eeca580
 ---
 
 # One embedded Turbo cache server per runner

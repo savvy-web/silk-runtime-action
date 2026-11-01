@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 007b3d2abf9505f849529350de65f2c26fb98d5abd8828787f8bdcccb114f22a
 sources:
   - id: test-tree
     resource: ../../__test__/unit
@@ -40,6 +39,9 @@ sources:
     resource: ../../vitest.config.ts
   - id: root-claude-contributing
     resource: ../../CLAUDE.md
+integrity:
+  generated:
+    body: 007b3d2abf9505f8
 ---
 
 # Unit test conventions

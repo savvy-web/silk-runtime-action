@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: e72a13b6b20ac064d2d266e04b4412170399ad8e857a5666705274ab61751685
 sources:
   - id: kcov-descriptor
     resource: ../../src/descriptors/kcov.ts
@@ -16,6 +15,9 @@ tags:
   - compat
   - caching
   - performance
+integrity:
+  generated:
+    body: e72a13b6b20ac064
 ---
 
 # kcov is built from source because nothing usable is prebuilt

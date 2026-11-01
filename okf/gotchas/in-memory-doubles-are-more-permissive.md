@@ -7,7 +7,6 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: e5ff55a0f696cc65c0c5e69307e832d8b6ca5975e110f6d6b3b54585b8e1897f
 resource: ../../__test__/unit/state.test.ts
 sources:
   - id: state
@@ -20,6 +19,9 @@ sources:
     resource: ../../.github/actions/test-fixture/action.yml
 tags:
   - testing
+integrity:
+  generated:
+    body: e5ff55a0f696cc65
 ---
 
 # A hand-written test double is more permissive than the runner it replaces

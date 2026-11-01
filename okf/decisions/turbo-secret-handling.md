@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 39751fa42c6f2b9999b9d44249d862859a0c688b1e835ddcf1a15c9daafa03bf
 sources:
   - id: turbo-cache-step
     resource: ../../src/steps/turbo-cache.ts
@@ -16,6 +15,9 @@ sources:
     resource: ../../src/schema/inputs.ts
 tags:
   - security
+integrity:
+  generated:
+    body: 39751fa42c6f2b99
 ---
 
 # Turbo credentials are masked unconditionally, declassified only through Secret.*

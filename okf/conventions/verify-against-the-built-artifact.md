@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 0fe1f30bafad48598d383260b82a1415642578dc30a8c44febac668775b06f50
 sources:
   - id: bats-mock-loader
     resource: ../../src/steps/install-bats.ts
@@ -16,6 +15,9 @@ sources:
     resource: ../../__fixtures__/bats-kcov
   - id: root-claude-build
     resource: ../../CLAUDE.md
+integrity:
+  generated:
+    body: 0fe1f30bafad4859
 ---
 
 # Verification means the built artifact

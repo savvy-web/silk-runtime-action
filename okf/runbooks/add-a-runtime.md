@@ -7,7 +7,6 @@ resource: ../../src/descriptors
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: b95830e940a5ea7d9c3ee082dd5fc8e097b919a85e19940bef0112aca25d7dcc
 sources:
   - id: descriptor
     resource: ../../src/descriptors/descriptor.ts
@@ -28,6 +27,9 @@ sources:
 tags:
   - dx
   - compat
+integrity:
+  generated:
+    body: b95830e940a5ea7d
 ---
 
 # Add a runtime

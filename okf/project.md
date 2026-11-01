@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 8d5a3200739fa002102f3a8b84e512468009f2f261462119ec592af4520115d6
 sources:
   - id: domain-schema
     resource: ../src/schema/domain.ts
@@ -20,6 +19,9 @@ sources:
     resource: ../src/turbo-server.ts
   - id: turbo-cache-step
     resource: ../src/steps/turbo-cache.ts
+integrity:
+  generated:
+    body: 8d5a3200739fa002
 ---
 
 # silk-runtime-action

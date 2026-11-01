@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-10-05T21:46:04Z
-  body_sha256: 5f2bc9bd24f1f6ddcb0b1bf9bbfadc7879d4c190d6bc842386a06fc2449f8186
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -18,6 +17,9 @@ tags:
   - caching
   - performance
   - architecture
+integrity:
+  generated:
+    body: 5f2bc9bd24f1f6dd
 ---
 
 # Two cache entries — the workspace archive and the package-manager store — keyed independently

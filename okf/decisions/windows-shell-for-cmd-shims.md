@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 49f8f889873365a7deda37d294b15871a8e1c1c803f84694490da13708b1c34c
 sources:
   - id: install-dependencies
     resource: ../../src/steps/install-dependencies.ts
@@ -15,6 +14,9 @@ sources:
 tags:
   - compat
   - security
+integrity:
+  generated:
+    body: 49f8f889873365a7
 ---
 
 # Windows launches every manager through a shell; POSIX never does

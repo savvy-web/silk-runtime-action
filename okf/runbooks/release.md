@@ -7,7 +7,6 @@ resource: ../../.github/workflows/release.yml
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 8543639263fa22c4a7ea2452e0b6a0f597b1e1a5f26517121df51d62112b9c9e
 sources:
   - id: release-yml
     resource: ../../.github/workflows/release.yml
@@ -18,6 +17,9 @@ sources:
 tags:
   - release
   - ci
+integrity:
+  generated:
+    body: 8543639263fa22c4
 ---
 
 # Release dev to main

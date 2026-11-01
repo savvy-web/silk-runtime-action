@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 9a1ee9e5d1c5fe1bb870b117532bd15b41dcd2b8dfc1a9136e4a22b2799b94da
 sources:
   - id: setup-package-manager
     resource: ../../src/steps/setup-package-manager.ts
@@ -18,6 +17,9 @@ tags:
   - architecture
   - compat
   - dx
+integrity:
+  generated:
+    body: 9a1ee9e5d1c5fe1b
 ---
 
 # The pinned package manager leads the child PATH, with no ambient exception

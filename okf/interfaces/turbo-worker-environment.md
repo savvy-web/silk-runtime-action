@@ -8,10 +8,12 @@ resource: ../../src/turbo-cache/server-config.ts
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 0d345232e9aeeccbcbf59ed3ac9dc276da943a5200b96ece932c17902bc69bb8
 sources:
   - id: server-config
     resource: ../../src/turbo-cache/server-config.ts
+integrity:
+  generated:
+    body: 0d345232e9aeeccb
 ---
 
 # Turbo worker environment — the main-to-worker handoff contract

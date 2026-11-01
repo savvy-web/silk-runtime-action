@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 338b6ecf5d678c76e2f022f74d24506c01807e49b4e719430b80f5904e5bc262
 sources:
   - id: turbo-cache-step
     resource: ../../src/steps/turbo-cache.ts
@@ -17,6 +16,9 @@ sources:
 tags:
   - dx
   - testing
+integrity:
+  generated:
+    body: 338b6ecf5d678c76
 ---
 
 # Seam

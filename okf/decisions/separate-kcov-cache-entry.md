@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 2a979818003019cca405a0565d152b8248c42ffe1234629a88de9a50ab0b08c2
 sources:
   - id: kcov-descriptor
     resource: ../../src/descriptors/kcov.ts
@@ -19,6 +18,9 @@ sources:
 tags:
   - caching
   - architecture
+integrity:
+  generated:
+    body: 2a979818003019cc
 ---
 
 # kcov gets its own Actions cache entry, key ladder, and verify probe

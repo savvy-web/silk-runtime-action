@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: f0ec85ac37306d478ac86c7d41fa579b3574140d4d6c763df818512f11815685
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -26,6 +25,9 @@ tags:
   - architecture
   - caching
   - ci
+integrity:
+  generated:
+    body: f0ec85ac37306d47
 ---
 
 # An embedded, detached Turbo remote-cache server over a Vercel account

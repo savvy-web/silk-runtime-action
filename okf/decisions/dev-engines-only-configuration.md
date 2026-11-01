@@ -7,12 +7,14 @@ tags: [architecture, dx, compat]
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 18475db43fce83acf9115e7673d6f1f0aaade6eeb6069e8f29a1378d79c2d292
 sources:
   - id: schema-domain
     resource: ../../src/schema/domain.ts
   - id: setup-package-manager
     resource: ../../src/steps/setup-package-manager.ts
+integrity:
+  generated:
+    body: 18475db43fce83ac
 ---
 
 # devEngines-only configuration, no version inputs

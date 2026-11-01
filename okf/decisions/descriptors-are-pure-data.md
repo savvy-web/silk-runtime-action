@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 3f9d680375caa7148ddc038ab7b904c20d559c9704c6ca06170a3e5d3fc95002
 sources:
   - id: descriptor
     resource: ../../src/descriptors/descriptor.ts
@@ -18,6 +17,9 @@ tags:
   - architecture
   - compat
   - dx
+integrity:
+  generated:
+    body: 3f9d680375caa714
 ---
 
 # Runtime descriptors are pure, total data — no host reads, no service

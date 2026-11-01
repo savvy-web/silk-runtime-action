@@ -8,7 +8,6 @@ resource: ../../action.yml
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 99dc963326e9cfc6b48e42b72ac1b8f7f23060343f9932de6e95418e490a46a1
 sources:
   - id: action-yml
     resource: ../../action.yml
@@ -24,6 +23,9 @@ sources:
     resource: ../../__test__/unit/schema/outputs.test.ts
   - id: inputs-parity-test
     resource: ../../__test__/unit/schema/inputs.test.ts
+integrity:
+  generated:
+    body: 99dc963326e9cfc6
 ---
 
 # Action contract — inputs, outputs, and exported environment

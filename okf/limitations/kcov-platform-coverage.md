@@ -7,7 +7,6 @@ bounds: ../modules/silk-runtime-action.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 5a1819e9813cf45ec1df88778ab5f25aefa368884c2bfc08be1e15538a8c98c0
 sources:
   - id: kcov-descriptor
     resource: ../../src/descriptors/kcov.ts
@@ -15,6 +14,9 @@ sources:
     resource: "npm:vitest-bats"
 tags:
   - compat
+integrity:
+  generated:
+    body: 5a1819e9813cf45e
 ---
 
 # kcov collects no coverage on macOS, and none at all on Windows

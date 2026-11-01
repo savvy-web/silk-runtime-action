@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: a945d005bb7356b5eb7e6380aeeed72f82945ef444a0050e785ad8081e790a6b
 sources:
   - id: src-claude-md
     resource: ../../src/CLAUDE.md
@@ -14,6 +13,9 @@ sources:
     resource: ../../src/post.ts
 tags:
   - dx
+integrity:
+  generated:
+    body: a945d005bb7356b5
 ---
 
 # Legacy / v1 / "oracle N" / "ruling N" / "quirk N" citations

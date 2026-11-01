@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: ed0cdfa143030dacec2b1e8fb376d48848ec59232678dbdc5bac10bc41c90eb4
 sources:
   - id: format-src
     resource: ../../src/summary/format.ts
@@ -28,6 +27,9 @@ sources:
     resource: ../../src/schema/inputs.ts
   - id: outputs-src
     resource: ../../src/schema/outputs.ts
+integrity:
+  generated:
+    body: ed0cdfa143030dac
 ---
 
 # Prose is parity surface

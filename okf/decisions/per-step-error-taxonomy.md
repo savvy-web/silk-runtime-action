@@ -7,7 +7,6 @@ tags: [architecture, dx, observability]
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: b368f5c580be7a802f76d09fe944e88333a6be52d374fcb1a3d758e995f2ed09
 sources:
   - id: restore-cache
     resource: ../../src/steps/restore-cache.ts
@@ -23,6 +22,9 @@ sources:
     resource: ../../src/main.ts
   - id: post
     resource: ../../src/post.ts
+integrity:
+  generated:
+    body: b368f5c580be7a80
 ---
 
 # Per-step error taxonomy, no central error union

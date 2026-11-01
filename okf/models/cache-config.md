@@ -9,7 +9,6 @@ tags:
 generated:
   by: okfit/claude-code
   at: 2026-10-05T21:46:04Z
-  body_sha256: f6338338b287398b18752a59828bb5bf862188ea0f7756dc2e9750f9b17854fa
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -17,6 +16,9 @@ sources:
     resource: ../../src/descriptors/kcov.ts
   - id: restore-cache
     resource: ../../src/steps/restore-cache.ts
+integrity:
+  generated:
+    body: f6338338b287398b
 ---
 
 # Cache config — key formats, ladders, lockfile patterns, and archived paths

@@ -7,7 +7,6 @@ stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 1e470e689d3b4fa5dd060a37276b1f5e7b90066ee49ed18b669c6960875becf8
 resource: ../../.github/workflows/branch-sync.yml
 sources:
   - id: branch-sync
@@ -17,6 +16,9 @@ sources:
 tags:
   - release
   - dx
+integrity:
+  generated:
+    body: 1e470e689d3b4fa5
 ---
 
 # A `Closes #N` trailer merged into `dev` does not close the issue

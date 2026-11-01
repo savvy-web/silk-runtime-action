@@ -6,7 +6,6 @@ status: draft
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: 0d14068dd34f23654e095751aa90663ea15668527aab2fc780044e633c864a6b
 sources:
   - id: action-config
     resource: ../../action.config.ts
@@ -16,6 +15,9 @@ tags:
   - bundle
   - release
   - ci
+integrity:
+  generated:
+    body: 0d14068dd34f2365
 ---
 
 # dist/ is committed, bundled and minified, with a mirrored local testing copy

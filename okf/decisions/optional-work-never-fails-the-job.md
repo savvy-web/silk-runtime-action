@@ -7,7 +7,6 @@ tags: [architecture, dx, caching, observability]
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: c4b2fdfe2bdbc542245319613e42289a8ba42181e44a520c4cde95a852795a89
 sources:
   - id: restore-cache
     resource: ../../src/steps/restore-cache.ts
@@ -17,6 +16,9 @@ sources:
     resource: ../../src/post.ts
   - id: turbo-cache-step
     resource: ../../src/steps/turbo-cache.ts
+integrity:
+  generated:
+    body: c4b2fdfe2bdbc542
 ---
 
 # Optional work never fails the job

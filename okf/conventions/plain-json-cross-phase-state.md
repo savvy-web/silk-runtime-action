@@ -8,7 +8,6 @@ stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
-  body_sha256: c0d625dfc44e54cc283fd49dc88f85e12267acbc9ad826c9266b4742f0bc7e4f
 sources:
   - id: state-schemas
     resource: ../../src/state.ts
@@ -16,6 +15,9 @@ sources:
     resource: ../../src/turbo-cache/meta.ts
   - id: state-round-trip-test
     resource: ../../__test__/unit/state.test.ts
+integrity:
+  generated:
+    body: c0d625dfc44e54cc
 ---
 
 # Cross-phase state's encoded form must be plain JSON
