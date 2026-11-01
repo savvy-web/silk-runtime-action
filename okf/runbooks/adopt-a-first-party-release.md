@@ -6,8 +6,7 @@ status: draft
 resource: ../../pnpm-workspace.yaml
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
-  body_sha256: ba0285db726a5143b97e78b4b9aee3d404655f6d9e2618b050a09978dd2e35bf
+  at: 2026-11-01T19:11:54Z
 sources:
   - id: pnpm-workspace
     resource: ../../pnpm-workspace.yaml
@@ -16,6 +15,9 @@ sources:
 tags:
   - deps
   - release
+integrity:
+  generated:
+    body: 2b3ff2a429329320
 ---
 
 # Adopt a first-party release after a dogfood round
@@ -38,12 +40,12 @@ the loop.
 
 1. **Confirm what is linked, by reading the tree, not by memory.** `pnpm-workspace.yaml`
    carries an `overrides:` entry only while a link is live; a clean, unlinked checkout has
-   none. Every published range in this repository is `catalog:effected` or `catalog:effect`,
-   resolved by the `@effected/pnpm-plugin-effect` config dependency — there is no
+   none. Every published range in this repository is `catalog:effected`, resolved by
+   the `@effected/pnpm-plugin-effected` config dependency — there is no
    hand-written caret to read a link out of, so the `overrides:` block is the one place link
    state is visible.[^pnpm-workspace][^claude-md]
 2. **Take the new versions from the catalog, not from an edited range.** The `effected`
-   catalog moves under `@effected/pnpm-plugin-effect`'s own release, which is itself a
+   catalog moves under `@effected/pnpm-plugin-effected`'s own release, which is itself a
    `configDependencies` entry in `pnpm-workspace.yaml`. Nothing in this repository's own
    `package.json` names an exact `@effected/*` version to bump by hand.[^pnpm-workspace]
 3. **Unlink and remove the `overrides:` entry.** Links are added lazily, for one round, and

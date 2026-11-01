@@ -7,7 +7,7 @@ import {
 	ToolInstallerError,
 } from "@effected/github-actions";
 import { Effect, Layer, Logger, Option, Path, Stream } from "effect";
-import type { ChildProcess } from "effect/process";
+import type { ChildProcess, CommandLine } from "effect/process";
 import { ChildProcessSpawner } from "effect/process";
 
 import { RuntimeConfig } from "../../../src/schema/domain.js";
@@ -49,7 +49,7 @@ interface Recorder {
 	readonly calls: Array<string>;
 	readonly urls: Array<string>;
 	readonly paths: Array<string>;
-	readonly probes: Array<{ readonly command: string; readonly args: ReadonlyArray<string> }>;
+	readonly probes: Array<{ readonly command: string; readonly args: ReadonlyArray<CommandLine.Word> }>;
 	readonly logs: Array<string>;
 }
 

@@ -4,8 +4,10 @@
  * @remarks
  * `ActionRuntime.layer` — which `Action.run` composes — already provides
  * `ActionEnvironment`, `ActionLogger`, `ActionOutputs`, `ActionState`,
- * `NodeServices` (`ChildProcessSpawner`, `Crypto`, `FileSystem`, `Path`,
- * `Stdio`, `Terminal`) and `HttpClient`. Nothing here rebuilds any of those.
+ * `NodeServices` (`ChildProcessSpawner`, `FileSystem`, `Path`, `Stdio`,
+ * `Terminal`), the `Digest`, `Mac` and `SecureRandom` crypto services (from
+ * `NodeCrypto`; `NodeServices` carries no crypto since Effect 4.1) and
+ * `HttpClient`. Nothing here rebuilds any of those.
  *
  * What it does add is the two services the kit deliberately keeps out of the
  * default runtime, because they are the only modules that pull in a

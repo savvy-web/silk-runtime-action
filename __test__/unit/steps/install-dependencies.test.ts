@@ -4,6 +4,7 @@ import { ActionLogger } from "@effected/github-actions";
 import { MemoryFileSystem } from "@effected/memfs";
 import type { FileSystem } from "effect";
 import { Effect, Layer, Logger, Option, PlatformError, Sink, Stream } from "effect";
+import type { CommandLine } from "effect/process";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import type { PackageManagerName } from "../../../src/schema/domain.js";
@@ -31,8 +32,8 @@ const activated = (name: PackageManagerName, binDir?: string): ActivatedPackageM
 /** One recorded `spawn`, down to the fields the command's correctness lives in. */
 interface Invocation {
 	readonly command: string;
-	readonly args: ReadonlyArray<string>;
-	readonly env: Record<string, string | undefined> | undefined;
+	readonly args: ReadonlyArray<CommandLine.Word>;
+	readonly env: Record<string, CommandLine.Word | undefined> | undefined;
 	readonly extendEnv: boolean | undefined;
 	readonly stdout: unknown;
 	readonly shell: boolean | string | undefined;

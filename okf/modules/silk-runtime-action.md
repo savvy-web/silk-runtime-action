@@ -7,8 +7,7 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-10-05T21:46:04Z
-  body_sha256: 7fbba70e82563b0c444610808a24fb9632c86fcb570758b036d103180f075e30
+  at: 2026-11-01T19:11:54Z
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -28,6 +27,9 @@ sources:
     resource: ../../src/schema/outputs.ts
   - id: install-runtimes
     resource: ../../src/steps/install-runtimes.ts
+integrity:
+  generated:
+    body: 475b8ba6ea648244
 ---
 
 # silk-runtime-action
@@ -124,8 +126,10 @@ action.yml (node24 runtime)
 ## Layer composition
 
 `Action.run` composes `ActionRuntime.layer`, which already provides `ActionEnvironment`,
-`ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient` and `NodeServices`
-(`ChildProcessSpawner`, `Crypto`, `FileSystem`, `Path`, `Stdio`, `Terminal`). Nothing in
+`ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient`, `NodeServices`
+(`ChildProcessSpawner`, `FileSystem`, `Path`, `Stdio`, `Terminal`) and the `Digest`, `Mac`
+and `SecureRandom` crypto services from `NodeCrypto` — `NodeServices` carries no crypto
+since Effect 4.1. Nothing in
 `layers/app.ts` rebuilds any of those; it adds only what the kit deliberately keeps out of
 the default runtime, because those modules pull in a blob-storage client.[^layers-app]
 

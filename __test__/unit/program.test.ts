@@ -20,6 +20,7 @@ import { WorkspaceDiscovery } from "@effected/workspaces";
 import type { FileSystem } from "effect";
 import { Cause, Effect, Exit, Layer, Logger, Option, Path, Sink, Stream } from "effect";
 import { HttpClient } from "effect/http";
+import type { CommandLine } from "effect/process";
 import { ChildProcess, ChildProcessSpawner as ChildProcessSpawnerNS } from "effect/process";
 
 import { BATS_CORE_VERSION } from "../../src/descriptors/bats.js";
@@ -53,9 +54,22 @@ const quietHandle = ChildProcessSpawnerNS.makeHandle({
 /** One command the program spawned, as far as this suite cares about it. */
 interface Spawned {
 	readonly command: string;
-	readonly args: ReadonlyArray<string>;
-	readonly env: Record<string, string | undefined> | undefined;
+	readonly args: ReadonlyArray<CommandLine.Word>;
+	readonly env: Record<string, CommandLine.Word | undefined> | undefined;
 }
+
+/**
+ * The `PATH` a recorded spawn handed its child, split on the platform delimiter.
+ *
+ * @remarks
+ * An env value may be `Redacted` since Effect 4.1; `PATH` never should be, so a
+ * redacted or absent one fails here rather than being coerced to text.
+ */
+const pathEntries = (spawned: Spawned | undefined): ReadonlyArray<string> => {
+	const value = spawned?.env?.PATH;
+	assert.strictEqual(typeof value, "string", "expected the install child to receive a plain-string PATH");
+	return (value as string).split(delimiter);
+};
 
 /**
  * A `ChildProcessSpawner` test double, recording into `spawns`.
@@ -538,7 +552,7 @@ describe("program", () => {
 			// the manager's directory left every runner reporting `deno: not found`.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
 			assert.strictEqual(install?.command, "pnpm");
-			const entries = (install?.env?.PATH ?? "").split(delimiter);
+			const entries = pathEntries(install);
 			// The manager leads — its shims win any name collision. The runtimes
 			// follow in `devEngines` declaration order, and each is matched by prefix
 			// because the bin subdirectory below the cached root is the descriptor's
@@ -574,7 +588,7 @@ describe("program", () => {
 			// instead. `allowAmbient: false` puts the pinned npm at the head.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
 			assert.strictEqual(install?.command, "npm");
-			const entries = (install?.env?.PATH ?? "").split(delimiter);
+			const entries = pathEntries(install);
 			assert.strictEqual(entries[0], "/opt/toolcache/npm/11.6.2/.bin");
 			// node still follows, so a lifecycle script resolves the pinned node —
 			// but it no longer decides which npm runs.
@@ -605,7 +619,7 @@ describe("program", () => {
 			// directory would shadow the version this run installed.
 			const install = spawns.find((spawned) => spawned.args[0] === "install");
 			assert.strictEqual(install?.command, "bun");
-			const entries = (install?.env?.PATH ?? "").split(delimiter);
+			const entries = pathEntries(install);
 			assert.strictEqual(entries[0], "/opt/toolcache/bun/1.3.3");
 			assert.strictEqual(entries[1]?.startsWith("/opt/toolcache/node/24.11.0"), true);
 			assert.strictEqual(entries[2], "/usr/bin");
