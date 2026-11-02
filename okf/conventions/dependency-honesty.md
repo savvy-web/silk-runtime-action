@@ -7,7 +7,7 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-02T21:32:35Z
 sources:
   - id: package-json
     resource: ../../package.json
@@ -23,7 +23,7 @@ sources:
     resource: ../../CLAUDE.md
 integrity:
   generated:
-    body: 4a223fce66231e62
+    body: 66bb16f7193f94e4
 ---
 
 # Dependency honesty
@@ -58,6 +58,9 @@ first time this action spawns a build subprocess at all.
 - `@savvy-web/silk` — the Biome preset and the `savvy` CLI used by `ci:version`.
 - `@vitest-agent/plugin` — test tooling and coverage levels.
 - `@effect/vitest` — the Effect-aware test harness.
+- `@effected/plugin` — the carrier for the kit's `effected` CLI and `effected-mcp` server, for
+  local agent use. Never imported by `src/`; declare the carrier, never its internals
+  (`@effected/cli`, `@effected/mcp`, `@effected/engine`).
 - `@effected/memfs` — `MemoryFileSystem`, the filesystem double the whole unit suite runs on.
 
 No pnpm overrides, no patches, no links, outside a temporary dogfood loop.
