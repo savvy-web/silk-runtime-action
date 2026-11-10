@@ -11,7 +11,7 @@
 	"type": "module",
 	"scripts": {
 		"build": "turbo run build:prod --log-order=grouped",
-		"build:prod": "github-action-builder build",
+		"build:prod": "effected action build",
 		"ci:build": "CI=\"true\" turbo run build:prod --log-order=grouped --output-logs=full",
 		"ci:test": "CI=\"true\" vitest run --coverage",
 		"ci:version": "savvy changeset version && biome format --write .",
@@ -25,13 +25,13 @@
 		"test:coverage": "vitest run --coverage --pass-with-no-tests",
 		"test:watch": "vitest --watch --pass-with-no-tests",
 		"typecheck": "turbo run types:check --log-prefix=none --log-order=grouped",
-		"types:check": "tsc --noEmit",
-		"validate": "github-action-builder validate"
+		"types:check": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:effected",
 		"@effected/commands": "catalog:effected",
 		"@effected/github-actions": "catalog:effected",
+		"@effected/glob": "catalog:effected",
 		"@effected/jsonc": "catalog:effected",
 		"@effected/lockfiles": "catalog:effected",
 		"@effected/npm": "catalog:effected",
@@ -44,10 +44,9 @@
 		"@effect/vitest": "catalog:effected",
 		"@effected/memfs": "catalog:effected",
 		"@effected/plugin": "catalog:effected",
-		"@okfit/plugin": "^0.5.29",
-		"@savvy-web/github-action-builder": "^2.4.25",
-		"@savvy-web/silk": "^4.5.6",
-		"@vitest-agent/plugin": "^6.0.5"
+		"@okfit/plugin": "^0.5.32",
+		"@savvy-web/silk": "^5.0.0",
+		"@vitest-agent/plugin": "^6.0.9"
 	},
 	"engines": {
 		"node": ">=24.11.0"

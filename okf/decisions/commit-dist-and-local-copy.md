@@ -5,10 +5,13 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-10T18:06:20Z
 sources:
   - id: action-config
-    resource: ../../action.config.ts
+    title: "effected.toml [action] tables"
+    resource: ../../effected.toml
+  - id: tsconfig
+    resource: ../../tsconfig.json
   - id: action-yml
     resource: ../../action.yml
 tags:
@@ -17,7 +20,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: 0d14068dd34f2365
+    body: dbac56088c92d0e7
 ---
 
 # dist/ is committed, bundled and minified, with a mirrored local testing copy
@@ -27,27 +30,33 @@ integrity:
 GitHub Actions loads a JavaScript action directly from the checked-out ref, with no build
 step in the runtime. Whatever code runs in a consumer's workflow has to already be present
 in the repository at that ref, in a form Node can execute without a `node_modules` resolve
-step of its own.
+step of its own. The build itself moved off the deprecated, rsbuild-based
+`@savvy-web/github-action-builder` and its `action.config.ts` onto the kit's own
+`effected action build`.
 
 ## Decision
 
-The action is built with `@savvy-web/github-action-builder` (rsbuild-based) into three
-ES-module bundles, minified, and the output is **committed to git**:
+The action is built with `effected action build`, the `effected` bin from
+`@effected/plugin` (bundled by rolldown through `@effected/bundler`), into three ES-module
+bundles, minified, and the output is **committed to git**. The build is configured by the
+`[action]` tables of `effected.toml`:
 
-```ts
-// action.config.ts
-export default defineConfig({
-  entries: {
-    main: "src/main.ts",
-    post: "src/post.ts",
-    workers: { "turbo-server": "src/turbo-server.ts" },
-  },
-  build: {
-    minify: true,
-    ignore: ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"],
-  },
-  persistLocal: { enabled: true, path: ".github/actions/local" },
-});
+```toml
+[action.entries]
+main = "src/main.ts"
+post = "src/post.ts"
+
+[action.entries.workers]
+turbo-server = "src/turbo-server.ts"
+
+[action.build]
+minify = true
+ignore = ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"]
+importCheck = false
+
+[action.persistLocal]
+enabled = true
+path = ".github/actions/local"
 ```
 
 `action.yml` declares only two runtime entries — main and post:
@@ -65,13 +74,20 @@ Turbo remote-cache server that `main` spawns at runtime. It is **not** a lifecyc
 own bundle through `import.meta.url`, which is meaningful only once the two files sit
 side by side in `dist/`.[^action-config][^action-yml]
 
-**rsbuild via `github-action-builder`** gives tree shaking, dead code elimination, and
-ES-module output compatible with the pinned Node runtime. The builder wraps rsbuild with the
-defaults an action needs: entry configuration through `defineConfig`, the `dist/package.json`
-module marker (`{ "type": "module" }`), the local copy, and clean builds before every
-run.[^action-config] Its `build.nativeDynamicImports` option is deliberately left unset — the
-production bundle contains no dynamic-import packages, and the build emits zero rspack
-critical-dependency warnings as a result.
+**`effected action build` over rolldown** gives tree shaking, dead code elimination, and
+ES-module output compatible with the pinned Node runtime. The command supplies the defaults
+an action needs: the entry table, the `dist/package.json` module marker
+(`{ "type": "module" }`), the local copy, clean builds before every run, and the action's
+own validation, which runs inside the build rather than as a separate script.[^action-config]
+rolldown keeps a computed `import()` native on its own, so there is no dynamic-import option
+to set; writing one is an unknown-key failure. `tsconfig.json` extends
+`@effected/plugin/tsconfig/action.json`.[^tsconfig]
+
+**The post-bundle import check is off.** `importCheck` loads each bundle in a bare Node
+before the build passes, and it is one switch for every entry. `main` and `post` load under
+it; the `turbo-server` worker deliberately exits at import when `TURBOGHA_TOKEN` is absent,
+which the check reads as a load failure. See
+[`../limitations/bundle-import-check.md`](../limitations/bundle-import-check.md).[^action-config]
 
 **A mirrored local testing copy at `.github/actions/local/`** separates test artifacts from
 the production build. `persistLocal` writes the same three bundles there, and the
@@ -92,8 +108,8 @@ into the same output directory as `main`/`post` is what makes the worker's sibli
 resolution work, and what keeps its dependency set consistent with `main`'s rather than
 drifting as a separately built artifact.[^action-config]
 
-**Build process**, in order: read `action.config.ts`; clean `dist/` and
-`.github/actions/local/dist/`; compile the three entry points through rsbuild; apply the
+**Build process**, in order: read the `[action]` tables of `effected.toml`; clean `dist/` and
+`.github/actions/local/dist/`; compile the three entry points through rolldown; apply the
 `ignore` list; write minified bundles to `dist/`; write `dist/package.json`; copy bundles to
 `.github/actions/local/dist/`.[^action-config]
 
@@ -134,3 +150,4 @@ on what the minifier did to a literal.
 
 [^action-config]: action-config
 [^action-yml]: action-yml
+[^tsconfig]: tsconfig

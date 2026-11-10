@@ -7,15 +7,16 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-10T18:06:20Z
 sources:
   - id: action-config
-    resource: ../../action.config.ts
+    title: "effected.toml [action.persistLocal]"
+    resource: ../../effected.toml
   - id: root-claude-common-commands
     resource: ../../CLAUDE.md
 integrity:
   generated:
-    body: 825d26529ee792b4
+    body: 7f6d08476f406312
 ---
 
 # Commit source and dist together
@@ -34,7 +35,8 @@ the repository's `HEAD` does not reflect what CI actually executes.
 
 ## Why two built directories exist
 
-`action.config.ts`'s `persistLocal` option mirrors every build into
+The `[action.persistLocal]` table in `effected.toml` makes `effected action build` mirror
+every build into
 `.github/actions/local/` in the same pass that writes `dist/`.[^action-config] The two
 directories serve different consumers: `dist/` is the production artifact `action.yml`
 points `runs.main` / `runs.post` at, while `.github/actions/local/` is what the
@@ -66,5 +68,5 @@ sequencing and is never the intended path for in-progress work, however small.
 - [`../runbooks/release.md`](../runbooks/release.md) — the ordered release procedure this
   convention feeds into once work reaches `main`.
 
-[^action-config]: ../../action.config.ts
+[^action-config]: ../../effected.toml
 [^root-claude-common-commands]: ../../CLAUDE.md

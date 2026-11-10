@@ -245,7 +245,7 @@ describe("restoreCache", () => {
 			assert.include(paths, "packages/a/node_modules");
 			assert.include(paths, join(TOOL_CACHE, "node", "24.11.0"));
 			// Nothing turbo-shaped: this workspace has no turbo.json.
-			assert.notInclude(paths, "**/.turbo/cache");
+			assert.notInclude(paths, ".turbo/cache");
 			// No glob: the membership is enumerated, so a node_modules inside a
 			// dist tree or a fixture is not swept in.
 			assert.notInclude(paths, "**/node_modules");
@@ -439,7 +439,8 @@ describe("restoreCache", () => {
 			assert.deepStrictEqual(restores[0]?.paths, state.workspace.paths);
 			assert.include(state.workspace.paths, "**/build");
 			assert.include(state.workspace.paths, "**/dist");
-			assert.include(state.workspace.paths, "**/.turbo/cache");
+			assert.include(state.workspace.paths, ".turbo/cache");
+			assert.notInclude(state.workspace.paths, "**/.turbo/cache");
 		}),
 	);
 

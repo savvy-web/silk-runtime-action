@@ -1,0 +1,29 @@
+[action.entries]
+main = "src/main.ts"
+post = "src/post.ts"
+
+# The detached turbo remote-cache server: a bundle outside the action
+# lifecycle, spawned by the turbo-cache step and emitted as dist/turbo-server.js.
+[action.entries.workers]
+turbo-server = "src/turbo-server.ts"
+
+[action.build]
+minify = true
+# Vestigial insurance from the legacy cyclonedx sbom stack: these optional
+# plugins (XML serializers/validators, draft-2019 JSON validators) no longer
+# appear anywhere in the dependency tree, so the stubs are inert. Kept as a
+# harmless guard in case a future dependency reintroduces cyclonedx's
+# `_optPlug` optional-require pattern; `ignore` (a throwing stub) is the right
+# shape for that, not `externals` (which means "available at runtime").
+ignore = ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"]
+# Off because importCheck is one switch for every bundle: the turbo-server
+# worker refuses to start without TURBOGHA_TOKEN at import time (ruling 72,
+# src/turbo-server.ts), which the check reads as a load failure. main and post
+# are GITHUB_ACTIONS-guarded and do load. Turn this back on once the kit can
+# skip one entry (or workers) — see the upstream effected issue.
+importCheck = false
+
+# test-fixture runs this mirrored copy, so it must be persisted on every build.
+[action.persistLocal]
+enabled = true
+path = ".github/actions/local"

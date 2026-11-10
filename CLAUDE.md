@@ -77,7 +77,8 @@ Consuming repositories **MUST** have a root `package.json` with:
   `MemoryFileSystem.layerWith` for a seeded volume, `layerFaulty` for an injected failure or
   a delegating recorder. `FileSystem.layerNoop` is not used anywhere in the suite. See
   [`okf/decisions/kit-test-layers-and-real-volume.md`](okf/decisions/kit-test-layers-and-real-volume.md).
-* **Build:** `@savvy-web/github-action-builder` (rsbuild) via `action.config.ts`.
+* **Build:** `effected action build` from `@effected/plugin` (rolldown, via `@effected/bundler`),
+  configured by the `[action]` tables in `effected.toml`.
 * **Cross-phase state:** `src/state.ts` — `STATE_KEYS` plus four `Schema.Class` bundles.
   See [`okf/models/cross-phase-state.md`](okf/models/cross-phase-state.md).
 * **Action type:** compiled Node action (`node24`, see `action.yml`); pnpm and Node pinned
@@ -117,7 +118,6 @@ committed `dist`, **not** `node_modules`.
 | Package | Repo | Local checkout |
 | --- | --- | --- |
 | `@effected/*` | `spencerbeggs/effected` | `../../spencerbeggs/effected/packages/<name>` |
-| `@savvy-web/github-action-builder` | `savvy-web/systems` | `../systems/packages/github-action-builder` |
 
 **To find out whether anything is linked, read the tree, not this paragraph:**
 `pnpm-workspace.yaml` carries an `overrides:` entry while a link is live and none when it is
@@ -135,10 +135,12 @@ the `effect` version in the catalog — the source of truth for v4 APIs, whose s
 diverges from the v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not
 edit.
 
-### Turbo file caching: `**/.turbo/cache` only
+### Turbo file caching: `.turbo/cache` only, per workspace member
 
-Only `**/.turbo/cache` goes into the Actions file cache, as a complementary local-restore
-layer beside the remote cache. See
+Only `.turbo/cache` goes into the Actions file cache, as a complementary local-restore
+layer beside the remote cache — one literal path per workspace member
+(`turboLocalCachePaths`), never a `**/` glob, which makes `ActionCache.save` read the whole
+checkout into memory (#545). See
 [`okf/models/cache-config.md`](okf/models/cache-config.md) for what each excluded path
 would break.
 
@@ -232,7 +234,7 @@ Where a topic lives:
 ├── dist/                      # main.js / post.js / turbo-server.js / package.json
 ├── .github/actions/local/     # mirrored bundled action, the target test-fixture runs
 ├── .repos/effect              # vendored, read-only Effect v4 source (submodule)
-├── action.config.ts
+├── effected.toml              # [action] tables for effected action build
 ├── action.yml
 ├── biome.json
 ├── vitest.config.ts
@@ -310,12 +312,19 @@ list and the preset disagree, the preset wins.
 
 ## Build Process
 
-Configured by [`action.config.ts`](action.config.ts), run by
-`@savvy-web/github-action-builder`. It bundles three entries — `main.ts`, `post.ts`, and
-`turbo-server.ts` (via `entries.workers`) — into `dist/*.js`, minified, with unused optional
-cyclonedx plugins (`xmlbuilder2`, `libxmljs2`, `ajv-formats-draft2019`) aliased to throwing
-stubs; writes `dist/package.json` (`{ "type": "module" }`); and mirrors everything to
-`.github/actions/local/` (`persistLocal`), the copy `test-fixture` runs.
+Configured by the `[action]` tables in [`effected.toml`](effected.toml), run by
+`effected action build` (`@effected/plugin`). It bundles three entries — `main.ts`,
+`post.ts`, and `turbo-server.ts` (via `[action.entries.workers]`) — into `dist/*.js`,
+minified, with unused optional cyclonedx plugins (`xmlbuilder2`, `libxmljs2`,
+`ajv-formats-draft2019`) stubbed to throw (`ignore`); writes `dist/package.json`
+(`{ "type": "module" }`); and mirrors everything to `.github/actions/local/`
+(`[action.persistLocal]`), the copy `test-fixture` runs. Validation runs inside the build;
+there is no separate `validate` command.
+
+`importCheck` is **off**: the kit's post-bundle load check is one switch for every bundle,
+and `turbo-server` deliberately refuses to start without `TURBOGHA_TOKEN` at import, which
+the check reads as a failed load. `main` and `post` are `GITHUB_ACTIONS`-guarded and do
+load. Turn it back on when the kit can exempt a single entry.
 
 Both directories are committed and cleaned before each build. Rebuild after **any** source
 change or CI runs stale code. See

@@ -98,7 +98,7 @@ pnpm test              # Run unit tests with coverage
 pnpm test --watch      # Run tests in watch mode
 
 # Building
-pnpm build             # Build action with @savvy-web/github-action-builder
+pnpm build             # Build action with effected action build
 ```
 
 ## Testing
@@ -186,7 +186,7 @@ Full test suite across:
 │   │   ├── test-fixture/         # Unified test helper
 │   │   └── local/                # Local copy of action for testing (committed!)
 │   └── workflows/                # CI/CD workflows
-├── action.config.ts              # Build configuration for github-action-builder
+├── effected.toml                 # [action] build configuration for effected action build
 ├── action.yml                    # Action definition
 ├── package.json                  # Dependencies and scripts
 └── CLAUDE.md                     # Detailed documentation

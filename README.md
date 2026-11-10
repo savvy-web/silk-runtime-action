@@ -268,7 +268,7 @@ When `turbo.json` is detected, the action resolves one of four strategies, in or
 
 Passthrough wins over S3 when both are configured. The S3 rule probes the bucket alone, so credentials without a bucket fall through to the GitHub backend rather than starting a misconfigured S3 one. Supplying only one of `turbo-token`/`turbo-team` logs a warning and falls through to an embedded server.
 
-Alongside whichever remote cache is active, Turbo's local artifact directory (`**/.turbo/cache`) is added to the dependency file cache as a fast local-restore layer. The other `.turbo` subdirectories are deliberately excluded — a restored stale run summary breaks "latest run is the current run" detection in tooling that parses `turbo --summarize`.
+Alongside whichever remote cache is active, each workspace member's local Turbo artifact directory (`.turbo/cache`, `packages/a/.turbo/cache`, …) is added to the dependency file cache as a fast local-restore layer. The other `.turbo` subdirectories are deliberately excluded — a restored stale run summary breaks "latest run is the current run" detection in tooling that parses `turbo --summarize`.
 
 The embedded server is torn down in the action's post step. On the GitHub backend it captures `ACTIONS_RUNTIME_TOKEN` when it spawns, and that token is a short-lived JWT, so very long jobs can see late cache writes rejected with `401`. The S3 backend uses its own credentials and is unaffected.
 

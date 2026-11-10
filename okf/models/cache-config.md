@@ -8,7 +8,7 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-10-05T21:46:04Z
+  at: 2026-11-10T18:06:34Z
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -16,9 +16,12 @@ sources:
     resource: ../../src/descriptors/kcov.ts
   - id: restore-cache
     resource: ../../src/steps/restore-cache.ts
+  - id: issue-545
+    title: Post step runs out of heap resolving a recursive cache glob
+    resource: https://github.com/savvy-web/silk-runtime-action/issues/545
 integrity:
   generated:
-    body: f6338338b287398b
+    body: f53b895dcb59eefc
 ---
 
 # Cache config — key formats, ladders, lockfile patterns, and archived paths
@@ -36,7 +39,7 @@ filesystem, or a mocked `process`.
 {platform}-{arch}-{versionHash}-{branchHash}-{lockfileHash}
 ```
 
-Assembled by `keySegments` (`cache-config.ts:440-464`).
+Assembled by `keySegments` (`cache-config.ts:461-485`).
 
 | Segment | Source |
 | --- | --- |
@@ -44,11 +47,11 @@ Assembled by `keySegments` (`cache-config.ts:440-464`).
 | `arch` | `process.arch` — new versus the legacy key; without it an arm64 and an x64 macOS runner shared a key and restored each other's tool-cache directories |
 | `versionHash` | 8-hex digest of the cache-bust (if any), then the install-policy token, then each tool as `name:version` sorted by name, then `packageManager.name:version` |
 | `branchHash` | 8-hex digest of the branch, or of the literal `"null"` when there is none |
-| `lockfileHash` | `CacheKey.hashFiles` result, first 8 hex, or the literal `"empty"` (`EMPTY_LOCKFILE_SEGMENT`, `cache-config.ts:360`) when nothing matched |
+| `lockfileHash` | `CacheKey.hashFiles` result, first 8 hex, or the literal `"empty"` (`EMPTY_LOCKFILE_SEGMENT`, `cache-config.ts:381`) when nothing matched |
 
 ### The install-policy token
 
-`installSegment` (`cache-config.ts:416-417`) folds `install-deps` and `ignore-scripts` into one
+`installSegment` (`cache-config.ts:437-438`) folds `install-deps` and `ignore-scripts` into one
 token in the version digest: `deps:scripts`, `deps:no-scripts`, or `no-deps`. This exists
 because the archive is a picture of the workspace **after** the install, so two runs whose
 installs did different things must not share a key. Before this token existed, a job passing
@@ -67,7 +70,7 @@ that flag to have changed.
 store-{platform}-{arch}-{managerHash}-{lockfileHash}
 ```
 
-Assembled by `storeKeySegments` (`cache-config.ts:508-526`). The `store` literal leads so the
+Assembled by `storeKeySegments` (`cache-config.ts:529-547`). The `store` literal leads so the
 two key spaces cannot overlap. What is **absent** is the point: no branch segment (a store
 from another branch is as good as this one's), no runtime or Biome version (a package tarball
 is the same tarball whichever node unpacks it). `managerHash` is versioned because the store
@@ -75,7 +78,7 @@ layout is — pnpm keeps a `v10`/`v11` subdirectory beneath the archived path, a
 writes a new one. The lockfile digest stays on the primary key for a different reason than it
 serves in the workspace key: a store is append-only, so an older one is never *wrong*, only
 short. Dropping the digest from the one restore rung (`STORE_RESTORE_DEPTHS = [4]`,
-`cache-config.ts:539`) is what makes the entry **top up** — a changed lockfile misses the
+`cache-config.ts:560`) is what makes the entry **top up** — a changed lockfile misses the
 primary, hits the rung, restores the previous store, lets the install add what is new, and
 archives the union under the new digest.
 
@@ -85,7 +88,7 @@ archives the union under the new digest.
 export const RESTORE_DEPTHS = [4, 3] as const;
 ```
 
-(`cache-config.ts:562`)
+(`cache-config.ts:583`)
 
 | Depth | Pattern | Matches |
 | --- | --- | --- |
@@ -105,14 +108,14 @@ Node would restore against them. `withoutRestoreKeys()` — zero rungs, distinct
 so a cache-bust fixture proves an **exact** hit rather than being satisfiable by any fallback
 rung.
 
-`STORE_RESTORE_DEPTHS = [4]` (`cache-config.ts:539`) is a single rung, one level shallower:
+`STORE_RESTORE_DEPTHS = [4]` (`cache-config.ts:560`) is a single rung, one level shallower:
 depth 3 would drop the manager version and restore a store laid out for a different pnpm
 major, which is not a store an install should trust.
 
 ## Lockfile patterns
 
 Every built-in name is anchored at the **workspace root**; nothing is globbed at any depth
-(`lockfilePatterns`, `cache-config.ts:153-167`).
+(`lockfilePatterns`, `cache-config.ts:168-182`).
 
 | Manager | Patterns |
 | --- | --- |
@@ -150,13 +153,14 @@ store and not pnpm's, because pnpm never runs. The list is de-duplicated, first-
 ## Archived paths
 
 **The workspace archive** — three groups, in a fixed order that is itself the contract
-(`cachePaths`, `cache-config.ts:337-347`):
+(`cachePaths`, `cache-config.ts:352-368`):
 
 1. Built-ins, sorted (absolute paths alphabetically, then globs alphabetically): each active
    manager's workspace paths, then `<toolCacheBase>/<tool>/<version>` for every runtime and
    Biome.
 2. `additional-cache-paths`, in the order written.
-3. `**/.turbo/cache`, when turbo was detected.
+3. `.turbo/cache` for the root and `<relativePath>/.turbo/cache` for every workspace package,
+   when turbo was detected.
 
 The final list is de-duplicated, so a caller naming an already-present directory does not hand
 `tar` the same tree twice. `node_modules` entries come from `WorkspaceDiscovery.listPackages()`
@@ -165,7 +169,7 @@ The final list is de-duplicated, so a caller naming an already-present directory
 the ones inside `dist/` trees and test fixtures. A discovery failure or an empty answer
 degrades to root-only with a warning.
 
-**The store archive** is `storeCachePaths` alone (`cache-config.ts:240-250`) — each active
+**The store archive** is `storeCachePaths` alone (`cache-config.ts:255-265`) — each active
 manager's default store directory, de-duplicated and sorted.
 
 | Manager | Default store (POSIX / win32) | Workspace paths |
@@ -176,25 +180,38 @@ manager's default store directory, de-duplicated and sorted.
 | bun | `~/.bun/install/cache` / `…\bun\install\cache` | `<pkg>/node_modules` |
 | deno | `~/.cache/deno` / `%LOCALAPPDATA%\deno` | none — deno never populates `node_modules` |
 
-(`storePaths`, `cache-config.ts:207-226`)
+(`storePaths`, `cache-config.ts:222-241`)
 
 yarn contributes **two** stores because Berry and Classic disagree about where the cache
 lives, and the manager's major version is not known at this layer. Paths are joined with
 `node:path`'s `posix` or `win32` module explicitly — the same as the host's own module in
 production, but what lets a Linux test pin the Windows store layout (`pathFor`,
-`cache-config.ts:178`). The tool-cache base is `RUNNER_TOOL_CACHE` when set, else
+`cache-config.ts:193`). The tool-cache base is `RUNNER_TOOL_CACHE` when set, else
 `/opt/hostedtoolcache` (`C:\hostedtoolcache` on win32) (`defaultToolCacheBase`,
-`cache-config.ts:291-292`).
+`cache-config.ts:306-307`).
 
 ## Turbo's local artifact cache
 
 ```ts
-export const TURBO_LOCAL_CACHE_PATHS = ["**/.turbo/cache"] as const;
+export const turboLocalCachePaths = (packageDirs: ReadonlyArray<string>): ReadonlyArray<string> =>
+  packageDirs.map((dir) => (dir === "." || dir === "" ? ".turbo/cache" : `${dir}/.turbo/cache`));
 ```
 
-(`cache-config.ts:128`)
+(`cache-config.ts:142-143`)
 
-Only this one path joins the archive when `turbo.json` is detected. `**/.turbo/runs`,
+When `turbo.json` is detected, each workspace package's own `.turbo/cache` joins the archive
+— `.turbo/cache` for the root, `<relativePath>/.turbo/cache` for every member — enumerated
+from the same `packageDirs` that `workspacePaths` turns into `node_modules` entries. A member
+that never runs turbo has no such directory, and the save tolerates the missing path.
+
+**Never put a `**/` glob back in the built-in set.** `ActionCache.save` in
+`@effected/github-actions` resolves a `**/` pattern by reading `GITHUB_WORKSPACE`
+recursively into memory before matching — every `node_modules/.pnpm` tree, vendored
+submodule, and fixture — while a literal path is only stat'ed. The former
+`["**/.turbo/cache"]` constant was the last such glob, and in a large monorepo that walk ran
+the post step out of V8 heap (issue 545).[^cache-config][^issue-545]
+
+Only `.turbo/cache` joins the archive. `.turbo/runs`,
 `.turbo/cookies`, and `.turbo/daemon` are deliberately excluded — a restored stale run summary
 would break "latest run = current run" detection in tooling that parses `turbo --summarize`
 output. This file-cache layer and the embedded turbo remote cache (see
@@ -264,5 +281,8 @@ this runner writes ever matches, a cache that stays cold forever without ever lo
   directories no install produced and no restore uses, inflating the archive for no benefit.
 - Dropping `.turbo/cache` from the archive (rather than the excluded `runs`/`cookies`/`daemon`)
   removes the fast local restore layer the embedded remote cache is meant to complement.
+- Reintroducing `**/.turbo/cache` (or any `**/` built-in) makes every save walk the whole
+  checkout into memory, which in a large monorepo exhausts the post step's heap.
 
 [^cache-config]: cache-config
+[^issue-545]: <https://github.com/savvy-web/silk-runtime-action/issues/545>
