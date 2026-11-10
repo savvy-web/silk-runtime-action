@@ -1,12 +1,12 @@
 ---
 title: Adopt a first-party release after a dogfood round
-description: How to take a released version of an @effected/* package or the github-action-builder out of a dogfood link and back onto its published range, verified on a cold registry install.
+description: How to take a released version of an @effected/* package (including @effected/plugin, which carries the build) out of a dogfood link and back onto its published range, verified on a cold registry install.
 type: Runbook
 status: draft
 resource: ../../pnpm-workspace.yaml
 generated:
   by: okfit/claude-code
-  at: 2026-11-01T19:11:54Z
+  at: 2026-11-10T18:06:20Z
 sources:
   - id: pnpm-workspace
     resource: ../../pnpm-workspace.yaml
@@ -17,13 +17,13 @@ tags:
   - release
 integrity:
   generated:
-    body: 2b3ff2a429329320
+    body: 47c81791a142537f
 ---
 
 # Adopt a first-party release after a dogfood round
 
-Every `@effected/*` dependency and `@savvy-web/github-action-builder` are authored in-house,
-so a bug found here can be fixed in its own repo and dogfooded back before publishing, rather
+Every `@effected/*` dependency is authored in-house — including `@effected/plugin`, whose
+`effected action build` produces `dist/` — so a bug found here can be fixed in its own repo and dogfooded back before publishing, rather
 than waiting on an upstream release. The dogfood mailbox protocol (mail files plus a per-loop
 JSONL journal under `.claude/dogfood/`, driven by the `silk:dogfood` skill) coordinates a
 request-build-handback-adopt loop between this repo and the sibling checkout — and this
@@ -72,19 +72,17 @@ When a dogfood round is active, the sibling checkouts this repo links against ar
 | Package | Local checkout |
 | --- | --- |
 | `@effected/*` | `../../spencerbeggs/effected/packages/<name>` |
-| `@savvy-web/github-action-builder` | `../systems/packages/github-action-builder` |
 
 Building the library in its own repo, before linking it, is `cd packages/<name> && node
-savvy.build.ts --target dev`; the builder is linked with `pnpm link
-../systems/packages/github-action-builder`, and anything `@effected/*` goes through the
-`silk:dogfood` protocol instead of a raw `pnpm link`.[^claude-md] Library edits ship
+savvy.build.ts --target dev`; every `@effected/*` link, `@effected/plugin` included, goes
+through the `silk:dogfood` protocol instead of a raw `pnpm link`.[^claude-md] Library edits ship
 separately, on their own branch — they are not folded into whatever branch triggered the
 dogfood loop.[^claude-md]
 
 ## End state
 
 CI is green on an unlinked checkout: `pnpm-workspace.yaml` carries no `overrides:` entry, the
-installed `@effected/*` and `@savvy-web/github-action-builder` versions match what `npm view`
+installed `@effected/*` versions match what `npm view`
 reports for the registry, and the cold-install CI run that exercises them has passed.
 
 See also [`../conventions/dependency-honesty.md`](../conventions/dependency-honesty.md) for

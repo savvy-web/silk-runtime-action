@@ -109,8 +109,8 @@ report green.
 
 ### [local](../actions/local/)
 
-The compiled action, mirrored out of `dist/` by `persistLocal` in
-[`action.config.ts`](../../action.config.ts). It is committed, and it is what `test-fixture`
+The compiled action, mirrored out of `dist/` by `[action.persistLocal]` in
+[`effected.toml`](../../effected.toml). It is committed, and it is what `test-fixture`
 runs — a workflow cannot `uses:` a path that is only built at job time. **Rebuild and commit
 it with every source change** (`pnpm build`, then `git add src/ dist/ .github/actions/local/`)
 or CI tests stale code and says nothing about it.

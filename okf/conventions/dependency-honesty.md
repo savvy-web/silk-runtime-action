@@ -7,7 +7,7 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-11-02T21:32:35Z
+  at: 2026-11-10T18:06:20Z
 sources:
   - id: package-json
     resource: ../../package.json
@@ -23,7 +23,7 @@ sources:
     resource: ../../CLAUDE.md
 integrity:
   generated:
-    body: 66bb16f7193f94e4
+    body: 085ff7cb97605403
 ---
 
 # Dependency honesty
@@ -47,6 +47,7 @@ genuinely needs.
 | `@effected/jsonc` | `Jsonc.parse` for `biome.jsonc` |
 | `@effected/commands` | `Run.succeeds` / `Run.collect` — the `jq` and `kcov --version` probes, and kcov's build commands[^install-bats-src][^install-kcov-src] |
 | `@effected/yaml` | **Not imported by `src/`** — a required peer of `@effected/lockfiles` |
+| `@effected/glob` | **Not imported by `src/`** — a required peer of `@effected/lockfiles` |
 
 `@effected/commands` was a declared-but-unimported entry until the BATS/kcov work;
 `install-bats` and `install-kcov` are its first importers, and kcov's source build is the
@@ -54,20 +55,21 @@ first time this action spawns a build subprocess at all.
 
 ## Dev dependencies (not bundled)
 
-- `@savvy-web/github-action-builder` — the build tool.
 - `@savvy-web/silk` — the Biome preset and the `savvy` CLI used by `ci:version`.
 - `@vitest-agent/plugin` — test tooling and coverage levels.
 - `@effect/vitest` — the Effect-aware test harness.
-- `@effected/plugin` — the carrier for the kit's `effected` CLI and `effected-mcp` server, for
-  local agent use. Never imported by `src/`; declare the carrier, never its internals
-  (`@effected/cli`, `@effected/mcp`, `@effected/engine`).
+- `@effected/plugin` — the build tool: its `effected` bin runs `effected action build`, and it
+  ships the `tsconfig/action.json` preset `tsconfig.json` extends. It also carries the
+  `effected-mcp` server for local agent use. Never imported by `src/`; declare the carrier,
+  never its internals (`@effected/cli`, `@effected/mcp`, `@effected/engine`,
+  `@effected/bundler`).
 - `@effected/memfs` — `MemoryFileSystem`, the filesystem double the whole unit suite runs on.
 
 No pnpm overrides, no patches, no links, outside a temporary dogfood loop.
 
 ## The rule the #348 pass established
 
-**Every declared dependency but `@effected/yaml` must be imported.** The #348 canon pass
+**Every declared dependency but the peer-justified ones must be imported.** The #348 canon pass
 deleted seven runtime entries that `src/` had never imported — `@effected/git`, `github`,
 `glob`, `markdown`, `package-json`, `runtimes` and `sbom`. `@effected/glob` had left the code
 path when lockfile discovery and hashing moved onto `CacheKey.matchingFiles` /
@@ -79,16 +81,16 @@ breaks.** A false manifest is not a cosmetic problem: it is the one document a m
 reaches for to answer "does this upstream incident affect us," and every unimported entry is
 a false positive in that answer.[^package-json]
 
-`@effected/yaml` is the one deliberate exception, and it stays for a documented reason rather
-than an oversight: nothing in `src/` imports it, and `@effected/lockfiles` requires it as a
-peer. An import-walker that stops at "not imported" deletes exactly this package — resolve
-the peer closure first.
+`@effected/yaml` and `@effected/glob` are the deliberate exceptions, and they stay for a
+documented reason rather than an oversight: nothing in `src/` imports either, and
+`@effected/lockfiles` requires both as peers. `@effected/glob` is declared again for exactly
+that reason, not because the code path came back. An import-walker that stops at "not
+imported" deletes exactly these packages — resolve the peer closure first.
 
 ## No version numbers in this doc, deliberately
 
-Every `@effected/*` range in `package.json` is `catalog:effected`, and both `effect` entries
-are `catalog:effect`, resolved by the `@effected/pnpm-plugin-effect` config
-dependency.[^package-json] The catalog definitions do not live in this repository; the
+Every Effect-family and `@effected/*` range in `package.json` is `catalog:effected`, resolved
+by the `@effected/pnpm-plugin-effected` config dependency.[^package-json] The catalog definitions do not live in this repository; the
 versions actually installed are only in `pnpm-lock.yaml`'s `catalogs:` block.[^pnpm-lock-catalogs]
 **Never write a resolved version into prose** — a pinned number written here, or in any
 other concept, is wrong the first time the plugin publishes. Re-derive the installed version

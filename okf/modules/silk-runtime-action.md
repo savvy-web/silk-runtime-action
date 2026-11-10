@@ -7,7 +7,7 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-11-01T19:11:54Z
+  at: 2026-11-10T18:06:20Z
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -29,7 +29,7 @@ sources:
     resource: ../../src/steps/install-runtimes.ts
 integrity:
   generated:
-    body: 475b8ba6ea648244
+    body: 9e25629ec10ccb9f
 ---
 
 # silk-runtime-action
@@ -75,7 +75,7 @@ worker, because a setup file that quietly stopped being wired up is otherwise in
 | Turbo cache | `src/turbo-cache/{activation,meta,handler,server-config}.ts` | Everything the embedded cache decides — see [turbo-cache-server](./turbo-cache-server.md) |
 | Formatters | `src/summary/format.ts` | Pure, verbatim log lines and the job-summary panel |
 | Descriptors | `src/descriptors/{descriptor,node,bun,deno,biome,bats,kcov}.ts` | Pure per-tool download plans |
-| Build config | `action.config.ts` | Three entries (incl. `workers`), minify, `ignore` list |
+| Build config | `effected.toml` (`[action]` tables) | `effected action build`: three entries (incl. `workers`), minify, `ignore` list, `importCheck` off, `persistLocal` |
 
 There is no `services/` directory and no `errors/errors.ts`: services come from the kit,
 and each step owns its own error type.

@@ -1,5 +1,14 @@
 # Log
 
+## 2026-11-10
+
+* Updated Adopt a first-party release after a dogfood round
+* Updated Commit source and dist together
+* Updated Dependency honesty
+* Added The post-bundle import check is disabled for every entry because the turbo-server worker refuses to load without its token
+* Updated dist/ is committed, bundled and minified, with a mirrored local testing copy
+* Updated silk-runtime-action
+
 ## 2026-11-02
 
 * Updated Dependency honesty
