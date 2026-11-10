@@ -1,5 +1,36 @@
 # @savvy-web/silk-runtime-action
 
+## 1.9.14
+
+### Bug Fixes
+
+- Fixed the post step running large monorepos out of memory when saving the dependency cache. The built-in Turbo cache path was the glob `**/.turbo/cache`, which made the cache save read the entire checkout into memory and failed the job with a V8 heap error. The action now caches a literal `.turbo/cache` path for each workspace member (`.turbo/cache` for the root, `<dir>/.turbo/cache` for the others), so nothing is walked.
+- The `cache-paths` output now lists these literal `.turbo/cache` paths instead of `**/.turbo/cache`. Workspace members that do not run Turbo are tolerated and simply contribute nothing to the archive. [#546][#546]
+
+### Dependencies
+
+| Dependency | Type | Action | From | To |
+| --- | --- | --- | --- | --- |
+| @effect/platform-node | dependency | updated | ~4.1.2 | 4.1.3 |
+| @effected/commands | dependency | updated | ^0.20.0 | ^0.21.0 |
+| @effected/github-actions | dependency | updated | ^0.31.0 | ^0.33.0 |
+| @effected/jsonc | dependency | updated | ^0.23.0 | ^0.25.0 |
+| @effected/lockfiles | dependency | updated | ^0.22.0 | ^0.24.0 |
+| @effected/npm | dependency | updated | ^0.30.0 | ^0.33.0 |
+| @effected/semver | dependency | updated | ^0.21.0 | ^0.24.0 |
+| @effected/workspaces | dependency | updated | ^0.42.0 | ^0.45.0 |
+| @effected/yaml | dependency | updated | ^0.28.0 | ^0.30.0 |
+| effect | dependency | updated | ~4.1.2 | 4.1.3 |
+| @effected/glob | dependency | added | — | ^0.21.0 |
+
+[#546][#546]
+
+### Thanks
+
+Thanks to [@spencerbeggs](https://github.com/spencerbeggs) for their contributions!
+
+[#546]: https://github.com/savvy-web/silk-runtime-action/pull/546
+
 ## 1.9.13
 
 ### Dependencies
