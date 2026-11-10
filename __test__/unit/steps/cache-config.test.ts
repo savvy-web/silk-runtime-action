@@ -8,7 +8,6 @@ import {
 	LOCKFILE_EXCLUSIONS,
 	RESTORE_DEPTHS,
 	STORE_RESTORE_DEPTHS,
-	TURBO_LOCAL_CACHE_PATHS,
 	activePackageManagers,
 	cachePaths,
 	defaultToolCacheBase,
@@ -17,6 +16,7 @@ import {
 	lockfilePatterns,
 	storeCachePaths,
 	storeKeySegments,
+	turboLocalCachePaths,
 } from "../../../src/steps/cache-config.js";
 
 /** A `devEngines` config, spelled as briefly as the helpers need it. */
@@ -286,13 +286,32 @@ describe("cachePaths", () => {
 			"packages/a/node_modules",
 			"**/build",
 			"**/dist",
-			"**/.turbo/cache",
+			".turbo/cache",
+			"packages/a/.turbo/cache",
 		]);
 	});
 
 	it("caches only turbo's artifact directory, and only when turbo was detected", () => {
-		assert.deepStrictEqual([...TURBO_LOCAL_CACHE_PATHS], ["**/.turbo/cache"]);
-		assert.notInclude(cachePaths(pathOptions({ turbo: false })), "**/.turbo/cache");
+		assert.deepStrictEqual(turboLocalCachePaths([".", "packages/a"]), [".turbo/cache", "packages/a/.turbo/cache"]);
+		assert.notInclude(cachePaths(pathOptions({ turbo: false, packageDirs: ["."] })), ".turbo/cache");
+	});
+
+	it("enumerates turbo's cache per workspace member, with no ** glob in the built-in set (#545)", () => {
+		// A `**/` pattern makes `ActionCache.save` read the whole checkout into
+		// memory to resolve it; that walk is what ran the post step out of heap.
+		const paths = cachePaths(
+			pathOptions({
+				packageManagers: ["pnpm"],
+				tools: [{ name: "node", version: "24.11.0" }],
+				packageDirs: [".", "packages/a", "packages/b"],
+				turbo: true,
+			}),
+		);
+		assert.strictEqual(
+			paths.some((path) => path.includes("**")),
+			false,
+		);
+		assert.includeMembers([...paths], [".turbo/cache", "packages/a/.turbo/cache", "packages/b/.turbo/cache"]);
 	});
 
 	it("de-duplicates a caller path that repeats a built-in, keeping the built-in's place", () => {

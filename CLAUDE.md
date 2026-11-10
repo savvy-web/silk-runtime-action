@@ -135,10 +135,12 @@ the `effect` version in the catalog — the source of truth for v4 APIs, whose s
 diverges from the v3 docs on the website. Managed via `savvy repos` / `silk:repos`; do not
 edit.
 
-### Turbo file caching: `**/.turbo/cache` only
+### Turbo file caching: `.turbo/cache` only, per workspace member
 
-Only `**/.turbo/cache` goes into the Actions file cache, as a complementary local-restore
-layer beside the remote cache. See
+Only `.turbo/cache` goes into the Actions file cache, as a complementary local-restore
+layer beside the remote cache — one literal path per workspace member
+(`turboLocalCachePaths`), never a `**/` glob, which makes `ActionCache.save` read the whole
+checkout into memory (#545). See
 [`okf/models/cache-config.md`](okf/models/cache-config.md) for what each excluded path
 would break.
 

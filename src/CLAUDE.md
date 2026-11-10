@@ -41,7 +41,7 @@ is derived from the resolved Biome version and turbo's presence, and a restore t
 what makes the installs after it cheap.
 
 `cache-config.ts` is the pure half of the cache step: `lockfilePatterns`, `cachePaths`,
-`keySegments`, `RESTORE_DEPTHS`, `TURBO_LOCAL_CACHE_PATHS`. `restore-cache.ts` is the
+`keySegments`, `RESTORE_DEPTHS`, `turboLocalCachePaths`. `restore-cache.ts` is the
 effectful half that hashes, restores and writes `CacheState`.
 
 ## Entry points are uniform

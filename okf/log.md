@@ -8,6 +8,7 @@
 * Added The post-bundle import check is disabled for every entry because the turbo-server worker refuses to load without its token
 * Updated dist/ is committed, bundled and minified, with a mirrored local testing copy
 * Updated silk-runtime-action
+* Updated Cache config — key formats, ladders, lockfile patterns, and archived paths
 
 ## 2026-11-02
 

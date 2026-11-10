@@ -124,8 +124,23 @@ export const LOCKFILE_EXCLUSIONS = [
 	"!**/__test__/**",
 ] as const;
 
-/** Turbo's local artifact cache — see `turboLocalCachePaths` in the project README. */
-export const TURBO_LOCAL_CACHE_PATHS = ["**/.turbo/cache"] as const;
+/**
+ * Turbo's local artifact cache: each workspace member's own `.turbo/cache`.
+ *
+ * @remarks
+ * Enumerated from `packageDirs` for the same reason {@link workspacePaths}
+ * enumerates `node_modules`, and this was the last `**\/` glob left in the
+ * built-in set. A wildcard makes `ActionCache.save` read the entire checkout
+ * into memory before matching — every `node_modules/.pnpm` tree, vendored
+ * submodule and fixture — and in a large monorepo that walk ran the post step
+ * out of heap (#545). Literal paths are only stat'ed, never walked.
+ *
+ * A member that does not run turbo simply has no such directory, which the
+ * save tolerates. Only `cache` is archived; the other `.turbo` subdirectories
+ * are excluded for the reasons in `okf/models/cache-config.md`.
+ */
+export const turboLocalCachePaths = (packageDirs: ReadonlyArray<string>): ReadonlyArray<string> =>
+	packageDirs.map((dir) => (dir === "." || dir === "" ? ".turbo/cache" : `${dir}/.turbo/cache`));
 
 /**
  * Absolute paths first, then globs, each alphabetically.
@@ -343,7 +358,13 @@ export const cachePaths = (options: CachePathOptions): ReadonlyArray<string> => 
 	for (const tool of options.tools) {
 		if (TOOL_CACHE_TOOLS.has(tool.name)) builtIn.add(path.join(options.toolCacheBase, tool.name, tool.version));
 	}
-	return [...new Set([...sorted(builtIn), ...options.additional, ...(options.turbo ? TURBO_LOCAL_CACHE_PATHS : [])])];
+	return [
+		...new Set([
+			...sorted(builtIn),
+			...options.additional,
+			...(options.turbo ? turboLocalCachePaths(options.packageDirs) : []),
+		]),
+	];
 };
 
 /**
