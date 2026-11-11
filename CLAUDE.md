@@ -321,10 +321,11 @@ minified, with unused optional cyclonedx plugins (`xmlbuilder2`, `libxmljs2`,
 (`[action.persistLocal]`), the copy `test-fixture` runs. Validation runs inside the build;
 there is no separate `validate` command.
 
-`importCheck` is **off**: the kit's post-bundle load check is one switch for every bundle,
-and `turbo-server` deliberately refuses to start without `TURBOGHA_TOKEN` at import, which
-the check reads as a failed load. `main` and `post` are `GITHUB_ACTIONS`-guarded and do
-load. Turn it back on when the kit can exempt a single entry.
+`importCheck` is **on** for `main` and `post`, which are `GITHUB_ACTIONS`-guarded and load
+cleanly. `turbo-server` has its own `[action.entries.workers.turbo-server]` table with
+`importCheck = false`: it deliberately refuses to start without `TURBOGHA_TOKEN` at import,
+which the check reads as a failed load. See
+[`okf/limitations/bundle-import-check.md`](okf/limitations/bundle-import-check.md).
 
 Both directories are committed and cleaned before each build. Rebuild after **any** source
 change or CI runs stale code. See

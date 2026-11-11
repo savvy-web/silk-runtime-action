@@ -45,8 +45,8 @@
 		"@effected/memfs": "catalog:effected",
 		"@effected/plugin": "catalog:effected",
 		"@okfit/plugin": "^0.5.32",
-		"@savvy-web/silk": "^5.0.0",
-		"@vitest-agent/plugin": "^6.0.9"
+		"@savvy-web/silk": "^5.1.1",
+		"@vitest-agent/plugin": "^6.0.10"
 	},
 	"engines": {
 		"node": ">=24.11.0"

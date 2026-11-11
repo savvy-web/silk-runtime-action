@@ -1,15 +1,15 @@
 ---
 type: Limitation
-title: The post-bundle import check is disabled for every entry because the turbo-server worker refuses to load without its token
-description: effected action build's importCheck is a single switch across all bundles, and the turbo-server worker exits at import without TURBOGHA_TOKEN, so the check is off and main and post lose an automated load guard.
+title: The turbo-server worker is exempt from the post-bundle import check because it refuses to load without its token
+description: The turbo-server worker exits at import without TURBOGHA_TOKEN, so its own effected.toml table sets importCheck = false; main and post keep the check, and only the worker's load is left to the fixture workflows.
 status: draft
 bounds: ../modules/silk-runtime-action.md
 generated:
   by: okfit/claude-code
-  at: 2026-11-10T18:06:20Z
+  at: 2026-11-11T16:39:59Z
 sources:
   - id: effected-toml
-    title: "effected.toml [action.build]"
+    title: "effected.toml [action.entries.workers.turbo-server]"
     resource: ../../effected.toml
   - id: turbo-server
     resource: ../../src/turbo-server.ts
@@ -23,16 +23,17 @@ tags:
   - dx
 integrity:
   generated:
-    body: fdf886810e85a3a1
+    body: 52069262da68dc89
 ---
 
-# The post-bundle import check is disabled for every entry
+# The turbo-server worker is exempt from the post-bundle import check
 
 ## Trigger
 
-`effected action build` can run `importCheck` after bundling: it imports each emitted bundle
+`effected action build` runs `importCheck` after bundling: it imports each emitted bundle
 in a bare Node process carrying only `HOME` and `TMPDIR`, and fails the build if any of them
-does not load. The option is one switch for every entry, workers included.[^effected-toml]
+does not load. It is on by default for every entry, and a worker given its own
+`[action.entries.workers.<name>]` table can turn it off for itself alone.[^effected-toml]
 
 The `turbo-server` worker deliberately refuses to start without its configuration: at import
 it reads `TURBOGHA_TOKEN` and the rest of its `TURBOGHA_*` environment, and on failure logs
@@ -41,26 +42,27 @@ otherwise leave an unauthenticated cache server listening on the runner.[^turbo-
 
 ## Symptom
 
-With `importCheck` on, the build fails on `dist/turbo-server.js` even though the bundle is
-correct. So `effected.toml` sets `importCheck = false`, and **no bundle** gets the automated
-load check — including `main` and `post`, which are `GITHUB_ACTIONS`-guarded and do load
-cleanly under it (verified by hand).[^effected-toml][^owner]
+With the check on for the worker, the build fails with `turbo-server does not load:
+turbo-server: TURBOGHA_TOKEN is not set` even though the bundle is correct. So
+`effected.toml` gives the worker its own table with `importCheck = false`. `main` and `post`
+keep the check and load cleanly under it, being `GITHUB_ACTIONS`-guarded.[^effected-toml]
 
-A bundling regression that makes `main` or `post` fail at import is therefore caught by the
-fixture workflows running the committed `.github/actions/local/` copy, not by the build.
+A bundling regression that makes `dist/turbo-server.js` fail at import is therefore caught
+by the fixture workflows running the committed `.github/actions/local/` copy, not by the
+build.
 
 ## Why this is acceptable
 
 The worker's refusal is a security posture worth more than the check, and the fixture
-matrices exercise every bundle as a real runner loads it. The cost is a later, slower signal
-for an import-time failure in `main` or `post`.
+matrices exercise the worker as a real runner spawns it. The cost is a later, slower signal
+for an import-time failure in the worker only.
 
-## What a fix would take
+## History
 
-A per-entry (or workers-only) opt-out in `effected action build`, so `main` and `post` keep
-the check while `turbo-server` skips it. An upstream request for that option is being filed
-in the effected repository; once it ships, re-enable `importCheck` with the worker
-excluded.[^owner]
+Until `@effected/plugin` 0.5.1, `importCheck` was one switch under `[action.build]` for every
+bundle, so the worker's exemption turned the check off for `main` and `post` too. The
+per-worker table replaced that global switch, and the check is back on for both lifecycle
+bundles.[^owner]
 
 [^effected-toml]: ../../effected.toml
 [^turbo-server]: `../../src/turbo-server.ts`

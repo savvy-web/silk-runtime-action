@@ -5,7 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-11-10T18:06:20Z
+  at: 2026-11-11T16:39:59Z
 sources:
   - id: action-config
     title: "effected.toml [action] tables"
@@ -20,7 +20,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: dbac56088c92d0e7
+    body: d9146497dbc1373b
 ---
 
 # dist/ is committed, bundled and minified, with a mirrored local testing copy
@@ -46,13 +46,13 @@ bundles, minified, and the output is **committed to git**. The build is configur
 main = "src/main.ts"
 post = "src/post.ts"
 
-[action.entries.workers]
-turbo-server = "src/turbo-server.ts"
+[action.entries.workers.turbo-server]
+source = "src/turbo-server.ts"
+importCheck = false
 
 [action.build]
 minify = true
 ignore = ["xmlbuilder2", "libxmljs2", "ajv-formats-draft2019"]
-importCheck = false
 
 [action.persistLocal]
 enabled = true
@@ -68,7 +68,7 @@ runs:
   post: dist/post.js
 ```
 
-The `workers.turbo-server` entry produces `dist/turbo-server.js`, the detached embedded
+The `turbo-server` worker entry produces `dist/turbo-server.js`, the detached embedded
 Turbo remote-cache server that `main` spawns at runtime. It is **not** a lifecycle hook —
 `action.yml` names nothing beyond `main`/`post` — and `main` resolves it as a sibling of its
 own bundle through `import.meta.url`, which is meaningful only once the two files sit
@@ -83,10 +83,11 @@ rolldown keeps a computed `import()` native on its own, so there is no dynamic-i
 to set; writing one is an unknown-key failure. `tsconfig.json` extends
 `@effected/plugin/tsconfig/action.json`.[^tsconfig]
 
-**The post-bundle import check is off.** `importCheck` loads each bundle in a bare Node
-before the build passes, and it is one switch for every entry. `main` and `post` load under
-it; the `turbo-server` worker deliberately exits at import when `TURBOGHA_TOKEN` is absent,
-which the check reads as a load failure. See
+**The post-bundle import check is on, except for the worker.** `importCheck` loads each
+bundle in a bare Node before the build passes. `main` and `post` load under it; the
+`turbo-server` worker deliberately exits at import when `TURBOGHA_TOKEN` is absent, which the
+check reads as a load failure, so its own `[action.entries.workers.turbo-server]` table turns
+the check off for it alone. See
 [`../limitations/bundle-import-check.md`](../limitations/bundle-import-check.md).[^action-config]
 
 **A mirrored local testing copy at `.github/actions/local/`** separates test artifacts from
