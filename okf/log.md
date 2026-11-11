@@ -1,5 +1,11 @@
 # Log
 
+## 2026-11-11
+
+* Updated The turbo-server worker is exempt from the post-bundle import check because it refuses to load without its token
+* Updated dist/ is committed, bundled and minified, with a mirrored local testing copy
+* Updated silk-runtime-action
+
 ## 2026-11-10
 
 * Updated Adopt a first-party release after a dogfood round
