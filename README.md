@@ -39,7 +39,7 @@ Everything comes from `package.json`:
     },
     "packageManager": {
       "name": "pnpm",
-      "version": "10.20.0",
+      "version": "12.20.0",
       "onFail": "error"
     }
   }
@@ -55,7 +55,7 @@ Versions must be **absolute** (`"24.10.0"`), never ranges. Anything containing `
 ### What gets installed
 
 1. **Runtimes** — Node.js from `nodejs.org/dist`, Bun and Deno from their GitHub releases, unpacked into the runner tool cache.
-2. **Package manager** — npm, pnpm or yarn provisioned at the pinned version and added to `PATH`. Bun and Deno are their own package managers, so naming either is a no-op.
+2. **Package manager** — npm or pnpm (12 or later) provisioned at the pinned version and added to `PATH`. Bun and Deno are their own package managers, so naming either is a no-op.
 3. **Dependencies** — installed with the reproducible flag when a lockfile is present.
 4. **Biome** — installed when `biome.jsonc` or `biome.json` declares a version in its `$schema`, or when `biome-version` is set.
 5. **Turbo remote cache** — an embedded cache server, or passthrough to Vercel, when `turbo.json` is detected.
@@ -79,7 +79,7 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | `turbo-s3-session-token` | S3 session token, for temporary credentials. | `""` |
 | `turbo-s3-prefix` | Key prefix within the S3 bucket. | `""` |
 | `install-deps` | Whether to install dependencies (`true` \| `false`). | `"true"` |
-| `ignore-scripts` | Skip dependency lifecycle scripts during the install (`true` \| `false`). Passes `--ignore-scripts` to npm/pnpm/bun and `--mode=skip-build` to yarn Berry. No effect when `install-deps` is `false`, or for deno. | `"false"` |
+| `ignore-scripts` | Skip dependency lifecycle scripts during the install (`true` \| `false`). Passes `--ignore-scripts` to npm/pnpm/bun. No effect when `install-deps` is `false`, or for deno. | `"false"` |
 | `bats` | Provision the BATS toolchain — bats-core, bats-support, bats-assert, bats-file, bats-mock (`auto` \| `true` \| `false`). `auto` installs when a `*.bats` file or a `vitest-bats` dependency is present. | `"auto"` |
 | `kcov` | Provision kcov for shell-script coverage (`auto` \| `true` \| `false`). `auto` follows the bats decision. Built from source and cached; never installed when bats is off. | `"auto"` |
 | `cache-bust` | String appended to the cache key to force a miss. `false` or empty disables it; any other value busts. **Testing only.** | `"false"` |
@@ -103,7 +103,7 @@ tools are installed and validated on Linux and macOS.
 | `bun-enabled` | Whether Bun was installed (`true` \| `false`) |
 | `deno-version` | The Deno version that was installed, or empty |
 | `deno-enabled` | Whether Deno was installed (`true` \| `false`) |
-| `package-manager` | The package manager name (`npm` \| `pnpm` \| `yarn` \| `bun` \| `deno`) |
+| `package-manager` | The package manager name (`npm` \| `pnpm` \| `bun` \| `deno`) |
 | `package-manager-version` | The package manager version |
 | `biome-version` | The Biome version that was installed, or empty |
 | `biome-enabled` | Whether Biome was installed (`true` \| `false`) |
@@ -155,7 +155,7 @@ Declare them as an array, and the action installs each one and puts it on `PATH`
     ],
     "packageManager": {
       "name": "pnpm",
-      "version": "10.20.0",
+      "version": "12.20.0",
       "onFail": "error"
     }
   }
@@ -215,17 +215,16 @@ Point `turbo-s3-endpoint` at Cloudflare R2, MinIO or DigitalOcean Spaces to use 
 
 ## Package managers
 
-The package manager named in `devEngines.packageManager` is provisioned at exactly that version. If the pin carries an integrity hash — the `pnpm@10.20.0+sha512-…` form — the downloaded artifact is checked against it; a pin without one installs anyway and logs a warning. A manager already on the runner's `PATH` at the right version is reused rather than reinstalled.
+The package manager named in `devEngines.packageManager` is provisioned at exactly that version. If the pin carries an integrity hash — the `pnpm@12.20.0+sha512-…` form — the downloaded artifact is checked against it; a pin without one installs anyway and logs a warning. A manager already on the runner's `PATH` at the right version is reused rather than reinstalled.
 
 | Manager | How it is provisioned | Install command |
 | ------- | --------------------- | --------------- |
 | `npm` | Downloaded at the pinned version into the tool cache, then added to `PATH` | `npm ci`, or `npm install` with no lockfile |
-| `pnpm` | Downloaded at the pinned version into the tool cache, then added to `PATH` | `pnpm install --frozen-lockfile`, or `pnpm install` with no lockfile |
-| `yarn` | Downloaded at the pinned version into the tool cache, then added to `PATH` | `yarn install --immutable`, or `yarn install --no-immutable` with no lockfile |
+| `pnpm` | Downloaded at the pinned version (12 or later) into the tool cache, with the host's native binary, then added to `PATH` | `pnpm install --frozen-lockfile`, or `pnpm install` with no lockfile |
 | `bun` | No-op — the Bun runtime install already put it on `PATH` | `bun install --frozen-lockfile`, or `bun install` with no lockfile |
 | `deno` | No-op — the Deno runtime install already put it on `PATH` | None; Deno caches modules on demand, so the install step is skipped |
 
-Yarn Classic (1.x) and Berry (2.x and later) are both supported. Corepack is not used, and is not required in the consuming repository.
+pnpm must be 12 or later: earlier releases ship no native binary and are refused when the action provisions them. Yarn is not supported; a `yarn` pin fails `devEngines` validation before anything installs. Corepack is not used, and is not required in the consuming repository.
 
 ## Dependency caching
 
@@ -233,7 +232,7 @@ The run keeps **two** cache entries, because the things they hold go stale for d
 
 ### The workspace archive
 
-This is what a lockfile change invalidates: the `node_modules` each workspace package was linked into, yarn's PnP directories, the tool-cache directory of every runtime and Biome version installed, and turbo's local artifact cache. Add more with `additional-cache-paths`.
+This is what a lockfile change invalidates: the `node_modules` each workspace package was linked into, the tool-cache directory of every runtime and Biome version installed, and turbo's local artifact cache. Add more with `additional-cache-paths`.
 
 The key is the runner platform and architecture, a digest of every installed tool version (runtimes, package manager and Biome), a digest of what the install is going to do (`install-deps` and `ignore-scripts`), a digest of the branch name, and a digest of the matched lockfiles. Any of those changing produces a new key. Two restore keys back it up: the first drops the lockfile digest and matches an earlier cache for the same tool versions on this branch, the second drops the branch as well and reaches across branches. Either reports `partial` on the `cache-hit` output.
 
@@ -243,7 +242,7 @@ The `node_modules` directories come from the workspace's own membership, so only
 
 ### The package-manager store
 
-The global download cache — pnpm's store, npm's `_cacache`, yarn's and bun's caches — is archived separately, and reports on the `store-cache-hit` output.
+The global download cache — pnpm's store, npm's `_cacache`, bun's cache — is archived separately, and reports on the `store-cache-hit` output.
 
 Its key holds only the platform, the architecture, the manager and its version, and the lockfile digest. There is no branch in it and no runtime version, because a store is content-addressable and append-only: another branch's store is as good as yours, and a package tarball does not change because Node did. Its one restore key drops the lockfile digest, which is what lets the entry top up — a changed lockfile restores the previous store, the install adds what is new, and the union is archived under the new key.
 
@@ -288,7 +287,7 @@ Both `devEngines.runtime` and `devEngines.packageManager` must be present in the
 {
   "devEngines": {
     "runtime": { "name": "node", "version": "24.10.0", "onFail": "error" },
-    "packageManager": { "name": "pnpm", "version": "10.20.0", "onFail": "error" }
+    "packageManager": { "name": "pnpm", "version": "12.20.0", "onFail": "error" }
   }
 }
 ```

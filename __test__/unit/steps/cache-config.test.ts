@@ -91,12 +91,6 @@ describe("lockfilePatterns", () => {
 			"pnpm-workspace.yaml",
 			...EXCLUSIONS,
 		]);
-		assert.deepStrictEqual(lockfilePatterns(["yarn"], []), [
-			".pnp.cjs",
-			".yarn/install-state.gz",
-			"yarn.lock",
-			...EXCLUSIONS,
-		]);
 		assert.deepStrictEqual(lockfilePatterns(["bun"], []), ["bun.lock", "bun.lockb", ...EXCLUSIONS]);
 		assert.deepStrictEqual(lockfilePatterns(["deno"], []), ["deno.lock", ...EXCLUSIONS]);
 	});
@@ -107,7 +101,7 @@ describe("lockfilePatterns", () => {
 		// they happen to name. `spencerbeggs/effected` carries forty-one lockfiles
 		// under `packages/*\/__test__/fixtures/`, and a repository spelling that
 		// `test/fixtures/` instead would have keyed its cache on all of them.
-		for (const manager of ["npm", "pnpm", "yarn", "bun", "deno"] as const) {
+		for (const manager of ["npm", "pnpm", "bun", "deno"] as const) {
 			const built = lockfilePatterns([manager], []).slice(0, -EXCLUSIONS.length);
 			assert.deepStrictEqual(
 				built.filter((pattern) => pattern.includes("*")),
@@ -145,10 +139,6 @@ describe("storeCachePaths", () => {
 	it("uses each manager's default store directory on Linux", () => {
 		assert.include(storeCachePaths(["npm"], "linux", "/home/runner"), "/home/runner/.npm");
 		assert.include(storeCachePaths(["pnpm"], "linux", "/home/runner"), "/home/runner/.local/share/pnpm/store");
-		// Classic and Berry both, because the manager's major is not known here.
-		const yarn = storeCachePaths(["yarn"], "linux", "/home/runner");
-		assert.include(yarn, "/home/runner/.cache/yarn");
-		assert.include(yarn, "/home/runner/.yarn/berry/cache");
 		assert.include(storeCachePaths(["bun"], "linux", "/home/runner"), "/home/runner/.bun/install/cache");
 		assert.include(storeCachePaths(["deno"], "linux", "/home/runner"), "/home/runner/.cache/deno");
 	});
@@ -156,14 +146,10 @@ describe("storeCachePaths", () => {
 	it("uses each manager's default store directory on macOS", () => {
 		// The platform the old hand-rolled table was wrong about: it archived
 		// pnpm's *linux* store here, so a macOS job cached an empty directory and
-		// restored nothing. Classic's macOS cache is under `~/Library/Caches`,
-		// which that table did not have a cell for at all.
+		// restored nothing.
 		const home = "/Users/runner";
 		assert.include(storeCachePaths(["npm"], "darwin", home), "/Users/runner/.npm");
 		assert.include(storeCachePaths(["pnpm"], "darwin", home), "/Users/runner/Library/pnpm/store");
-		const yarn = storeCachePaths(["yarn"], "darwin", home);
-		assert.include(yarn, "/Users/runner/Library/Caches/Yarn");
-		assert.include(yarn, "/Users/runner/.yarn/berry/cache");
 		assert.include(storeCachePaths(["bun"], "darwin", home), "/Users/runner/.bun/install/cache");
 	});
 
@@ -171,9 +157,6 @@ describe("storeCachePaths", () => {
 		const home = "C:\\Users\\runneradmin";
 		assert.include(storeCachePaths(["npm"], "win32", home), "C:\\Users\\runneradmin\\AppData\\Local\\npm-cache");
 		assert.include(storeCachePaths(["pnpm"], "win32", home), "C:\\Users\\runneradmin\\AppData\\Local\\pnpm\\store");
-		const yarn = storeCachePaths(["yarn"], "win32", home);
-		assert.include(yarn, "C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Cache");
-		assert.include(yarn, "C:\\Users\\runneradmin\\AppData\\Local\\Yarn\\Berry\\cache");
 		// bun documents no Windows divergence: the cache is under the user profile
 		// on every platform, not `AppData` as the table this replaces claimed.
 		assert.include(storeCachePaths(["bun"], "win32", home), "C:\\Users\\runneradmin\\.bun\\install\\cache");
@@ -196,7 +179,7 @@ describe("cachePaths", () => {
 		// The split: a store is content-addressable and append-only, so keying it
 		// on the branch and the exact lockfile digest threw the download away on
 		// every branch cut for no correctness this cache needed.
-		for (const manager of ["npm", "pnpm", "yarn", "bun", "deno"] as const) {
+		for (const manager of ["npm", "pnpm", "bun", "deno"] as const) {
 			const paths = cachePaths(pathOptions({ packageManagers: [manager] }));
 			for (const store of storeCachePaths([manager], "linux", "/home/runner")) {
 				assert.notInclude(paths, store);
@@ -226,11 +209,7 @@ describe("cachePaths", () => {
 	it("adds the per-manager dependency directories (oracle 19)", () => {
 		assert.include(cachePaths(pathOptions({ packageManagers: ["npm"] })), "node_modules");
 		assert.include(cachePaths(pathOptions({ packageManagers: ["bun"] })), "node_modules");
-		const yarn = cachePaths(pathOptions({ packageManagers: ["yarn"] }));
-		assert.include(yarn, "node_modules");
-		assert.include(yarn, ".yarn/cache");
-		assert.include(yarn, ".yarn/unplugged");
-		assert.include(yarn, ".yarn/install-state.gz");
+		assert.include(cachePaths(pathOptions({ packageManagers: ["pnpm"] })), "node_modules");
 		// deno resolves modules into its own store and never writes node_modules.
 		assert.notInclude(cachePaths(pathOptions({ packageManagers: ["deno"] })), "node_modules");
 	});

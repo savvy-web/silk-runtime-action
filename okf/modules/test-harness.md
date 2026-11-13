@@ -7,7 +7,7 @@ kind: harness
 resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
-  at: 2026-09-25T00:54:05Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: test-fixture-action
     resource: ../../.github/actions/test-fixture/action.yml
@@ -23,7 +23,7 @@ sources:
     resource: ../../vitest.config.ts
 integrity:
   generated:
-    body: cb0397d18c1deaa0
+    body: 26154612e78f4bd9
 ---
 
 # test-harness
@@ -48,7 +48,6 @@ committed.[^fixtures-claude]
 | `node-npm-12` | node 26 + npm 12, `package-lock.json` — the "current" npm case; `node-npm` stays "one back" |
 | `node-pnpm` | node + pnpm, `pnpm-lock.yaml` |
 | `node-pnpm-12` | node 26 + pnpm 12 with a hash-pinned version and `onFail: "download"` on both entries, two-document `pnpm-lock.yaml` — the only fixture exercising pnpm's `download` value |
-| `node-yarn` | node + yarn 4, `yarn.lock` + `.pnp.cjs` + `.yarn/` |
 | `node-multi` | three runtimes (node, bun, deno) with pnpm as manager; workspace with `pkgs/pkg-{node,bun,deno}` |
 | `bun-bun` | bun as **both** runtime and package manager, `bun.lock` |
 | `biome-enabled` | `biome.jsonc` — version auto-detected from the `$schema` |

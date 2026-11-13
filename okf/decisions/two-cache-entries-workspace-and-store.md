@@ -5,7 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-10-05T21:46:04Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -19,7 +19,7 @@ tags:
   - architecture
 integrity:
   generated:
-    body: 5f2bc9bd24f1f6dd
+    body: 6aca95e6c5adb8aa
 ---
 
 # Two cache entries — the workspace archive and the package-manager store — keyed independently
@@ -37,7 +37,7 @@ key ties the long-lived one to the short-lived one's turnover.[^cache-config]
 The action keeps **two** Actions cache entries, because what they hold goes stale for
 different reasons:
 
-- The **workspace archive** — linked `node_modules` trees, yarn's PnP directories, every
+- The **workspace archive** — linked `node_modules` trees, every
   installed tool's tool-cache directory, and (when turbo is detected) turbo's local artifact
   cache — keyed on the platform, the architecture, the tool versions, the install policy,
   the branch, and the lockfile contents.[^cache-config]

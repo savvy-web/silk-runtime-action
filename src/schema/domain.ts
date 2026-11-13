@@ -11,12 +11,14 @@ export type RuntimeName = typeof RuntimeName.Type;
  * Supported package manager names, as accepted by `devEngines.packageManager.name`.
  *
  * @remarks
- * Five values, not four: `deno` is a package manager as well as a runtime, and
+ * Four values: `deno` is a package manager as well as a runtime, and
  * `action.yml` documents the `package-manager` output as
- * `npm | pnpm | yarn | bun | deno`. Dropping it would be a silent parity break
- * against v1.
+ * `npm | pnpm | bun | deno`. yarn is not one: the kit's package-manager
+ * provisioning, lockfile and cache tables dropped it, so a `yarn` pin fails
+ * here, at decode, rather than at install time. pnpm is 12 or later for the
+ * same reason — `PackageManagerInstaller` refuses an earlier pnpm's layout.
  */
-export const PackageManagerName = Schema.Literals(["npm", "pnpm", "yarn", "bun", "deno"]);
+export const PackageManagerName = Schema.Literals(["npm", "pnpm", "bun", "deno"]);
 export type PackageManagerName = typeof PackageManagerName.Type;
 
 /**

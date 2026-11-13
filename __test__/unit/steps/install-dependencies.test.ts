@@ -262,26 +262,6 @@ describe("installDependencies", () => {
 			}),
 		);
 
-		it.effect("appends --mode=skip-build for yarn Berry, which has no --ignore-scripts", () =>
-			Effect.gen(function* () {
-				const log = recorder();
-				const berry: ActivatedPackageManager = { ...activated("yarn"), version: "4.6.0" };
-				yield* run(log, berry, { present: ["yarn.lock"], ignoreScripts: true });
-
-				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--immutable", "--mode=skip-build"]);
-			}),
-		);
-
-		it.effect("appends --ignore-scripts for yarn Classic, which has no --mode", () =>
-			Effect.gen(function* () {
-				const log = recorder();
-				const classic: ActivatedPackageManager = { ...activated("yarn"), version: "1.22.22" };
-				yield* run(log, classic, { present: ["yarn.lock"], ignoreScripts: true });
-
-				assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--immutable", "--ignore-scripts"]);
-			}),
-		);
-
 		it.effect("changes nothing when it is off", () =>
 			Effect.gen(function* () {
 				const log = recorder();
@@ -311,28 +291,6 @@ describe("installDependencies", () => {
 			}),
 		);
 	});
-
-	it.effect("runs `yarn install --immutable` when a yarn.lock is present", () =>
-		Effect.gen(function* () {
-			const log = recorder();
-			yield* run(log, activated("yarn"), { present: ["yarn.lock"] });
-
-			assert.strictEqual(log.spawns[0]?.command, "yarn");
-			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--immutable"]);
-		}),
-	);
-
-	it.effect("runs `yarn install --no-immutable` when no yarn.lock is present", () =>
-		Effect.gen(function* () {
-			const log = recorder();
-			yield* run(log, activated("yarn"));
-
-			// The one manager that *adds* a flag in the absent case, and the one
-			// install this action performs that may rewrite a lockfile in CI
-			// (oracle 8). Ported deliberately.
-			assert.deepStrictEqual(log.spawns[0]?.args, ["install", "--no-immutable"]);
-		}),
-	);
 
 	it.effect("runs `bun install --frozen-lockfile` for the text bun.lock", () =>
 		Effect.gen(function* () {
@@ -642,23 +600,9 @@ describe("installDependencies", () => {
 			// the fix. Shelling it anyway is deliberate: `cmd.exe` resolves a bare
 			// `bun` through PATHEXT, where `.EXE` precedes `.CMD`, so it finds the
 			// same executable in the same prepended directory. One launch path for
-			// all four managers, at no cost to the one that was already fine.
+			// all three managers, at no cost to the one that was already fine.
 			assert.strictEqual(log.spawns[0]?.shell, true);
 			assert.strictEqual(log.spawns[0]?.command, "bun install --frozen-lockfile");
-			assert.deepStrictEqual(log.spawns[0]?.args, []);
-		}),
-	);
-
-	it.effect("joins yarn Berry's skip-build flag into the Windows command line unquoted", () =>
-		Effect.gen(function* () {
-			const log = recorder();
-			const berry: ActivatedPackageManager = { ...activated("yarn"), version: "4.6.0" };
-			yield* run(log, berry, { present: ["yarn.lock"], ignoreScripts: true, platform: "win32" });
-
-			// The one flag carrying a metacharacter-adjacent `=`. The windows format
-			// quotes only what its argv parser would split, so it reaches cmd.exe as
-			// typed, and the error detail still names the original argv.
-			assert.strictEqual(log.spawns[0]?.command, "yarn install --immutable --mode=skip-build");
 			assert.deepStrictEqual(log.spawns[0]?.args, []);
 		}),
 	);
@@ -719,13 +663,13 @@ describe("installDependencies", () => {
 	it.effect("names the failure once, not twice", () =>
 		Effect.gen(function* () {
 			const log = recorder();
-			const error = yield* Effect.flip(run(log, activated("yarn"), { outcome: { exitCode: 2 } }));
+			const error = yield* Effect.flip(run(log, activated("npm"), { outcome: { exitCode: 2 } }));
 
 			// Legacy nested its own prose inside itself: the class rendered "Failed to
-			// install dependencies with yarn: Failed to install dependencies: …"
+			// install dependencies with npm: Failed to install dependencies: …"
 			// (oracle 21). One prefix, ruled.
 			assert.lengthOf(error.message.split("Failed to install dependencies"), 2);
-			assert.strictEqual(error.message.startsWith("Failed to install dependencies with yarn: "), true);
+			assert.strictEqual(error.message.startsWith("Failed to install dependencies with npm: "), true);
 		}),
 	);
 

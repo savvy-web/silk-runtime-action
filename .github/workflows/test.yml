@@ -29,7 +29,6 @@ jobs:
           - npm12
           - pnpm
           - pnpm12
-          - yarn
           - multi
           - bun
           - bats
@@ -72,7 +71,7 @@ jobs:
             expected-node-enabled: "true"
             expected-node-version: 20.11.0
             expected-package-manager: pnpm
-            expected-package-manager-version: 10.20.0
+            expected-package-manager-version: 12.20.0
             expected-deno-enabled: "false"
             expected-bun-enabled: "false"
             expected-biome-enabled: "false"
@@ -93,20 +92,6 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: node --version && pnpm --version
             title: 📦 PNPM 12 (Create Cache)
-          - pm: yarn
-            fixture: node-yarn
-            install-deps: "true"
-            expected-cache-hit: "false"
-            expected-node-enabled: "true"
-            expected-node-version: 20.11.0
-            expected-package-manager: yarn
-            expected-package-manager-version: 4.0.0
-            expected-deno-enabled: "false"
-            expected-bun-enabled: "false"
-            expected-biome-enabled: "false"
-            expected-turbo-enabled: "false"
-            test-command: node --version && yarn --version
-            title: 📦 Yarn (Create Cache)
           - pm: multi
             fixture: node-multi
             install-deps: "true"
@@ -118,7 +103,7 @@ jobs:
             expected-deno-enabled: "true"
             expected-deno-version: 2.5.6
             expected-package-manager: pnpm
-            expected-package-manager-version: 10.23.0
+            expected-package-manager-version: 12.20.0
             expected-biome-enabled: "false"
             expected-turbo-enabled: "false"
             test-command: node --version && bun --version && deno --version && pnpm --version
@@ -159,7 +144,7 @@ jobs:
             expected-node-enabled: "true"
             expected-node-version: 24.11.0
             expected-package-manager: pnpm
-            expected-package-manager-version: 10.20.0
+            expected-package-manager-version: 12.20.0
             expected-deno-enabled: "false"
             expected-bun-enabled: "false"
             expected-biome-enabled: "false"
@@ -257,7 +242,6 @@ jobs:
           - npm12
           - pnpm
           - pnpm12
-          - yarn
           - multi
           - bun
         include:
@@ -296,7 +280,7 @@ jobs:
             expected-node-enabled: "true"
             expected-node-version: 20.11.0
             expected-package-manager: pnpm
-            expected-package-manager-version: 10.20.0
+            expected-package-manager-version: 12.20.0
             expected-biome-enabled: "false"
             expected-turbo-enabled: "false"
             test-command: node --version && pnpm --version
@@ -313,20 +297,6 @@ jobs:
             expected-turbo-enabled: "false"
             test-command: node --version && pnpm --version
             title: 📦 PNPM 12 (Restore Cache)
-          - pm: yarn
-            fixture: node-yarn
-            install-deps: "true"
-            expected-cache-hit: "true"
-            expected-node-enabled: "true"
-            expected-node-version: 20.11.0
-            expected-package-manager: yarn
-            expected-package-manager-version: 4.0.0
-            expected-deno-enabled: "false"
-            expected-bun-enabled: "false"
-            expected-biome-enabled: "false"
-            expected-turbo-enabled: "false"
-            test-command: node --version && yarn --version
-            title: 📦 Yarn (Restore Cache)
           - pm: multi
             fixture: node-multi
             install-deps: "true"
@@ -338,7 +308,7 @@ jobs:
             expected-deno-enabled: "true"
             expected-deno-version: 2.5.6
             expected-package-manager: pnpm
-            expected-package-manager-version: 10.23.0
+            expected-package-manager-version: 12.20.0
             expected-biome-enabled: "false"
             expected-turbo-enabled: "false"
             test-command: node --version && bun --version && deno --version && pnpm --version
@@ -442,7 +412,7 @@ jobs:
             expected-node-enabled: "true"
             expected-node-version: 24.11.0
             expected-package-manager: pnpm
-            expected-package-manager-version: 10.20.0
+            expected-package-manager-version: 12.20.0
             expected-bun-enabled: "false"
             expected-deno-enabled: "false"
             expected-biome-enabled: "true"

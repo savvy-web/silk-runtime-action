@@ -60,15 +60,9 @@ export const activePackageManagers = (config: RuntimeConfig): ReadonlyArray<Pack
  * install resolves to just as a lockfile does, so they belong in the key, and
  * legacy put them alongside the lockfiles rather than inventing a second list
  * (oracle 1). They land in the `lockfiles` output as a consequence.
- *
- * yarn's `.yarn/install-state.gz` is both an input to the key and a file the
- * cache archives, so a saved cache invalidates the key that saved it. Carried
- * over deliberately: the fixtures pin yarn PnP files as lockfiles, and the
- * self-invalidation costs a rebuild rather than correctness.
  */
 const WORKSPACE_CONFIG: Partial<Record<PackageManagerName, ReadonlyArray<string>>> = {
 	pnpm: ["pnpm-workspace.yaml", ".pnpmfile.cjs"],
-	yarn: [".pnp.cjs", ".yarn/install-state.gz"],
 };
 
 /**
@@ -81,7 +75,7 @@ const WORKSPACE_CONFIG: Partial<Record<PackageManagerName, ReadonlyArray<string>
  * had to be told about (npm's `npm-shrinkwrap.json`, bun's legacy `bun.lockb`).
  *
  * Every name is anchored at the **workspace root**, not globbed at any depth.
- * All five managers write one lockfile, at the root, and a workspace package's
+ * All four managers write one lockfile, at the root, and a workspace package's
  * dependency change reaches the key through that file rather than beside it —
  * so a deeper match is never the lockfile an install reads. What a deeper match
  * *is*, reliably, is a test fixture: this repository's own `__fixtures__/`
@@ -97,7 +91,7 @@ const WORKSPACE_CONFIG: Partial<Record<PackageManagerName, ReadonlyArray<string>
  * `load-config` reads `package.json` from the working directory, so a root
  * manifest is a hard requirement, not a convention.
  *
- * deno is not in the kit's vocabulary — `LockfileFormat` covers the four npm-
+ * deno is not in the kit's vocabulary — `LockfileFormat` covers the three npm-
  * ecosystem managers — so its one name stays local rather than being forced
  * into a format that does not have a row for it.
  */
@@ -203,21 +197,16 @@ const pathFor = (platform: string) => (platform === "win32" ? win32 : posix);
  * detection: no fixture ever asserted a detected store path, and the step now
  * needs no spawner at all.
  *
- * The four npm-ecosystem rows come from `@effected/npm`'s `PackageManagerCache`
+ * The three npm-ecosystem rows come from `@effected/npm`'s `PackageManagerCache`
  * — a facts table with a cited authority per row — rather than from the verbatim
  * legacy port that stood here, which had three wrong cells and so archived
  * directories the manager never writes to: pnpm's macOS store is
- * `~/Library/pnpm/store` and not the linux path; Classic's and Berry's caches
- * were swapped *and* both misspelled (`~/.yarn/cache` was never either one); and
- * bun uses `~/.bun/install/cache` on every platform, Windows included. A wrong
+ * `~/Library/pnpm/store` and not the linux path; yarn's two caches were swapped
+ * *and* both misspelled; and bun uses `~/.bun/install/cache` on every platform, Windows included. A wrong
  * cell costs a cold cache rather than a broken run, which is exactly why it
  * survived a release — nothing fails, the archive is simply empty.
  *
- * yarn contributes two because Berry and Classic disagree about where the cache
- * lives and the manager's major version is not known here — the kit splits them
- * into two literals and refuses a bare `yarn`, so asking for both is the only
- * thing this call site *can* say. deno is out of the kit's vocabulary by scoping
- * and stays local policy.
+ * deno is out of the kit's vocabulary by scoping and stays local policy.
  */
 const storePaths = (packageManager: PackageManagerName, platform: string, home: string): ReadonlyArray<string> => {
 	const options = { platform, home };
@@ -226,11 +215,6 @@ const storePaths = (packageManager: PackageManagerName, platform: string, home: 
 		case "pnpm":
 		case "bun":
 			return [PackageManagerCache.defaultDirectory(packageManager, options)];
-		case "yarn":
-			return [
-				PackageManagerCache.defaultDirectory("yarn-classic", options),
-				PackageManagerCache.defaultDirectory("yarn-berry", options),
-			];
 		case "deno":
 			return [
 				platform === "win32"
@@ -279,8 +263,7 @@ export const storeCachePaths = (
  * nothing else.
  *
  * deno has none at all: it resolves modules out of its own store and never
- * populates `node_modules`. yarn's PnP layout adds three of its own, at the
- * root, on top of the `node_modules` a non-PnP project still gets.
+ * populates `node_modules`.
  */
 const workspacePaths = (
 	packageManager: PackageManagerName,
@@ -292,8 +275,6 @@ const workspacePaths = (
 		case "pnpm":
 		case "bun":
 			return nodeModules;
-		case "yarn":
-			return [...nodeModules, ".yarn/cache", ".yarn/unplugged", ".yarn/install-state.gz"];
 		case "deno":
 			return [];
 	}
@@ -341,8 +322,7 @@ export interface CachePathOptions {
  * under {@link storeKeySegments}, because they are the one part of this set
  * that a branch cut and a lockfile bump do not invalidate. What remains is
  * exactly the set that a change to the lockfile *does* invalidate: the linked
- * `node_modules` trees, yarn's PnP artifacts, the tool-cache directories, and
- * turbo's local cache.
+ * `node_modules` trees, the tool-cache directories, and turbo's local cache.
  *
  * The runtimes' tool-cache directories stay in with the workspace, which means
  * a runtime bump still invalidates the linked trees. That is the right pairing

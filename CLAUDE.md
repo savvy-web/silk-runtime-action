@@ -19,7 +19,7 @@ A **JavaScript runtime setup GitHub Action**, entirely driven by `package.json`:
 
 Consuming repositories **MUST** have a root `package.json` with:
 
-1. **`devEngines.packageManager`** — `name` (`npm`|`pnpm`|`yarn`|`bun`|`deno`) + absolute
+1. **`devEngines.packageManager`** — `name` (`npm`|`pnpm`|`bun`|`deno`) + absolute
    `version` ([Corepack devEngines format](https://github.com/nodejs/corepack)).
 2. **`devEngines.runtime`** — one object or a non-empty array, each with `name`
    (`node`|`bun`|`deno`) + absolute `version`
@@ -27,14 +27,15 @@ Consuming repositories **MUST** have a root `package.json` with:
 
 `onFail` is optional on both (parsed, not acted upon): `warn`|`error`|`ignore`, plus
 `download` when the package manager is pnpm. Versions must be exact
-(`"24.11.0"`), never ranges. A top-level corepack `packageManager` pin is ignored —
+(`"24.11.0"`), never ranges. pnpm must be 12 or later — `PackageManagerInstaller`
+refuses an earlier pnpm's layout — and yarn is not supported. A top-level corepack `packageManager` pin is ignored —
 `devEngines` is the only source of truth.
 
 ```json
 {
   "name": "my-project",
   "devEngines": {
-    "packageManager": { "name": "pnpm", "version": "10.20.0", "onFail": "error" },
+    "packageManager": { "name": "pnpm", "version": "12.20.0", "onFail": "error" },
     "runtime": [
       { "name": "node", "version": "24.11.0", "onFail": "error" },
       { "name": "bun", "version": "1.3.3", "onFail": "error" }
@@ -259,7 +260,7 @@ versions come only from `devEngines` — there are no version inputs.
 | --- | --- | --- |
 | `biome-version` | `""` | Override; empty auto-detects from the `$schema`, or skips |
 | `install-deps` | `"true"` | Install dependencies |
-| `ignore-scripts` | `"false"` | Skip lifecycle scripts during the install — `--ignore-scripts` (npm/pnpm/bun), `--mode=skip-build` (yarn Berry). Inert when `install-deps` is `false` or the manager is deno. Part of the cache key |
+| `ignore-scripts` | `"false"` | Skip lifecycle scripts during the install — `--ignore-scripts` (npm/pnpm/bun). Inert when `install-deps` is `false` or the manager is deno. Part of the cache key |
 | `bats` | `"auto"` | `auto` \| `true` \| `false`. `auto` installs bats-core, bats-support, bats-assert, bats-file and bats-mock when a `*.bats` file or a `vitest-bats` dependency is present |
 | `kcov` | `"auto"` | `auto` \| `true` \| `false`. `auto` follows the bats decision; built from source and cached, never installed when bats is off |
 | `turbo-cache` | `"auto"` | `auto` \| `off`. `auto` starts the embedded server when `turbo.json` exists and no Vercel creds are set |
@@ -281,7 +282,7 @@ versions come only from `devEngines` — there are no version inputs.
 | --- | --- |
 | `node-version` / `bun-version` / `deno-version` | Installed version, or empty |
 | `node-enabled` / `bun-enabled` / `deno-enabled` | `"true"` \| `"false"` |
-| `package-manager` / `package-manager-version` | e.g. `pnpm` / `"10.20.0"` |
+| `package-manager` / `package-manager-version` | e.g. `pnpm` / `"12.20.0"` |
 | `biome-version` / `biome-enabled` | Installed version (empty if not) / `"true"` \| `"false"` |
 | `bats-version` / `bats-enabled` | Installed bats-core version (empty if not) / `"true"` \| `"false"` |
 | `bats-lib-path` | Exported `BATS_LIB_PATH`, or empty when bats was not installed |

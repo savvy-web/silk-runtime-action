@@ -65,7 +65,7 @@ import { formatDetectLine } from "./summary/format.js";
  *
  * A manager that already knows where it is keeps that answer: an npm-registry
  * manager's shim directory wins over a same-named runtime, and there is no such
- * collision anyway (`npm`, `pnpm` and `yarn` are never runtimes).
+ * collision anyway (`npm` and `pnpm` are never runtimes).
  */
 const onInstallPath = (
 	pm: ActivatedPackageManager,
@@ -105,7 +105,7 @@ const onInstallPath = (
  * npm happened to match the pin. `setupPackageManager` passes `allowAmbient:
  * false`, so no npm reaches this function without a `binDir` and the head of the
  * list is the pinned npm on every run. The rule the list implements is therefore
- * uniform for all five managers: **the manager you pinned leads**.
+ * uniform for all four managers: **the manager you pinned leads**.
  */
 const installPathPrepends = (
 	pm: ActivatedPackageManager,

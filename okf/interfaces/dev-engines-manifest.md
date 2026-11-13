@@ -7,7 +7,7 @@ kind: config
 resource: ../../src/schema/domain.ts
 generated:
   by: okfit/claude-code
-  at: 2026-09-24T01:33:32Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: domain-schema
     resource: ../../src/schema/domain.ts
@@ -15,7 +15,7 @@ sources:
     resource: ../../__test__/unit/schema/domain.test.ts
 integrity:
   generated:
-    body: 4d39887d96c93964
+    body: 97920d1b026aeb93
 ---
 
 # devEngines manifest — the config shape consumers must satisfy
@@ -46,9 +46,13 @@ a `Schema.NonEmptyArray<RuntimeSpec>` (`domain.ts:85-88`).
 ## Names
 
 `RuntimeName` accepts `node`, `bun`, `deno` (`domain.ts:7`). `PackageManagerName` accepts
-`npm`, `pnpm`, `yarn`, `bun`, `deno` — **five** values, not four, because `deno` is a package
-manager as well as a runtime and `action.yml` documents the `package-manager` output over that
-same five-name set; dropping the fifth would be a silent parity break (`domain.ts:10-20`).
+`npm`, `pnpm`, `bun`, `deno` — `deno` is a package manager as well as a runtime, and
+`action.yml` documents the `package-manager` output over that same four-name set
+(`domain.ts:10-21`). **yarn is not accepted**: the kit's provisioning, lockfile and cache tables
+dropped it, so a `yarn` pin fails decode here rather than at install time. **pnpm must be 12 or
+later** — the schema does not check the major, but `PackageManagerInstaller` refuses an earlier
+pnpm's artifact (no `@pnpm/exe.*` native binary) as `layoutUnexpected` when
+`setup-package-manager` provisions it.
 
 ## Versions must be exact
 

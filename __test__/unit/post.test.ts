@@ -307,17 +307,16 @@ describe("post", () => {
 			const saves: Array<Saved> = [];
 			const two = StoreCacheState.make({
 				...missedStore,
-				paths: ["/home/runner/.cache/yarn", "/home/runner/.yarn/berry/cache"],
+				paths: ["/home/runner/.local/share/pnpm/store", "/home/runner/.npm"],
 			});
-			// yarn contributes both Classic's and Berry's directories because the
-			// major is not known when the paths are derived; only one is ever real.
+			// Two managers' stores, only one of which this run ever wrote to.
 			yield* runPost({
 				state: stateWithStore(Option.some(two)),
 				cache: cacheTest(saves),
-				directories: { "/home/runner/.cache/yarn": [], "/home/runner/.yarn/berry/cache": ["v6"] },
+				directories: { "/home/runner/.local/share/pnpm/store": ["v10"], "/home/runner/.npm": [] },
 			});
 
-			assert.deepStrictEqual(saves, [{ paths: ["/home/runner/.yarn/berry/cache"], key: two.primaryKey }]);
+			assert.deepStrictEqual(saves, [{ paths: ["/home/runner/.local/share/pnpm/store"], key: two.primaryKey }]);
 		}),
 	);
 
