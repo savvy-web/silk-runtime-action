@@ -66,10 +66,9 @@ describe("RuntimeName", () => {
 });
 
 describe("PackageManagerName", () => {
-	// Five, not four: `action.yml` documents the `package-manager` output as
-	// `npm | pnpm | yarn | bun | deno`, so dropping `deno` here would be a
-	// silent parity break against v1.
-	for (const name of ["npm", "pnpm", "yarn", "bun", "deno"]) {
+	// `deno` is a package manager as well as a runtime: `action.yml` documents
+	// the `package-manager` output as `npm | pnpm | bun | deno`.
+	for (const name of ["npm", "pnpm", "bun", "deno"]) {
 		it.effect(`accepts "${name}"`, () =>
 			Effect.gen(function* () {
 				const v = yield* Schema.decodeUnknownEffect(PackageManagerName)(name);
@@ -80,6 +79,12 @@ describe("PackageManagerName", () => {
 	it.effect("rejects an unknown package manager name", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(Schema.decodeUnknownEffect(PackageManagerName)("bundler"));
+			assert.strictEqual(exit._tag, "Failure");
+		}),
+	);
+	it.effect("rejects yarn, which the kit no longer provisions", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(Schema.decodeUnknownEffect(PackageManagerName)("yarn"));
 			assert.strictEqual(exit._tag, "Failure");
 		}),
 	);

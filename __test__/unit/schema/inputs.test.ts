@@ -69,12 +69,12 @@ describe("loadInputs", () => {
 	it.effect("parses multiline additional-lockfiles and s3 fields", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
-			assert.deepStrictEqual(inputs.additionalLockfiles, ["deno.lock", "**/yarn.lock"]);
+			assert.deepStrictEqual(inputs.additionalLockfiles, ["deno.lock", "**/bun.lock"]);
 			assert.strictEqual(Option.isSome(inputs.turboS3Bucket), true);
 		}).pipe(
 			Effect.provide(
 				ActionInput.layer({
-					"additional-lockfiles": "deno.lock\n**/yarn.lock",
+					"additional-lockfiles": "deno.lock\n**/bun.lock",
 					"turbo-s3-bucket": "my-bucket",
 				}),
 			),

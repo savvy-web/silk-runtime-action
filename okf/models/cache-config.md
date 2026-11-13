@@ -8,7 +8,7 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-11-10T18:06:34Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -21,7 +21,7 @@ sources:
     resource: https://github.com/savvy-web/silk-runtime-action/issues/545
 integrity:
   generated:
-    body: f53b895dcb59eefc
+    body: 2958cd932fbcafcf
 ---
 
 # Cache config — key formats, ladders, lockfile patterns, and archived paths
@@ -121,7 +121,6 @@ Every built-in name is anchored at the **workspace root**; nothing is globbed at
 | --- | --- |
 | npm | `package-lock.json`, `npm-shrinkwrap.json` |
 | pnpm | `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.pnpmfile.cjs` |
-| yarn | `yarn.lock`, `.pnp.cjs`, `.yarn/install-state.gz` |
 | bun | `bun.lock`, `bun.lockb` |
 | deno | `deno.lock` |
 
@@ -176,14 +175,12 @@ manager's default store directory, de-duplicated and sorted.
 | --- | --- | --- |
 | npm | `~/.npm` / `%LOCALAPPDATA%\npm-cache` | `<pkg>/node_modules` |
 | pnpm | `~/.local/share/pnpm/store` / `…\pnpm\store` | `<pkg>/node_modules` |
-| yarn | `~/.yarn/cache` and `~/.cache/yarn` / `…\Yarn\Cache` and `…\Yarn\Berry\cache` | `<pkg>/node_modules`, `.yarn/cache`, `.yarn/unplugged`, `.yarn/install-state.gz` |
 | bun | `~/.bun/install/cache` / `…\bun\install\cache` | `<pkg>/node_modules` |
 | deno | `~/.cache/deno` / `%LOCALAPPDATA%\deno` | none — deno never populates `node_modules` |
 
 (`storePaths`, `cache-config.ts:222-241`)
 
-yarn contributes **two** stores because Berry and Classic disagree about where the cache
-lives, and the manager's major version is not known at this layer. Paths are joined with
+Paths are joined with
 `node:path`'s `posix` or `win32` module explicitly — the same as the host's own module in
 production, but what lets a Linux test pin the Windows store layout (`pathFor`,
 `cache-config.ts:193`). The tool-cache base is `RUNNER_TOOL_CACHE` when set, else

@@ -57,7 +57,7 @@ inputs:
     required: false
     default: "true"
   ignore-scripts:
-    description: Skip dependency lifecycle scripts during the install (true | false). Passes --ignore-scripts to npm/pnpm/bun and --mode=skip-build to yarn Berry. No effect when install-deps is false, or for deno.
+    description: Skip dependency lifecycle scripts during the install (true | false). Passes --ignore-scripts to npm/pnpm/bun. No effect when install-deps is false, or for deno.
     required: false
     default: "false"
   bats:
@@ -73,7 +73,7 @@ inputs:
     required: false
     default: "false"
   additional-lockfiles:
-    description: Additional lockfile patterns to include in cache key generation. Supports glob patterns. One pattern per line (e.g., 'deno.lock', '**/yarn.lock').
+    description: Additional lockfile patterns to include in cache key generation. Supports glob patterns. One pattern per line (e.g., 'deno.lock', '**/bun.lock').
     required: false
     default: ""
   additional-cache-paths:
@@ -94,7 +94,7 @@ outputs:
   deno-enabled:
     description: Whether Deno was installed (true | false)
   package-manager:
-    description: The package manager name (npm | pnpm | yarn | bun | deno)
+    description: The package manager name (npm | pnpm | bun | deno)
   package-manager-version:
     description: The package manager version (e.g., '10.20.0')
   biome-version:

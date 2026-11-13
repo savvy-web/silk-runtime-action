@@ -136,7 +136,7 @@ describe("loadConfig", () => {
 		Effect.gen(function* () {
 			const config = yield* load(
 				JSON.stringify({
-					packageManager: "yarn@4.0.0",
+					packageManager: "npm@11.6.0",
 					devEngines: {
 						packageManager: { name: "pnpm", version: "10.20.0" },
 						runtime: { name: "node", version: "24.11.0" },
@@ -431,7 +431,7 @@ describe("loadConfig — normalization edges", () => {
 		}),
 	);
 
-	for (const name of ["npm", "yarn", "bun", "deno"]) {
+	for (const name of ["npm", "bun", "deno"]) {
 		it.effect(`rejects onFail "download" on the packageManager entry for ${name}`, () =>
 			Effect.gen(function* () {
 				const error = yield* failureOf(

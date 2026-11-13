@@ -5,7 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-11-01T19:18:29Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: install-dependencies
     resource: ../../src/steps/install-dependencies.ts
@@ -16,7 +16,7 @@ tags:
   - security
 integrity:
   generated:
-    body: d44e029eecc00d89
+    body: 76dcb9f1bc7542e3
 ---
 
 # Windows launches every manager through a shell; POSIX never does
@@ -32,7 +32,7 @@ before the install has a chance to run.[^install-dependencies]
 ## Decision
 
 `spawnInstall` decides the launch via `ChildEnv.needsShell(platform)` and sets `shell: true`
-on the spawned command whenever it answers true.[^install-dependencies] **All four managers
+on the spawned command whenever it answers true.[^install-dependencies] **All three managers
 shell on win32, bun included**, and that is deliberate rather than collateral: `cmd.exe`
 resolves a bare `bun` through `PATHEXT`, where `.EXE` precedes `.CMD`, so it finds the same
 `bun.exe` in the same prepended directory a direct spawn would have found. The argv is
@@ -63,12 +63,12 @@ shape, because only a Windows runner ever reaches this branch.[^install-dependen
 **Argument quoting is not a hazard here.** The `windows` format quotes for a program's own
 argv parser, not for `cmd.exe`, which still expands `%NAME%` and reads `^ & | < >` first, so
 it would not make an untrusted value safe. None reaches the line: every argument comes from
-the static `PLANS` table or `ignoreScriptsArgs` — no path, no version, nothing derived from a
+the static `PLANS` table or `IGNORE_SCRIPTS_ARGS` — no path, no version, nothing derived from a
 workflow input.[^install-dependencies]
 
 ## Alternatives rejected
 
-- **Shelling only the three genuinely `.cmd`-shimmed managers (npm, pnpm, yarn) and spawning
+- **Shelling only the genuinely `.cmd`-shimmed managers (npm, pnpm) and spawning
   bun directly.** `bun.exe` is a real binary, and bun-as-manager was the one Windows job
   passing before the shell was introduced for it too — but the asymmetry buys nothing:
   `cmd.exe`'s `PATHEXT` resolution finds the identical binary a direct spawn would, so

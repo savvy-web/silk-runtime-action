@@ -5,7 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: setup-package-manager
     resource: ../../src/steps/setup-package-manager.ts
@@ -19,7 +19,7 @@ tags:
   - dx
 integrity:
   generated:
-    body: 9a1ee9e5d1c5fe1b
+    body: 207e20facde3e3ac
 ---
 
 # The pinned package manager leads the child PATH, with no ambient exception
@@ -72,9 +72,9 @@ that is the wrong non-determinism to keep.[^setup-package-manager]
 
 `setupPackageManager` now passes `allowAmbient: false`, so no manager reaches
 `installPathPrepends` without a `binDir`, and the head of the list is always the pinned
-manager — uniform across all five managers: **the manager you pinned leads**.[^setup-package-manager][^program]
-Suppressing the probe makes npm behave like every other tool here — node, bun, deno, pnpm,
-and yarn were already installed to their exact pin, npm was the lone short-circuit — and
+manager — uniform across all four managers: **the manager you pinned leads**.[^setup-package-manager][^program]
+Suppressing the probe makes npm behave like every other tool here — node, bun, deno and
+pnpm were already installed to their exact pin, npm was the lone short-circuit — and
 costs one small tarball on runs where the runner's npm happened to match.[^setup-package-manager]
 
 The gap this closed had no fixture: nothing asserted *which* npm executes, and the

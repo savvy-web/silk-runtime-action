@@ -6,7 +6,7 @@ description: Why the action is built on Effect v4 and the first-party @effected 
 tags: [architecture, deps, dx]
 generated:
   by: okfit/claude-code
-  at: 2026-11-01T19:11:54Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: package-json
     resource: ../../package.json
@@ -14,7 +14,7 @@ sources:
     resource: ../../src/layers/app.ts
 integrity:
   generated:
-    body: 80125f11059e5e56
+    body: d04aab1468ba0b5b
 ---
 
 # Effect v4 over the @effected suite, zero @actions/* dependencies
@@ -86,8 +86,8 @@ locally with a patch or an override.
   protocol between this repository and `spencerbeggs/effected`.
 - The dependency surface stays auditable: every `@effected/*` package declared
   in `package.json` is either imported directly under `src/` or a required
-  peer of one that is (the one peer-only entry, `@effected/yaml`, is a
-  dependency of `@effected/lockfiles`) — see
+  peer of one that is (the peer-only entries — `@effected/glob`,
+  `@effected/pnpm` and `@effected/bun` — are required peers of `@effected/lockfiles`) — see
   [dependency honesty](../conventions/dependency-honesty.md).
 - Every `@effected/*` and `effect` version is resolved through `catalog:effect`
   / `catalog:effected`, never a hand-written range, so the installed version

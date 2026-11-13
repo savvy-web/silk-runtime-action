@@ -29,15 +29,16 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:effected",
+		"@effected/bun": "catalog:effected",
 		"@effected/commands": "catalog:effected",
 		"@effected/github-actions": "catalog:effected",
 		"@effected/glob": "catalog:effected",
 		"@effected/jsonc": "catalog:effected",
 		"@effected/lockfiles": "catalog:effected",
 		"@effected/npm": "catalog:effected",
+		"@effected/pnpm": "catalog:effected",
 		"@effected/semver": "catalog:effected",
 		"@effected/workspaces": "catalog:effected",
-		"@effected/yaml": "catalog:effected",
 		"effect": "catalog:effected"
 	},
 	"devDependencies": {

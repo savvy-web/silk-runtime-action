@@ -6,7 +6,7 @@ status: draft
 repository: spencerbeggs/effected
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -17,7 +17,7 @@ tags:
   - testing
 integrity:
   generated:
-    body: 2225497fde827dfb
+    body: f980781e5786c428
 ---
 
 # spencerbeggs/effected
@@ -34,7 +34,7 @@ checkout of it.[^claude-md]
   `ActionEnvironment`, `ActionInput`, `ActionLogger`, `ActionOutputs`, `ActionState`,
   `BlobStore`, `CacheKey`, `ChildEnv`, `DetachedProcess`, `GitHubMarkdown`,
   `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`, and the peer-only
-  `@effected/yaml` — comes from this repository. A bug found in any of them is fixed there
+  `@effected/glob`, `@effected/pnpm` and `@effected/bun` — comes from this repository. A bug found in any of them is fixed there
   first, before being dogfooded back through the mailbox protocol.
 - **The dependency-caching logic**, indirectly: `effected`'s own package layout is what
   surfaced two of this action's cache-key decisions directly.

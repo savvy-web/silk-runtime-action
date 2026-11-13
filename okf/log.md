@@ -1,5 +1,17 @@
 # Log
 
+## 2026-11-13
+
+* Updated Cache config — key formats, ladders, lockfile patterns, and archived paths
+* Updated Dependency honesty
+* Updated Effect v4 over the @effected suite, zero @actions/* dependencies
+* Updated The pinned package manager leads the child PATH, with no ambient exception
+* Updated Two cache entries — the workspace archive and the package-manager store — keyed independently
+* Updated Windows launches every manager through a shell; POSIX never does
+* Updated devEngines manifest — the config shape consumers must satisfy
+* Updated spencerbeggs/effected
+* Updated test-harness
+
 ## 2026-11-11
 
 * Updated The turbo-server worker is exempt from the post-bundle import check because it refuses to load without its token

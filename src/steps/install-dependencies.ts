@@ -40,10 +40,7 @@ const STDERR_TAIL_LINES = 10;
  * (oracle 2): the action runs inside the checkout, and an absolute path would
  * have to invent a root the action is not given.
  *
- * yarn is the one manager that adds a flag in the *absent* case, and
- * `--no-immutable` explicitly permits a lockfile rewrite in CI. That is a v1
- * behavior carried over deliberately rather than an oversight (oracle 8). bun
- * probes two lockfiles because it has shipped two formats: the current text
+ * bun probes two lockfiles because it has shipped two formats: the current text
  * `bun.lock` and the older binary `bun.lockb`.
  */
 const PLANS: Record<
@@ -56,36 +53,22 @@ const PLANS: Record<
 > = {
 	npm: { lockfiles: ["package-lock.json"], locked: ["ci"], unlocked: ["install"] },
 	pnpm: { lockfiles: ["pnpm-lock.yaml"], locked: ["install", "--frozen-lockfile"], unlocked: ["install"] },
-	yarn: { lockfiles: ["yarn.lock"], locked: ["install", "--immutable"], unlocked: ["install", "--no-immutable"] },
 	bun: { lockfiles: ["bun.lock", "bun.lockb"], locked: ["install", "--frozen-lockfile"], unlocked: ["install"] },
 };
 
 /**
- * The flag each manager spells "run the install, but none of the packages'
+ * The flag every manager spells "run the install, but none of the packages'
  * lifecycle scripts as it goes".
  *
  * @remarks
- * Three of the four agree on `--ignore-scripts` — npm, pnpm and bun all
- * document it, and npm takes it on `ci` as well as `install`. yarn is the
- * outlier and is the reason this is a function rather than a fifth column in
- * {@link PLANS}: Berry (v2+) dropped `--ignore-scripts` in favour of the install
- * *mode* `--mode=skip-build`, while Classic (v1) only ever knew
- * `--ignore-scripts`. Nothing about the name `yarn` says which is in play, so
- * the pinned `devEngines` version decides — the same split `cache-config`'s
- * store table has to make, for the same reason.
- *
- * An unparseable major reads as Berry. `devEngines` versions are absolute, so
- * that branch is unreachable in production; when it is reached the modern
- * spelling is the better guess than a flag Berry rejects outright.
+ * npm, pnpm and bun all document `--ignore-scripts`, and npm takes it on `ci`
+ * as well as `install`, so it is one constant rather than a column in
+ * {@link PLANS}.
  *
  * deno has no row because it has no install: `installDependencies` returns
  * before this is ever consulted.
  */
-const ignoreScriptsArgs = (pm: ActivatedPackageManager): ReadonlyArray<string> => {
-	if (pm.name !== "yarn") return ["--ignore-scripts"];
-	const major = Number.parseInt(pm.version.split(".")[0] ?? "", 10);
-	return major === 1 ? ["--ignore-scripts"] : ["--mode=skip-build"];
-};
+const IGNORE_SCRIPTS_ARGS: ReadonlyArray<string> = ["--ignore-scripts"];
 
 /**
  * Whether any of `lockfiles` exists, with every probe failure read as absent.
@@ -171,7 +154,7 @@ const childEnv = (
  * last few lines of it than without, and every line read is echoed so nothing is
  * swallowed.
  *
- * `ChildEnv.needsShell` decides the launch, and all four managers take its
+ * `ChildEnv.needsShell` decides the launch, and all three managers take its
  * `true` on win32 — bun included, which is this call site's own ruling rather
  * than the kit's. bun is the exception that shows the shape of the rule:
  * `bun.exe` is a real binary, not a `.cmd` shim, and bun-as-manager was the one
@@ -187,7 +170,7 @@ const childEnv = (
  * `CommandLine.join` in its `windows` format, which quotes for the program's
  * own argv parser. It does not escape for `cmd.exe`, which still expands
  * `%NAME%` and reads `^ & | < >` first, and that is safe here only because
- * every argument comes from `PLANS` or {@link ignoreScriptsArgs}, both of which
+ * every argument comes from `PLANS` or {@link IGNORE_SCRIPTS_ARGS}, both of which
  * yield static flag literals — no path, no version, nothing derived from an
  * input. A `CommandLineError` (a NUL byte, which no literal holds) fails the
  * launch the same way a spawn failure does.
@@ -287,7 +270,7 @@ export interface InstallOptions {
  * `pm.binDir` is *not* read for this: the caller has already folded it in at the
  * head of the list.
  *
- * `options.ignoreScripts` appends {@link ignoreScriptsArgs} to whichever plan
+ * `options.ignoreScripts` appends {@link IGNORE_SCRIPTS_ARGS} to whichever plan
  * the lockfile probe selected, so the flag composes with the frozen/immutable
  * decision rather than replacing it. It is inert for deno and for a disabled
  * install, both of which return before the plan is read — which is what makes
@@ -330,7 +313,7 @@ export const installDependencies = (
 		const locked = yield* anyLockfile(fs, plan.lockfiles);
 		const args = [
 			...(locked ? plan.locked : plan.unlocked),
-			...(options.ignoreScripts === true ? ignoreScriptsArgs(pm) : []),
+			...(options.ignoreScripts === true ? IGNORE_SCRIPTS_ARGS : []),
 		];
 
 		// Names only, never values: this is the line that says whether lifecycle

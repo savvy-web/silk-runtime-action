@@ -511,16 +511,16 @@ describe("setupPackageManager", () => {
 		Effect.gen(function* () {
 			const log = recorder();
 			const error = yield* Effect.flip(
-				setupPackageManager(specOf("yarn", "4.0.0")).pipe(
+				setupPackageManager(specOf("pnpm", "11.8.0")).pipe(
 					Effect.provide(
 						layerFor(log, {
 							install: () =>
 								Effect.fail(
 									new PackageManagerInstallerError({
 										reason: "layoutUnexpected",
-										name: "yarn",
-										version: "4.0.0",
-										subject: "package.json names no bin",
+										name: "pnpm",
+										version: "11.8.0",
+										subject: "package.json declares no @pnpm/exe.* optionalDependency",
 									}),
 								),
 						}),
@@ -531,7 +531,7 @@ describe("setupPackageManager", () => {
 			// The artifact downloaded and extracted; what failed is the check that it
 			// is the package manager it claims to be.
 			assert.strictEqual(error.reason, "verify");
-			assert.include(error.message, "Failed to setup yarn@4.0.0: ");
+			assert.include(error.message, "Failed to setup pnpm@11.8.0: ");
 		}),
 	);
 

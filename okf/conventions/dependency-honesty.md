@@ -7,7 +7,7 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-11-10T18:06:20Z
+  at: 2026-11-13T18:50:00Z
 sources:
   - id: package-json
     resource: ../../package.json
@@ -23,7 +23,7 @@ sources:
     resource: ../../CLAUDE.md
 integrity:
   generated:
-    body: 085ff7cb97605403
+    body: 9c005644fd71af3b
 ---
 
 # Dependency honesty
@@ -46,7 +46,8 @@ genuinely needs.
 | `@effected/semver` | `SemVer.ExactVersionString`, which backs `AbsoluteVersion` |
 | `@effected/jsonc` | `Jsonc.parse` for `biome.jsonc` |
 | `@effected/commands` | `Run.succeeds` / `Run.collect` — the `jq` and `kcov --version` probes, and kcov's build commands[^install-bats-src][^install-kcov-src] |
-| `@effected/yaml` | **Not imported by `src/`** — a required peer of `@effected/lockfiles` |
+| `@effected/pnpm` | **Not imported by `src/`** — a required peer of `@effected/lockfiles` |
+| `@effected/bun` | **Not imported by `src/`** — a required peer of `@effected/lockfiles` |
 | `@effected/glob` | **Not imported by `src/`** — a required peer of `@effected/lockfiles` |
 
 `@effected/commands` was a declared-but-unimported entry until the BATS/kcov work;
@@ -81,9 +82,10 @@ breaks.** A false manifest is not a cosmetic problem: it is the one document a m
 reaches for to answer "does this upstream incident affect us," and every unimported entry is
 a false positive in that answer.[^package-json]
 
-`@effected/yaml` and `@effected/glob` are the deliberate exceptions, and they stay for a
-documented reason rather than an oversight: nothing in `src/` imports either, and
-`@effected/lockfiles` requires both as peers. `@effected/glob` is declared again for exactly
+`@effected/glob`, `@effected/pnpm` and `@effected/bun` are the deliberate exceptions, and
+they stay for a documented reason rather than an oversight: nothing in `src/` imports any of
+them, and `@effected/lockfiles` requires all three as peers. `@effected/yaml` was one until
+`@effected/lockfiles` 0.26.0 dropped it as a peer, and it was removed with that bump. `@effected/glob` is declared again for exactly
 that reason, not because the code path came back. An import-walker that stops at "not
 imported" deletes exactly these packages — resolve the peer closure first.
 

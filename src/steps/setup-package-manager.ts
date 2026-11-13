@@ -204,7 +204,7 @@ const pnpmLockOptions = (
  * applies; the pin's inline hash remains a secondary check the installer
  * itself reconciles (`integrityMismatch` when the two disagree), and the
  * installer's own "carries no integrity" warning is the last resort when
- * neither source applies. npm, yarn, bun and deno never read a lockfile here —
+ * neither source applies. npm, bun and deno never read a lockfile here —
  * only pnpm's `devEngines.packageManager` entry has a lockfile-recorded
  * integrity to verify against.
  *
@@ -224,7 +224,7 @@ const pnpmLockOptions = (
  * honoured on a miss and quietly dropped on a hit.
  *
  * Suppressing the probe makes npm behave like every other tool this action
- * provisions — node, bun, deno, pnpm and yarn are all installed to their exact
+ * provisions — node, bun, deno and pnpm are all installed to their exact
  * pin with no ambient short-circuit — and costs one small tarball on the runs
  * where the runner's npm happened to match.
  */
@@ -253,7 +253,7 @@ const provision = (spec: PackageManagerSpec) =>
 		// `CachedPackageManager` and `binDir` is required there — the impossible
 		// directoryless-tool-cache state an earlier round had to guard against is
 		// now unrepresentable. `binDir` rather than `directory` is the uniform
-		// `addPath` target: for npm/pnpm/yarn it is the entry's `.bin` directory of
+		// `addPath` target: for npm/pnpm it is the entry's `.bin` directory of
 		// shims the installer writes, and for bun it *is* the entry directory.
 		if (installed.source === "tool-cache") {
 			yield* outputs.addPath(installed.binDir);
