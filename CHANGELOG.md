@@ -1,5 +1,36 @@
 # @savvy-web/silk-runtime-action
 
+## 1.9.17
+
+### Dependencies
+
+| Dependency | Type | Action | From | To |
+| --- | --- | --- | --- | --- |
+| @effect/platform-node | dependency | updated | 4.1.4 | 4.1.5 |
+| @effected/github-actions | dependency | updated | ^0.34.0 | ^0.36.1 |
+| @effected/glob | dependency | updated | ^0.22.0 | ^0.23.0 |
+| @effected/lockfiles | dependency | updated | ^0.26.0 | ^0.27.0 |
+| @effected/npm | dependency | updated | ^0.35.0 | ^0.35.1 |
+| @effected/pnpm | dependency | updated | ^0.1.0 | ^0.1.1 |
+| @effected/workspaces | dependency | updated | ^0.48.0 | ^0.49.0 |
+| effect | dependency | updated | 4.1.4 | 4.1.5 |
+
+### Maintenance
+
+- The workflow log is restructured onto the `@effected/github-actions` step log, so a run reads as a short summary you can expand rather than one long stream.
+
+- The main run prints two bold phase headings, **Detect** and **Install**, with one result line per step marked with a check, a warning, or a cross.
+
+- Step detail is folded when the step succeeds and unfolded when it fails. A step still running after 30 seconds, or any step under `RUNNER_DEBUG`, streams its output live.
+
+- Each runtime installs as its own nested step. The `Detected ...` headline is an unfolded line in the Detect phase, and the closing `Runtime Setup Complete` summary is an unfolded phase.
+
+- The dependency install's output is now piped through the logger instead of inherited, so its transcript folds under the `Install dependencies` step.
+
+- A Biome, BATS, or kcov install that degrades to a warning now marks its line with a warning instead of a check.
+
+- The post step runs each cache save and the turbo server stop as steps. The `Turbo remote cache activity` step's result line shows the hit and miss totals.
+
 ## 1.9.16
 
 ### Dependencies
