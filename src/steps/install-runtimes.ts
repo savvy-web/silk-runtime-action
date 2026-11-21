@@ -206,10 +206,11 @@ export const installRuntimes = (
 	Effect.gen(function* () {
 		const logger = yield* ActionLogger;
 		return yield* Effect.forEach(config.runtimes, (spec) =>
-			// The transcript is held and discarded on success, so a green run is one
-			// line per runtime and a failure still spills the url and cache path.
+			// One step per runtime, nested in the pipeline's `Install runtimes` step:
+			// each writes one result line, and a failure still spills the url and
+			// cache path unfolded.
 			logger
-				.withBuffer(spec.name, installOne(spec, host), { onSuccess: "discard" })
+				.step(spec.name, installOne(spec, host))
 				.pipe(Effect.tap((installed) => Effect.logInfo(`${installed.name} ${installed.version}`))),
 		);
 	});

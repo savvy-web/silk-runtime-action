@@ -7,7 +7,7 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-11-11T16:39:59Z
+  at: 2026-11-21T22:19:28Z
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -29,7 +29,7 @@ sources:
     resource: ../../src/steps/install-runtimes.ts
 integrity:
   generated:
-    body: 2cb5ebea99be6ad4
+    body: 352cda8d215cfba3
 ---
 
 # silk-runtime-action
@@ -90,7 +90,7 @@ action.yml (node24 runtime)
     |       v
     |   src/main.ts -> Action.run(program, { layer: MainLive })
     |       |
-    |       +-- src/program.ts   (Effect.gen, one ActionLogger.group per step)
+    |       +-- src/program.ts   (Effect.gen, Detect/Install phases, one ActionLogger.step per step)
     |       |     |
     |       |     +-- schema/inputs.ts ---------> ActionInput / Config
     |       |     +-- steps/load-config.ts -----> schema/domain.ts
@@ -155,26 +155,26 @@ service wraps any of this.
 
 ## Pipeline steps (`src/program.ts`)
 
-Sequential, inside one `Effect.gen`, each wrapped in `ActionLogger.group`:
+Sequential, inside one `Effect.gen`, each run as an `ActionLogger.step` under the `Detect` or `Install` phase:
 
-| Group title | Step | Line | Fatal? |
+| Step name | Call | Line | Fatal? |
 | --- | --- | --- | --- |
-| — | Read `ActionEnvironment.github` (fail fast), then `loadInputs` | 181-182 | Yes |
-| `Load configuration` | `loadConfig` | 196 | Yes |
-| `Detect Biome` | `detectBiome(inputs.biomeVersion)` | 200 | No (always resolves) |
-| `Detect Turbo` | `detectTurbo` | 201 | No (always resolves) |
-| `Detect BATS` | `detectBats({ bats, kcov })` | 202 | No (always resolves) |
-| `Detected configuration` | `formatDetectLine(...)` — the one-line headline | 208 | No |
-| `Restore dependency cache` | `restoreCache({ inputs, config, biomeVersion, turbo })` | 220 | No (absorbs) |
-| `Install runtimes` | `installRuntimes(config)` | 222 | Yes |
-| `Install <pm>` | `setupPackageManager(config.packageManager)` | 226 | Yes |
-| `Install dependencies` | `installDependencies(activated, installDeps, prepends, { ignoreScripts })` | 240 | Yes |
-| `Install Biome` | `installBiome(biomeVersion)`, caught at the call site | 252 | No |
-| `Install BATS` | `installBats(decision.installBats)`, caught at the call site | 266 | No |
-| `Install kcov` | `installKcov(decision.installKcov && bats landed, { bust })`, caught at the call site | 276 | No |
-| `Start turbo remote cache` | `startTurboCache({ inputs, turbo })` | 287 | No (self-catching) |
-| — | `emitOutputs(outputs)` | 322 | Yes |
-| `Runtime Setup Complete` | `writeSummary(facts)` | 326 | No (self-catching) |
+| — | Read `ActionEnvironment.github` (fail fast), then `loadInputs` | 215-216 | Yes |
+| `Load configuration` | `loadConfig` | 236 | Yes |
+| `Detect Biome` | `detectBiome(inputs.biomeVersion)` | 237 | No (always resolves) |
+| `Detect Turbo` | `detectTurbo` | 238 | No (always resolves) |
+| `Detect BATS` | `detectBats({ bats, kcov })` | 239 | No (always resolves) |
+| — (`Detect` phase line) | `formatDetectLine(...)` — the one-line headline, outside any step | 245 | No |
+| `Restore dependency cache` | `restoreCache({ inputs, config, biomeVersion, turbo })` | 258 | No (absorbs) |
+| `Install runtimes` | `installRuntimes(config)` | 260 | Yes |
+| `Install <pm>` | `setupPackageManager(config.packageManager)` | 265 | Yes |
+| `Install dependencies` | `installDependencies(activated, installDeps, prepends, { ignoreScripts })` | 306 | Yes |
+| `Install Biome` | `installBiome(biomeVersion)`, caught at the call site | 319 | No |
+| `Install BATS` | `installBats(decision.installBats)`, caught at the call site | 333 | No |
+| `Install kcov` | `installKcov(decision.installKcov && bats landed, { bust })`, caught at the call site | 343 | No |
+| `Start turbo remote cache` | `startTurboCache({ inputs, turbo })` | 283 | No (self-catching) |
+| — | `emitOutputs(outputs)` | 395 | Yes |
+| — (`Runtime Setup Complete` phase) | `writeSummary(facts)` | 399 | No (self-catching) |
 
 Three orderings are load-bearing — see
 [pipeline-step-ordering](../decisions/pipeline-step-ordering.md) for the full account:
@@ -298,11 +298,12 @@ compile or a helper-library tarball 404.
 
 ## Log structure
 
-`ActionLogger.group(title, effect)` wraps each step. Inside the two noisiest steps the
-transcript is additionally held by `logger.withBuffer(name, effect, { onSuccess:
-"discard" })`, so a green run is one line per runtime and one line per manager, while a
-failure spills the whole transcript. Warnings are never buffered, so an integrity notice
-reaches the log even on a green run. `Effect.logDebug` output appears only under
+Each step runs as `ActionLogger.step(name, effect)` under one of two phases, `Detect` and
+`Install`, so a green run is one `✓`/`⚠`/`✗` result line per step with its detail folded,
+and a failure writes the whole transcript unfolded. Each runtime is a step nested in
+`Install runtimes`, and the dependency install pipes both of its streams through the logger
+so its transcript folds too. Warnings are never held, so an integrity notice reaches the log
+even on a green run. `Effect.logDebug` output appears only under
 `ACTIONS_STEP_DEBUG=true`; the cache key, the restore ladder, the resolved path set and the
 lockfile list are all logged at debug level. See
 [log-levels-and-buffering](../conventions/log-levels-and-buffering.md).

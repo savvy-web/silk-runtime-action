@@ -1,4 +1,4 @@
-import { ActionLogger, ChildEnv } from "@effected/github-actions";
+import { ChildEnv } from "@effected/github-actions";
 import type { PlatformError } from "effect";
 import { Data, Effect, FileSystem, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner, CommandLine } from "effect/process";
@@ -143,16 +143,19 @@ const childEnv = (
 };
 
 /**
- * Runs one install command, echoing its stderr and keeping the tail.
+ * Runs one install command, echoing both of its streams and keeping the stderr
+ * tail.
  *
  * @remarks
- * `stdout` is inherited, so the install's own transcript streams straight to
- * the workflow log as it happens — legacy's `streaming: true`, and the reason a
- * chatty install cannot fill a pipe nobody drains. `stderr` is piped instead —
- * spelled out rather than left to the default, because the asymmetry with
- * `stdout` is the design — because a failure message is far more useful with the
- * last few lines of it than without, and every line read is echoed so nothing is
- * swallowed.
+ * Both streams are piped and drained concurrently, so a chatty install cannot
+ * fill one pipe while the other is being read, and every line read is logged.
+ * That routes the whole transcript through the logger, where the enclosing
+ * `ActionLogger.step` holds it: folded on success, unfolded on failure, and live
+ * once the install outlasts the step's window. An inherited `stdout` would
+ * write straight to the runner log and defeat the fold. stderr also keeps its
+ * tail, because a failure message is far more useful with the last few lines of
+ * it than without — which is why this spawns for itself rather than through
+ * `ActionLogger.command`, whose result carries stdout only.
  *
  * `ChildEnv.needsShell` decides the launch, and all three managers take its
  * `true` on win32 — bun included, which is this call site's own ruling rather
@@ -185,7 +188,7 @@ const spawnInstall = (
 	Effect.gen(function* () {
 		const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 		const options: ChildProcess.CommandOptions = {
-			stdout: "inherit",
+			stdout: "pipe",
 			stderr: "pipe",
 			...childEnv(pathPrepends, platform, env),
 		};
@@ -198,12 +201,18 @@ const spawnInstall = (
 
 		const handle = yield* spawner.spawn(command);
 		const tail: Array<string> = [];
-		yield* Stream.runForEach(Stream.splitLines(Stream.decodeText(handle.stderr)), (line) =>
-			Effect.suspend(() => {
-				tail.push(line);
-				if (tail.length > STDERR_TAIL_LINES) tail.shift();
-				return Effect.logInfo(line);
-			}),
+		yield* Effect.all(
+			[
+				Stream.runForEach(Stream.splitLines(Stream.decodeText(handle.stdout)), (line) => Effect.logInfo(line)),
+				Stream.runForEach(Stream.splitLines(Stream.decodeText(handle.stderr)), (line) =>
+					Effect.suspend(() => {
+						tail.push(line);
+						if (tail.length > STDERR_TAIL_LINES) tail.shift();
+						return Effect.logInfo(line);
+					}),
+				),
+			],
+			{ concurrency: 2, discard: true },
 		);
 
 		const exitCode = yield* handle.exitCode;
@@ -297,7 +306,7 @@ export const installDependencies = (
 ): Effect.Effect<
 	{ readonly ran: boolean },
 	InstallError,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | ActionLogger
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
 	Effect.gen(function* () {
 		if (!enabled) return { ran: false };
@@ -308,7 +317,6 @@ export const installDependencies = (
 		}
 
 		const fs = yield* FileSystem.FileSystem;
-		const logger = yield* ActionLogger;
 		const plan = PLANS[pm.name];
 		const locked = yield* anyLockfile(fs, plan.lockfiles);
 		const args = [
@@ -321,27 +329,26 @@ export const installDependencies = (
 		const handed = Object.keys(options.env ?? {});
 		if (handed.length > 0) yield* Effect.logInfo(`Passing ${handed.join(", ")} to the install's environment`);
 
-		// The buffer holds the echoed stderr rather than the install itself, whose
-		// stdout is inherited and never passes through the logger. Held so an
-		// interleaved dribble of warnings does not scramble the live transcript,
-		// and flushed on every exit path so a failing install still shows all of
-		// it — not just the tail the message carries.
-		const { exitCode, tail } = yield* logger
-			.withBuffer(
-				pm.name,
-				spawnInstall(pm.name, args, pathPrepends, options.platform ?? process.platform, options.env ?? {}),
-			)
-			.pipe(
-				Effect.catch((cause: PlatformError.PlatformError | CommandLine.CommandLineError) =>
-					Effect.fail(
-						new InstallError({
-							reason: "spawn",
-							message: `Failed to install dependencies with ${pm.name}: ${cause.message}`,
-							cause,
-						}),
-					),
+		// The enclosing step in `program.ts` holds the whole transcript, so a
+		// failing install still shows all of it — not just the tail the message
+		// carries.
+		const { exitCode, tail } = yield* spawnInstall(
+			pm.name,
+			args,
+			pathPrepends,
+			options.platform ?? process.platform,
+			options.env ?? {},
+		).pipe(
+			Effect.catch((cause: PlatformError.PlatformError | CommandLine.CommandLineError) =>
+				Effect.fail(
+					new InstallError({
+						reason: "spawn",
+						message: `Failed to install dependencies with ${pm.name}: ${cause.message}`,
+						cause,
+					}),
 				),
-			);
+			),
+		);
 
 		if (exitCode !== 0) {
 			return yield* new InstallError({

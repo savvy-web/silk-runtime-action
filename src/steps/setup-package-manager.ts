@@ -3,7 +3,7 @@ import type {
 	PackageManagerInstallOptions,
 	PackageManagerInstallerError,
 } from "@effected/github-actions";
-import { ActionLogger, ActionOutputs, PackageManagerInstaller } from "@effected/github-actions";
+import { ActionOutputs, PackageManagerInstaller } from "@effected/github-actions";
 import type { LockfileFramingError, LockfileParseError } from "@effected/lockfiles";
 import { PnpmEnvLockfile } from "@effected/lockfiles";
 import type { InvalidPackageManagerPinError, InvalidSriIntegrityHashError } from "@effected/npm";
@@ -209,8 +209,8 @@ const pnpmLockOptions = (
  * integrity to verify against.
  *
  * `requireIntegrity` stays off: in-the-wild `devEngines` pins routinely carry no
- * hash, and the installer already warns when one does not. Warnings are not
- * buffered, so that notice reaches the log even on a green run.
+ * hash, and the installer already warns when one does not. A step never holds
+ * a warning, so that notice reaches the log even on a green run.
  *
  * `allowAmbient: false` is the one option this step always sets, and it is the
  * whole npm ruling (issue #220). Left on, an npm pin may be answered by the
@@ -327,7 +327,7 @@ export const setupPackageManager = (
 ): Effect.Effect<
 	ActivatedPackageManager,
 	PackageManagerError,
-	PackageManagerInstaller | ActionOutputs | ActionLogger | FileSystem.FileSystem
+	PackageManagerInstaller | ActionOutputs | FileSystem.FileSystem
 > =>
 	Effect.gen(function* () {
 		const echo = { name: spec.name, version: spec.version };
@@ -337,11 +337,10 @@ export const setupPackageManager = (
 			return { ...echo, binDir: Option.none() };
 		}
 
-		const logger = yield* ActionLogger;
-		// The transcript is held and discarded on success, so a green run is one
-		// step line. The installer's integrity notice is a warning, which
-		// `withBuffer` never holds — a pin with no hash still says so.
-		const installed = yield* logger.withBuffer(spec.name, provision(spec), { onSuccess: "discard" });
+		// The enclosing step in `program.ts` holds the transcript and folds it on
+		// success. The installer's integrity notice is a warning, which a step
+		// never holds (it marks the line ⚠) — a pin with no hash still says so.
+		const installed = yield* provision(spec);
 		yield* Effect.logInfo(`${spec.name}@${spec.version} activated`);
 
 		return { ...echo, binDir: installed.source === "tool-cache" ? Option.some(installed.binDir) : Option.none() };

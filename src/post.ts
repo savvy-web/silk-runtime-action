@@ -289,7 +289,7 @@ const reapCacheServer = (saved: TurboServerState, reap: DetachedProcessOps["reap
 		),
 	);
 
-/** How many trailing server-log lines the activity group prints. */
+/** How many trailing server-log lines the activity step prints. */
 const SERVER_LOG_TAIL_LINES = 1000;
 
 /**
@@ -301,9 +301,10 @@ const SERVER_LOG_TAIL_LINES = 1000;
  * account of the remote cache is turbo's own per-task output, scattered through
  * every step that ran it, and a server that failed to start left nothing but a
  * path. So the file is read back here — after the reap, so the server has
- * stopped writing — and printed in one collapsed group headed by the totals.
+ * stopped writing — and printed as one step whose result line is the totals,
+ * with the log tail folded beneath it.
  *
- * The group is emitted whenever a server was spawned, including one that never
+ * The step is emitted whenever a server was spawned, including one that never
  * became ready: that is exactly the run where the file holds the reason.
  *
  * Reporting only. Every failure is absorbed into a debug line, on the same
@@ -317,17 +318,16 @@ const reportCacheActivity = (saved: TurboServerState) =>
 		const log = yield* fs.readFileString(saved.logFile);
 		const lines = log.split("\n").filter((line) => line.trim() !== "");
 		const tail = lines.slice(-SERVER_LOG_TAIL_LINES);
-		yield* logger.group(
+		const totals = `Turbo remote cache (${saved.backend}, port ${saved.port}): ${formatAccessTally(tallyAccessLog(log))}`;
+		yield* logger.step(
 			"Turbo remote cache activity",
 			Effect.gen(function* () {
-				yield* Effect.logInfo(
-					`Turbo remote cache (${saved.backend}, port ${saved.port}): ${formatAccessTally(tallyAccessLog(log))}`,
-				);
 				if (tail.length < lines.length) {
 					yield* Effect.logInfo(`Showing the last ${tail.length} of ${lines.length} server log lines`);
 				}
 				for (const line of tail) yield* Effect.logInfo(line);
 			}),
+			{ summary: () => totals },
 		);
 	}).pipe(
 		Effect.catch((error) =>
@@ -376,6 +376,7 @@ export const makePost = (
 ): Effect.Effect<void, never, ActionCache | ActionLogger | ActionState | FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const state = yield* ActionState;
+		const logger = yield* ActionLogger;
 		yield* Effect.logDebug("Running post-action script");
 
 		// First, and before any branch that can return early: a detached child that
@@ -397,7 +398,10 @@ export const makePost = (
 			);
 		yield* Option.match(server, {
 			onNone: () => Effect.logDebug("No embedded turbo cache server was started; nothing to reap"),
-			onSome: (saved) => reapCacheServer(saved, ops.reap).pipe(Effect.andThen(reportCacheActivity(saved))),
+			onSome: (saved) =>
+				logger
+					.step("Stop turbo remote cache", reapCacheServer(saved, ops.reap))
+					.pipe(Effect.andThen(reportCacheActivity(saved))),
 		});
 
 		// Absorbed the same way the turbo-server read above is: state written by a
@@ -415,7 +419,7 @@ export const makePost = (
 			);
 		yield* Option.match(cache, {
 			onNone: () => Effect.logDebug("No dependency cache state was saved by main; nothing to save"),
-			onSome: saveDependencyCache,
+			onSome: (saved) => logger.step("Save dependency cache", saveDependencyCache(saved)),
 		});
 
 		const storeCache = yield* state
@@ -429,7 +433,7 @@ export const makePost = (
 			);
 		yield* Option.match(storeCache, {
 			onNone: () => Effect.logDebug("No store cache state was saved by main; nothing to save"),
-			onSome: saveStoreCache,
+			onSome: (saved) => logger.step("Save store cache", saveStoreCache(saved)),
 		});
 
 		const kcovCache = yield* state
@@ -443,7 +447,7 @@ export const makePost = (
 			);
 		yield* Option.match(kcovCache, {
 			onNone: () => Effect.logDebug("No kcov cache state was saved by main; nothing to save"),
-			onSome: saveKcovCache,
+			onSome: (saved) => logger.step("Save kcov cache", saveKcovCache(saved)),
 		});
 	}).pipe(
 		// The typed channel is fully absorbed above — every read and every save

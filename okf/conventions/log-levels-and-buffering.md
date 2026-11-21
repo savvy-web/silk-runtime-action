@@ -1,13 +1,13 @@
 ---
 type: Convention
 title: Log levels and buffering
-description: Which Effect.log* level a line belongs at, which steps buffer their transcript, and why warnings are never buffered.
+description: Which Effect.log* level a line belongs at, how the pipeline's phases and steps fold its log, and why warnings are never held.
 tags: [observability]
 status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-21T22:19:28Z
 sources:
   - id: program-src
     resource: ../../src/program.ts
@@ -23,16 +23,16 @@ sources:
     resource: ../../src/summary/format.ts
 integrity:
   generated:
-    body: e6f00dabf25831b9
+    body: dc5b2d27b33bd784
 ---
 
 # Log levels and buffering
 
-Group every step's log lines under `ActionLogger.group(title, effect)`, so the workflow log
-is one collapsible group per step rather than an undifferentiated stream. Inside the two
-noisiest steps, additionally hold the transcript with `logger.withBuffer(name, effect, {
-onSuccess: "discard" })`, so a green run reads as one line per runtime or per manager, while
-a failure spills the whole transcript.
+Run every pipeline step as `ActionLogger.step(name, effect)` under an `ActionLogger.phase`
+heading, so the workflow log is a short list of result lines a reader can scan rather than
+an undifferentiated stream. Do not use `ActionLogger.group` for pipeline work: a step opened
+inside a group cannot fold, and `@effected/github-actions` 0.36 made the step log the one
+shape the kit is built around.
 
 ## What each level carries
 
@@ -49,39 +49,44 @@ a failure spills the whole transcript.
 A new log line's level is a decision about who needs to see it and when, not a stylistic
 choice: if a human debugging a red run needs it and a green run should not show it, it is
 `logDebug`; if it is a degradation the consumer should know about even when nothing failed,
-it is `logWarning` and must never be routed through a buffer that could discard it.
+it is `logWarning`, which a step never holds.
 
-## `ActionLogger.group` per step
+## Phases and steps
 
-`program.ts` wraps every pipeline step in its own `ActionLogger.group`, so the workflow log
-renders as one collapsible section per step rather than one flat stream a reader has to
-scan.[^program-src]
+`program.ts` opens two phases, `Detect` and `Install`, and runs each pipeline step as a step
+beneath them.[^program-src] A phase is one bold line that is never folded and holds nothing,
+so its steps follow it at the top level. A step holds its detail (every line below `Warn`)
+for its window, 30 seconds by default, then ends in one result line,
+`<mark> <name> · <duration>`:
 
-## `withBuffer(..., { onSuccess: "discard" })` in the two noisiest steps
+- `✓`: a success. Its detail folds into a group titled by that line.
+- `⚠`: a success that logged a warning, or in which a nested step failed and was recovered
+  from. A Biome, BATS or kcov install that degrades to a warning lands here.
+- `✗`: a failure. Never folded: the line, the detail unfolded beneath it, then the failure.
 
-Two steps hold their transcript rather than emitting it live:
+A step that outlasts its window goes live and streams the rest; `RUNNER_DEBUG=1` makes every
+window zero. The `Detected …` headline is logged in the `Detect` phase itself, outside any
+step, so it is an ordinary line that is never folded away. `writeSummary` closes the run
+with its own `Runtime Setup Complete` phase, whose lines print unfolded.
 
-- `install-runtimes.ts` buffers each runtime's install
-  (`logger.withBuffer(spec.name, installOne(spec, host), { onSuccess: "discard" })`), so a
-  green run is exactly one line per runtime rather than every intermediate download and
-  extraction line.[^install-runtimes-src]
-- `setup-package-manager.ts` buffers the package manager's own provisioning the same
-  way.[^setup-package-manager-src]
+`install-runtimes.ts` nests one step per runtime
+(`logger.step(spec.name, installOne(spec, host))`) inside the pipeline's `Install runtimes`
+step. A nested step opens no group of its own: its result line and detail are lines of the
+outer step's detail.[^install-runtimes-src] `setup-package-manager.ts` opens no step of its
+own; the pipeline's `Install <manager>` step holds its transcript.[^setup-package-manager-src]
 
-Held-and-discarded on success means the transcript costs nothing when everything works; a
-failure spills the URL, the cache path and everything else the buffer was holding, so nothing
-useful is lost by holding it.
+## The install's transcript goes through the logger
 
-`install-dependencies.ts` buffers differently: it holds the **echoed stderr**, not the
-install itself — the install's own stdout is inherited and streams live regardless, so
-buffering it would hide a genuinely long-running install from a human watching the job. The
-buffer exists so an interleaved dribble of warnings does not scramble the live transcript,
-and it is flushed on **every exit path**, so a failing install shows all of the held stderr
-and not just the tail the error message itself carries.[^install-dependencies-src]
+`install-dependencies.ts` pipes **both** of the install child's streams and drains them
+concurrently, logging every line, so the whole transcript is the `Install dependencies`
+step's detail. An inherited `stdout` would write straight to the runner log and defeat the
+fold. Draining both at once is also what stops a chatty install from filling one pipe while
+the other is read. It spawns for itself rather than through `ActionLogger.command`, because
+it keeps the last stderr lines for the failure message and `command` returns stdout
+only.[^install-dependencies-src]
 
-**Warnings are never buffered**, in either shape of buffering above. A `logWarning` call
-inside a buffered step still reaches the log on a successful run — the buffer only holds
-`logInfo`-level narration, never a degradation notice.
+**Warnings are never held.** A `logWarning` inside a step still reaches the log on a
+successful run and marks the result line `⚠`.
 
 ## Debug logging: the cache-bust line is logged either way
 

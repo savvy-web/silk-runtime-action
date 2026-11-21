@@ -75,7 +75,7 @@ export interface SummaryFacts {
 	 *
 	 * @remarks
 	 * Carried *alongside* the install result rather than folded into it, because
-	 * the final group's Biome line needs to tell the two `None`s apart: no
+	 * the closing phase's Biome line needs to tell the two `None`s apart: no
 	 * `biome.jsonc` and no input at all, versus a version this run found and then
 	 * failed to fetch. The panel needs no such distinction — its row reports what
 	 * the run *has*, and both cases have nothing to name.
@@ -105,7 +105,7 @@ export interface SummaryFacts {
 }
 
 /**
- * What the closing group says about Biome, in three arms.
+ * What the closing phase says about Biome, in three arms.
  *
  * @remarks
  * The install result alone cannot distinguish the two ways it comes back
@@ -117,7 +117,7 @@ export interface SummaryFacts {
  *
  * The **panel row stays omitted** in the failed-install case, deliberately: the
  * table reports what this run *has*, and a failed install leaves it with no
- * version to put in the cell. The log group is where the difference belongs,
+ * version to put in the cell. The closing phase is where the difference belongs,
  * because the log is where someone goes to find out why.
  */
 const biomeLine = (facts: SummaryFacts): string => {
@@ -126,7 +126,7 @@ const biomeLine = (facts: SummaryFacts): string => {
 };
 
 /**
- * The closing log group: one line per tool, then the three facts that are not
+ * The closing log phase: one line per tool, then the three facts that are not
  * tools.
  *
  * @remarks
@@ -152,15 +152,15 @@ const finalGroup = (facts: SummaryFacts): Effect.Effect<void> =>
 
 /**
  * Renders the job-summary panel and writes it, then closes the run with the
- * `Runtime Setup Complete` group.
+ * `Runtime Setup Complete` phase.
  *
  * @remarks
  * Both halves live here so the ordering is not something `program.ts` has to
- * remember (note 48): the panel is written first, the group logged after, and a
+ * remember (note 48): the panel is written first, the phase logged after, and a
  * reader of the workflow log sees the run end where it ended.
  *
  * **It cannot fail.** The declared {@link SummaryError} is the shape a failed
- * write takes before it is logged; the group still runs after one, because the
+ * write takes before it is logged; the phase still runs after one, because the
  * facts it logs were already known before anything was rendered.
  *
  * `buildRuntimeSummary` is called directly rather than through `Effect.try`.
@@ -211,9 +211,11 @@ export const writeSummary = (facts: SummaryFacts): Effect.Effect<void, SummaryEr
 					new SummaryError({ reason: "write", message: `Failed to write job summary: ${cause.message}`, cause }),
 			),
 			// Shaped, then said out loud, then carried past: the panel is an extra,
-			// and the group below reports a run that already succeeded.
+			// and the phase below reports a run that already succeeded.
 			Effect.catch((error) => Effect.logWarning(error.message)),
 		);
 
-		yield* logger.group("Runtime Setup Complete", finalGroup(facts));
+		// A phase, not a step: the closing report is what a reader scans for, so
+		// it is a bold heading with its lines unfolded beneath it.
+		yield* logger.phase("Runtime Setup Complete", finalGroup(facts));
 	});

@@ -354,6 +354,8 @@ const makeLayer = (
 		readonly inputs?: Layer.Layer<never>;
 		/** Faults over the volume, for a call it cannot answer — the BATS and kcov installs' copies. */
 		readonly filesystem?: MemoryFileSystemFaults;
+		/** An `ActionLogger` other than the silent default — `ActionLogger.recording()`'s, say. */
+		readonly logger?: Layer.Layer<ActionLogger>;
 	} = {},
 ): Layer.Layer<
 	| ActionCache
@@ -379,7 +381,7 @@ const makeLayer = (
 		// the installs that follow to do the work, which is what most cases here
 		// are about. `restore-cache.test.ts` owns the key derivation itself.
 		options.cache ?? ActionCache.layerTest({ restore: () => Effect.succeed(Option.none()) }),
-		ActionLogger.layerSilent,
+		options.logger ?? ActionLogger.layerSilent,
 		// `summary` is stubbed for the same reason `addPath` is: every run reaches
 		// it, and a case that is not about the panel should not have to say so.
 		ActionOutputs.layerTest({ addPath: () => Effect.void, summary: () => Effect.void, ...outputs }),
@@ -442,6 +444,45 @@ const runProgram = Effect.fnUntraced(function* (manifest?: string) {
 });
 
 describe("program", () => {
+	it.effect("runs every step under the Detect and Install phases, in runner order", () =>
+		Effect.gen(function* () {
+			const recording = ActionLogger.recording();
+			yield* program.pipe(
+				Effect.provide(makeLayer({ set: () => Effect.void }, undefined, { logger: recording.layer })),
+			);
+			const entries = recording.entries();
+			const outline = entries.map((entry) => (entry.kind === "phase" ? `# ${entry.title}` : entry.name));
+			// A phase is a heading and holds nothing, so its steps follow it as
+			// siblings; the closing report is the summary step's own phase.
+			assert.deepStrictEqual(outline, [
+				"# Detect",
+				"Load configuration",
+				"Detect Biome",
+				"Detect Turbo",
+				"Detect BATS",
+				"# Install",
+				"Restore dependency cache",
+				"Install runtimes",
+				"Install pnpm",
+				"Install dependencies",
+				"Install Biome",
+				"Install BATS",
+				"Install kcov",
+				"Start turbo remote cache",
+				"# Runtime Setup Complete",
+			]);
+			// Each runtime is its own step, nested in the one that installs them all.
+			const runtimes = entries.find((entry) => entry.kind === "step" && entry.name === "Install runtimes");
+			assert.deepStrictEqual(
+				runtimes?.kind === "step"
+					? runtimes.steps.map((entry) => (entry.kind === "step" ? entry.name : entry.title))
+					: [],
+				["node"],
+			);
+			assert.isTrue(entries.every((entry) => entry.kind === "phase" || entry.outcome === "success"));
+		}),
+	);
+
 	it.effect("publishes every action.yml output exactly once", () =>
 		Effect.gen(function* () {
 			const captured = yield* runProgram();

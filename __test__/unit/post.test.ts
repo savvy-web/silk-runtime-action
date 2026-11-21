@@ -492,8 +492,14 @@ describe("post", () => {
 		}),
 	);
 
+	/** One step `post` opened, with the result line its `summary` computed. */
+	interface OpenedStep {
+		readonly name: string;
+		readonly summary: string | undefined;
+	}
+
 	/** Runs `post` after a server run whose log file holds `log` (or does not exist). */
-	const runWithServerLog = (log: string | undefined, logs: Array<string>, groups: Array<string> = []) =>
+	const runWithServerLog = (log: string | undefined, logs: Array<string>, steps: Array<OpenedStep> = []) =>
 		postReaping(() => Effect.succeed(true)).pipe(
 			Effect.provide(
 				Layer.mergeAll(
@@ -501,11 +507,10 @@ describe("post", () => {
 					serverOnly,
 					ActionCache.layerTest({}),
 					ActionLogger.layerTest({
-						group: (name, effect) =>
-							Effect.suspend(() => {
-								groups.push(name);
-								return effect;
-							}),
+						step: (name, effect, options) =>
+							Effect.tap(effect, (result) =>
+								Effect.sync(() => void steps.push({ name, summary: options?.summary?.(result) })),
+							),
 					}),
 					Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 				),
@@ -516,7 +521,7 @@ describe("post", () => {
 	it.effect("prints what the cache server did, headed by the totals", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
-			const groups: Array<string> = [];
+			const steps: Array<OpenedStep> = [];
 			const log = [
 				"turbo-server: listening on 127.0.0.1:41230 (backend github, prefix none)",
 				"turbo-server: GET aaa 200 hit 1.0 kB 4ms",
@@ -524,13 +529,16 @@ describe("post", () => {
 				"turbo-server: PUT bbb 202 stored 2.0 kB 9ms",
 				"",
 			].join("\n");
-			const exit = yield* runWithServerLog(log, logs, groups);
+			const exit = yield* runWithServerLog(log, logs, steps);
 
 			assert.strictEqual(exit._tag, "Success");
 			// The server's log file is in the temp directory of a machine nobody can
-			// reach once the job ends; this group is the only place it is ever seen.
-			assert.deepStrictEqual(groups, ["Turbo remote cache activity"]);
-			assert.include(logs, "Turbo remote cache (github, port 41230): 1 hit, 1 miss, 1 upload, 0 errors");
+			// reach once the job ends; this step is the only place it is ever seen,
+			// and its result line is the totals.
+			assert.deepInclude(steps, {
+				name: "Turbo remote cache activity",
+				summary: "Turbo remote cache (github, port 41230): 1 hit, 1 miss, 1 upload, 0 errors",
+			});
 			assert.include(logs, "turbo-server: GET aaa 200 hit 1.0 kB 4ms");
 			assert.include(logs, "turbo-server: PUT bbb 202 stored 2.0 kB 9ms");
 		}),
@@ -539,11 +547,15 @@ describe("post", () => {
 	it.effect("prints only the tail of a very long server log, and says so", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
+			const steps: Array<OpenedStep> = [];
 			const log = Array.from({ length: 1005 }, (_, index) => `turbo-server: GET h${index} 200 hit 1 B 1ms`).join("\n");
-			yield* runWithServerLog(log, logs);
+			yield* runWithServerLog(log, logs, steps);
 
 			// The totals still cover the whole file.
-			assert.include(logs, "Turbo remote cache (github, port 41230): 1005 hits, 0 misses, 0 uploads, 0 errors");
+			assert.deepInclude(steps, {
+				name: "Turbo remote cache activity",
+				summary: "Turbo remote cache (github, port 41230): 1005 hits, 0 misses, 0 uploads, 0 errors",
+			});
 			assert.include(logs, "Showing the last 1000 of 1005 server log lines");
 			assert.notInclude(logs, "turbo-server: GET h4 200 hit 1 B 1ms");
 			assert.include(logs, "turbo-server: GET h1004 200 hit 1 B 1ms");
@@ -553,11 +565,15 @@ describe("post", () => {
 	it.effect("carries on without a report when the server log cannot be read", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = [];
-			const groups: Array<string> = [];
-			const exit = yield* runWithServerLog(undefined, logs, groups);
+			const steps: Array<OpenedStep> = [];
+			const exit = yield* runWithServerLog(undefined, logs, steps);
 
 			assert.strictEqual(exit._tag, "Success");
-			assert.deepStrictEqual(groups, []);
+			// The reap still ran as its own step; only the report is missing.
+			assert.deepStrictEqual(
+				steps.map((step) => step.name),
+				["Stop turbo remote cache"],
+			);
 		}),
 	);
 

@@ -42,6 +42,7 @@ interface Invocation {
 /** What the doubled child process does once it has been spawned. */
 interface Outcome {
 	readonly exitCode?: number;
+	readonly stdout?: string;
 	readonly stderr?: string;
 	readonly spawnFailure?: PlatformError.PlatformError;
 }
@@ -56,7 +57,7 @@ const recorder = (): Recorder => ({ spawns: [], probed: [], logs: [] });
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-/** A child process handle whose only interesting members are `stderr` and `exitCode`. */
+/** A child process handle whose only interesting members are its two streams and `exitCode`. */
 const handleOf = (outcome: Outcome): ChildProcessSpawner.ChildProcessHandle =>
 	ChildProcessSpawner.makeHandle({
 		pid: ChildProcessSpawner.ProcessId(4242),
@@ -64,9 +65,7 @@ const handleOf = (outcome: Outcome): ChildProcessSpawner.ChildProcessHandle =>
 		isRunning: Effect.succeed(false),
 		kill: () => Effect.void,
 		stdin: Sink.drain,
-		// Empty because the step inherits the child's stdout rather than reading
-		// it: an install's own transcript goes straight to the workflow log.
-		stdout: Stream.empty,
+		stdout: outcome.stdout === undefined ? Stream.empty : Stream.make(encode(outcome.stdout)),
 		stderr: outcome.stderr === undefined ? Stream.empty : Stream.make(encode(outcome.stderr)),
 		all: Stream.empty,
 		getInputFd: () => Sink.drain,
@@ -112,7 +111,7 @@ const spawnerRecording = (log: Recorder, outcome: Outcome = {}): Layer.Layer<Chi
 			});
 			return outcome.spawnFailure === undefined ? Effect.succeed(handleOf(outcome)) : Effect.fail(outcome.spawnFailure);
 		},
-		// The step spawns for itself so it can read stderr while the install runs;
+		// The step spawns for itself so it can read both streams while the install runs;
 		// a derived member reaching here means it stopped doing that.
 		exitCode: () => Effect.die(new Error("ChildProcessSpawner.exitCode not stubbed")),
 		streamString: () => Stream.die(new Error("ChildProcessSpawner.streamString not stubbed")),
@@ -540,15 +539,17 @@ describe("installDependencies", () => {
 		}),
 	);
 
-	it.effect("lets the install write its own transcript straight to the workflow log", () =>
+	it.effect("routes the install's own transcript through the logger", () =>
 		Effect.gen(function* () {
 			const log = recorder();
-			yield* run(log, activated("pnpm"));
+			yield* run(log, activated("pnpm"), { outcome: { stdout: "Progress: resolved 42, reused 42\nDone in 1.2s\n" } });
 
-			// Legacy streamed install output live. Inheriting stdout is what keeps
-			// that true, and it is also what keeps a chatty install from filling a
-			// pipe nobody drains.
-			assert.strictEqual(log.spawns[0]?.stdout, "inherit");
+			// An inherited stdout would write straight to the runner log and defeat
+			// the enclosing step's fold, so stdout is piped and every line logged —
+			// drained beside stderr, so a chatty install cannot fill a pipe nobody reads.
+			assert.strictEqual(log.spawns[0]?.stdout, "pipe");
+			assert.include(log.logs, "Progress: resolved 42, reused 42");
+			assert.include(log.logs, "Done in 1.2s");
 		}),
 	);
 

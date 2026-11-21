@@ -40,27 +40,27 @@ const facts = (overrides: Partial<SummaryFacts> = {}): SummaryFacts => ({
  *
  * @remarks
  * `summary` is stubbed rather than left to die because it is the member under
- * test; `ActionLogger.layerTest`'s `group` runs its body, so the final group's
- * lines reach the captured logger like any other.
+ * test; `ActionLogger.layerTest`'s `phase` runs its body, so the closing
+ * phase's lines reach the captured logger like any other.
  */
 const harness = (options: { readonly summary?: (content: string) => Effect.Effect<void, ActionOutputError> } = {}) => {
 	const panels: Array<string> = [];
 	const logs: Array<string> = [];
-	const groups: Array<string> = [];
+	const phases: Array<string> = [];
 	const layer = Layer.mergeAll(
 		ActionOutputs.layerTest({
 			summary: options.summary ?? ((content) => Effect.sync(() => void panels.push(content))),
 		}),
 		ActionLogger.layerTest({
-			group: (name, effect) =>
+			phase: (title, effect) =>
 				Effect.suspend(() => {
-					groups.push(name);
+					phases.push(title);
 					return effect;
 				}),
 		}),
 		Logger.layer([Logger.make(({ message }) => void logs.push(String(message)))]),
 	);
-	return { panels, logs, groups, layer };
+	return { panels, logs, phases, layer };
 };
 
 describe("writeSummary", () => {
@@ -81,8 +81,8 @@ describe("writeSummary", () => {
 		}).pipe(Effect.provide(layer));
 	});
 
-	it.effect("closes with the final group, one line per installed tool", () => {
-		const { logs, groups, layer } = harness();
+	it.effect("closes with the final phase, one line per installed tool", () => {
+		const { logs, phases, layer } = harness();
 		return Effect.gen(function* () {
 			yield* writeSummary(
 				facts({
@@ -92,7 +92,7 @@ describe("writeSummary", () => {
 					],
 				}),
 			);
-			assert.include(groups, "Runtime Setup Complete");
+			assert.include(phases, "Runtime Setup Complete");
 			// Ruling 50: the installed lines only — v1 printed the *requested* set
 			// first and then repeated it tool by tool.
 			assert.deepStrictEqual(logs, [
