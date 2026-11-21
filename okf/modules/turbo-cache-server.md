@@ -7,7 +7,7 @@ kind: action
 resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
-  at: 2026-10-05T22:00:53Z
+  at: 2026-11-21T22:19:28Z
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -25,7 +25,7 @@ sources:
     resource: ../../src/state.ts
 integrity:
   generated:
-    body: f8055fff18d28cf3
+    body: cf217b3d0decd543
 ---
 
 # turbo-cache-server
@@ -109,9 +109,10 @@ the two answers differ.
 The worker writes one line per artifact request to its log file (`accessLine`,
 `src/turbo-cache/access-log.ts`): method, task hash, status, an outcome word, the
 artifact's size and the elapsed time. The readiness probe and the telemetry sink are left
-out. `post` reads the file back after the reap and prints it in a collapsed
-`Turbo remote cache activity` group headed by `tallyAccessLog`'s totals; the writer and the
-reader live in one module so the outcome words cannot drift. The group is the only place
+out. `post` reads the file back after the reap and prints it as a
+`Turbo remote cache activity` step whose result line is `tallyAccessLog`'s totals, with the
+log folded beneath it; the writer and the reader live in one module so the outcome words
+cannot drift. The step is the only place
 the detached worker's output is ever visible on a hosted runner, and it is emitted for a
 server that never became ready as well. The bearer token is never part of a line.
 

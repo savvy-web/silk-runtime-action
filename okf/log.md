@@ -1,5 +1,11 @@
 # Log
 
+## 2026-11-21
+
+* Updated Log levels and buffering
+* Updated silk-runtime-action
+* Updated turbo-cache-server
+
 ## 2026-11-13
 
 * Updated Cache config — key formats, ladders, lockfile patterns, and archived paths

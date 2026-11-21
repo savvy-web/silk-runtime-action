@@ -3,8 +3,10 @@
  *
  * @remarks
  * Every step is a typed contract module under `./steps/`, composed here in
- * runner order and wrapped in an `ActionLogger.group` so the workflow log is
- * navigable. This module holds the composition and the joins that need two
+ * runner order. Each runs as an `ActionLogger.step` — one `✓`/`⚠`/`✗` result
+ * line, its detail folded on success and written unfolded on failure — under
+ * two `ActionLogger.phase` headings, `Detect` and `Install`, so a green run reads
+ * as a short list a reader can scan and a red one opens where it broke. This module holds the composition and the joins that need two
  * steps' results at once — nothing else: no I/O, no detection, no formatting.
  *
  * The output fold starts from {@link initialOutputs} and maps each step's
@@ -225,125 +227,137 @@ export const program = Effect.gen(function* () {
 		process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT = "0";
 	});
 
-	const config = yield* logger.group("Load configuration", loadConfig);
 	// Detection runs before the cache restore because both the resolved Biome
 	// version and turbo's presence feed the cache key and path set — the legacy
 	// ordering (`legacy-v1/program.ts:382-411`).
-	const biomeVersion = yield* logger.group("Detect Biome", detectBiome(inputs.biomeVersion));
-	const turbo = yield* logger.group("Detect Turbo", detectTurbo);
-	const batsDecision = yield* logger.group("Detect BATS", detectBats({ bats: inputs.bats, kcov: inputs.kcov }));
-	// The headline a reader skims instead of expanding the detection groups above
-	// (oracle 29). v1 emitted it as the canonical success line of a single
-	// "Detect configuration" group; detection is four groups here, so the line
-	// is assembled once all four have answered and gets a group of its own —
-	// a structural deviation, and the only placement that can carry every fact.
-	yield* logger.group(
-		"Detected configuration",
-		Effect.logInfo(
-			formatDetectLine({
-				runtimes: config.runtimes,
-				packageManager: config.packageManager,
-				biome: biomeVersion,
-				turbo: turbo.enabled,
-				bats: batsDecision.installBats,
-			}),
-		),
-	);
-	const cache = yield* logger.group("Restore dependency cache", restoreCache({ inputs, config, biomeVersion, turbo }));
-
-	const runtimes = yield* logger.group("Install runtimes", installRuntimes(config));
-	// The group title names the manager rather than describing the step, and
-	// says `Install` rather than legacy's "via corepack" — which was a lie for
-	// bun and deno even before corepack left the action (ruling 17).
-	const packageManager = yield* logger.group(
-		`Install ${config.packageManager.name}`,
-		setupPackageManager(config.packageManager),
-	);
-	const activated = onInstallPath(packageManager, runtimes);
-	// PHASE B: the dependency install is the only step that spawns anything today,
-	// so the prepend list is computed inline. When `installBiome` or the turbo
-	// server start spawning they need the same `PATH`, and the list should be
-	// bound once here and shared rather than recomputed per caller.
-	//
-	// The result is bound rather than discarded because the summary reports it:
-	// `ran` is *truthful* — false for deno, for a disabled install, and for
-	// nothing else — where v1 echoed the raw input back and so reported deno's
-	// skipped install as done (oracle 44, quirk 52).
-	//
-	// The turbo cache is started here, ahead of the install, only when the
-	// install's lifecycle scripts can use it — see `turboCacheBeforeInstall`.
-	// Its environment is handed to the install child directly: `exportVariable`
-	// reaches later workflow steps and never a child of this one.
-	const startTurbo = logger.group("Start turbo remote cache", startTurboCache({ inputs, turbo }));
-	const earlyTurboCache = turboCacheBeforeInstall({
-		turboEnabled: turbo.enabled,
-		installDeps: inputs.installDeps,
-		ignoreScripts: inputs.ignoreScripts,
-		packageManager: activated.name,
-	})
-		? Option.some(
-				yield* logger.group(
-					"Start turbo remote cache",
-					startTurboCache({ inputs, turbo }).pipe(
-						Effect.tap((started) =>
-							started.backend === "none"
-								? Effect.void
-								: Effect.logInfo("Started ahead of the dependency install, so its lifecycle scripts can use the cache"),
-						),
-					),
-				),
-			)
-		: Option.none<StartedTurboCache>();
-	const dependencies = yield* logger.group(
-		"Install dependencies",
-		installDependencies(activated, inputs.installDeps, installPathPrepends(activated, runtimes), {
-			ignoreScripts: inputs.ignoreScripts,
-			env: Option.match(earlyTurboCache, { onNone: () => ({}), onSome: (started) => started.environment }),
+	const { config, biomeVersion, turbo, batsDecision } = yield* logger.phase(
+		"Detect",
+		Effect.gen(function* () {
+			const config = yield* logger.step("Load configuration", loadConfig);
+			const biomeVersion = yield* logger.step("Detect Biome", detectBiome(inputs.biomeVersion));
+			const turbo = yield* logger.step("Detect Turbo", detectTurbo);
+			const batsDecision = yield* logger.step("Detect BATS", detectBats({ bats: inputs.bats, kcov: inputs.kcov }));
+			// The headline a reader skims instead of expanding the detection steps
+			// above (oracle 29). Logged in the phase rather than in a step, so it is
+			// an ordinary line that is never folded away, and only once all four
+			// have answered — the only placement that can carry every fact.
+			yield* Effect.logInfo(
+				formatDetectLine({
+					runtimes: config.runtimes,
+					packageManager: config.packageManager,
+					biome: biomeVersion,
+					turbo: turbo.enabled,
+					bats: batsDecision.installBats,
+				}),
+			);
+			return { config, biomeVersion, turbo, batsDecision };
 		}),
 	);
-	// Biome is optional, so a failed install degrades to a warning and the run
-	// carries on (oracle 29) — a lint tool a later step may or may not invoke is
-	// not worth failing a job over. The outputs then fold from *this* result
-	// rather than from detection, so a run that could not install Biome reports
-	// it as disabled; v1 folded from detection and reported an enabled Biome
-	// that was never fetched (oracle 30).
-	const biome = yield* logger.group(
-		"Install Biome",
-		installBiome(biomeVersion).pipe(
-			Effect.catch((error) =>
-				Effect.logWarning(`Biome installation failed: ${error.message}`).pipe(
-					Effect.as(Option.none<{ readonly version: string; readonly path: string }>()),
+
+	const install = Effect.gen(function* () {
+		const cache = yield* logger.step("Restore dependency cache", restoreCache({ inputs, config, biomeVersion, turbo }));
+
+		const runtimes = yield* logger.step("Install runtimes", installRuntimes(config));
+		// The step name names the manager rather than describing the step, and
+		// says `Install` rather than legacy's "via corepack" — which was a lie for
+		// bun and deno even before corepack left the action (ruling 17).
+		const packageManager = yield* logger.step(
+			`Install ${config.packageManager.name}`,
+			setupPackageManager(config.packageManager),
+		);
+		const activated = onInstallPath(packageManager, runtimes);
+		// PHASE B: the dependency install is the only step that spawns anything today,
+		// so the prepend list is computed inline. When `installBiome` or the turbo
+		// server start spawning they need the same `PATH`, and the list should be
+		// bound once here and shared rather than recomputed per caller.
+		//
+		// The result is bound rather than discarded because the summary reports it:
+		// `ran` is *truthful* — false for deno, for a disabled install, and for
+		// nothing else — where v1 echoed the raw input back and so reported deno's
+		// skipped install as done (oracle 44, quirk 52).
+		//
+		// The turbo cache is started here, ahead of the install, only when the
+		// install's lifecycle scripts can use it — see `turboCacheBeforeInstall`.
+		// Its environment is handed to the install child directly: `exportVariable`
+		// reaches later workflow steps and never a child of this one.
+		const startTurbo = logger.step("Start turbo remote cache", startTurboCache({ inputs, turbo }));
+		const earlyTurboCache = turboCacheBeforeInstall({
+			turboEnabled: turbo.enabled,
+			installDeps: inputs.installDeps,
+			ignoreScripts: inputs.ignoreScripts,
+			packageManager: activated.name,
+		})
+			? Option.some(
+					yield* logger.step(
+						"Start turbo remote cache",
+						startTurboCache({ inputs, turbo }).pipe(
+							Effect.tap((started) =>
+								started.backend === "none"
+									? Effect.void
+									: Effect.logInfo(
+											"Started ahead of the dependency install, so its lifecycle scripts can use the cache",
+										),
+							),
+						),
+					),
+				)
+			: Option.none<StartedTurboCache>();
+		const dependencies = yield* logger.step(
+			"Install dependencies",
+			installDependencies(activated, inputs.installDeps, installPathPrepends(activated, runtimes), {
+				ignoreScripts: inputs.ignoreScripts,
+				env: Option.match(earlyTurboCache, { onNone: () => ({}), onSome: (started) => started.environment }),
+			}),
+		);
+		// Biome is optional, so a failed install degrades to a warning and the run
+		// carries on (oracle 29) — a lint tool a later step may or may not invoke is
+		// not worth failing a job over. The warning marks the step's line `⚠`. The
+		// outputs then fold from *this* result rather than from detection, so a run
+		// that could not install Biome reports it as disabled; v1 folded from
+		// detection and reported an enabled Biome that was never fetched (oracle 30).
+		const biome = yield* logger.step(
+			"Install Biome",
+			installBiome(biomeVersion).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(`Biome installation failed: ${error.message}`).pipe(
+						Effect.as(Option.none<{ readonly version: string; readonly path: string }>()),
+					),
 				),
 			),
-		),
-	);
-	// Optional, exactly as Biome is: a toolchain a later step may or may not
-	// invoke is not worth failing a job over, and the outputs fold from the
-	// install result rather than from detection so a run that could not fetch it
-	// reports disabled (oracle 30).
-	const bats = yield* logger.group(
-		"Install BATS",
-		installBats(batsDecision.installBats).pipe(
-			Effect.catch((error) =>
-				Effect.logWarning(`BATS installation failed: ${error.message}`).pipe(Effect.as(Option.none<InstalledBats>())),
+		);
+		// Optional, exactly as Biome is: a toolchain a later step may or may not
+		// invoke is not worth failing a job over, and the outputs fold from the
+		// install result rather than from detection so a run that could not fetch it
+		// reports disabled (oracle 30).
+		const bats = yield* logger.step(
+			"Install BATS",
+			installBats(batsDecision.installBats).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(`BATS installation failed: ${error.message}`).pipe(Effect.as(Option.none<InstalledBats>())),
+				),
 			),
-		),
-	);
-	// kcov is gated on bats having actually landed, not merely on the decision: a
-	// coverage tool for a toolchain that failed to install has nothing to cover.
-	const kcov = yield* logger.group(
-		"Install kcov",
-		installKcov(batsDecision.installKcov && Option.isSome(bats), { bust: inputs.cacheBust }).pipe(
-			Effect.catch((error) =>
-				Effect.logWarning(`kcov installation failed: ${error.message}`).pipe(Effect.as(Option.none<InstalledKcov>())),
+		);
+		// kcov is gated on bats having actually landed, not merely on the decision: a
+		// coverage tool for a toolchain that failed to install has nothing to cover.
+		const kcov = yield* logger.step(
+			"Install kcov",
+			installKcov(batsDecision.installKcov && Option.isSome(bats), { bust: inputs.cacheBust }).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(`kcov installation failed: ${error.message}`).pipe(Effect.as(Option.none<InstalledKcov>())),
+				),
 			),
-		),
+		);
+		// Last in the pipeline unless the install needed it first: on every other
+		// run nothing above consumes the turbo environment, and a later start
+		// shortens the window in which a detached child holds the runner's
+		// short-lived `ACTIONS_RUNTIME_TOKEN`.
+		const turboCache = Option.isSome(earlyTurboCache) ? earlyTurboCache.value : yield* startTurbo;
+		return { cache, runtimes, packageManager, dependencies, biome, bats, kcov, turboCache };
+	});
+	const { cache, runtimes, packageManager, dependencies, biome, bats, kcov, turboCache } = yield* logger.phase(
+		"Install",
+		install,
 	);
-	// Last in the pipeline unless the install needed it first: on every other
-	// run nothing above consumes the turbo environment, and a later start
-	// shortens the window in which a detached child holds the runner's
-	// short-lived `ACTIONS_RUNTIME_TOKEN`.
-	const turboCache = Option.isSome(earlyTurboCache) ? earlyTurboCache.value : yield* startTurbo;
 
 	const node = runtimeOutputs(runtimes, "node");
 	const bun = runtimeOutputs(runtimes, "bun");
