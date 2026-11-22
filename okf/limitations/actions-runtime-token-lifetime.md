@@ -6,7 +6,7 @@ status: draft
 bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: server-config
     resource: ../../src/turbo-cache/server-config.ts
@@ -17,7 +17,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: ed02c032d8652e94
+    body: 1f6695b72344e8d1
 ---
 
 # "ACTIONS_RUNTIME_TOKEN" expires under a long-running embedded Turbo server
@@ -49,8 +49,9 @@ unreadable envelope never reaches the classifier at all — that is an ordinary 
 an auth failure, and folding it into the same warning would make the message fire on a stale
 entry instead of an expired token.[^server-config]
 
-The **S3 backend is unaffected**: it authenticates with its own long-lived credentials rather
-than the runner's token, so nothing about this limitation applies to it.[^server-config]
+A job that signed in to a **hosted cache is unaffected**: it starts no embedded server and
+holds no runtime token. Its own token has a lifetime too; see
+[hosted-cache-reach](./hosted-cache-reach.md).
 
 ## Why this is acceptable
 

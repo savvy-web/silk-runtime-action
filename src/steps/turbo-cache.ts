@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ActionOutputError, DetachedProcessOps } from "@effected/github-actions";
+import type { ActionOutputError, DetachedProcessOps, OidcTokenIssuer } from "@effected/github-actions";
 import { ActionOutputs, ActionState, DetachedProcess, Secret } from "@effected/github-actions";
 import { Data, Effect, Option, Redacted } from "effect";
 import type { HttpClient } from "effect/http";
@@ -11,9 +11,10 @@ import type { HttpClient } from "effect/http";
 import type { Inputs } from "../schema/inputs.js";
 import { STATE_KEYS, TurboServerState } from "../state.js";
 import { formatTurboLine } from "../summary/format.js";
-import type { TurboCacheResolution } from "../turbo-cache/activation.js";
 import { hasPartialPassthroughCredentials, resolveTurboCache } from "../turbo-cache/activation.js";
 import { DEFAULT_TURBO_SERVER_PORT, TURBO_SERVER_ENV } from "../turbo-cache/server-config.js";
+import type { HostedCache } from "../turbo-cache/sign-in.js";
+import { signIn } from "../turbo-cache/sign-in.js";
 
 /**
  * Raised when the embedded turbo remote-cache server cannot be spawned, or is
@@ -83,9 +84,17 @@ export interface StartTurboCacheArgs {
 /** What the `main` phase learned about the turbo remote cache. */
 export interface StartedTurboCache {
 	/** The `turbo-cache-backend` output's value (oracle 40's vocabulary). */
-	readonly backend: "github" | "s3" | "remote" | "none";
+	readonly backend: "github" | "hosted" | "remote" | "none";
 	/** The port the embedded server bound, when one was started *and* answered. */
 	readonly port: Option.Option<number>;
+	/**
+	 * The host of the hosted cache this job signed in to, when it did.
+	 *
+	 * @remarks
+	 * For the summary, which names the service by host. Present exactly when
+	 * `backend` is `"hosted"`.
+	 */
+	readonly host: Option.Option<string>;
 	/**
 	 * What was persisted for the post phase to reap.
 	 *
@@ -109,15 +118,21 @@ export interface StartedTurboCache {
 	 * was exported, so the install's children and the consumer's later steps
 	 * cannot be configured differently.
 	 *
-	 * Plaintext by necessity, the passthrough `TURBO_TOKEN` included: it is the
-	 * same string `Secret.forRunnerFile` already declassified for the export, so
-	 * it is masked in the log before it exists here.
+	 * Plaintext by necessity, the passthrough and hosted `TURBO_TOKEN` included:
+	 * it is the same string `Secret.forRunnerFile` already declassified for the
+	 * export, so it is masked in the log before it exists here.
 	 */
 	readonly environment: Readonly<Record<string, string>>;
 }
 
 /** No server, no environment, nothing for `post` to do. */
-const DISABLED: StartedTurboCache = { backend: "none", port: Option.none(), state: Option.none(), environment: {} };
+const DISABLED: StartedTurboCache = {
+	backend: "none",
+	port: Option.none(),
+	state: Option.none(),
+	host: Option.none(),
+	environment: {},
+};
 
 /**
  * Where the detached server writes its stdout and stderr.
@@ -171,38 +186,25 @@ const readinessProbe = (port: number) => DetachedProcess.httpProbe(`http://127.0
  * @remarks
  * Unconditional, and *before* the activation table runs (oracle 7): a secret a
  * workflow supplied is a secret worth redacting whether or not the resolution
- * ends up using it. A run that sets `turbo-s3-secret-access-key` alongside
- * passthrough credentials resolves to Vercel and never touches S3 — and would,
- * without this, carry an unmasked key through a job that logs its environment.
+ * ends up using it. A run that sets `turbo-token` alongside `turbo-cache: off`
+ * never talks to Vercel — and would, without this, carry an unmasked token
+ * through a job that logs its environment.
  *
- * `turbo-s3-access-key-id` is masked too, which v1 did not do (ruling 78). It
- * is the least sensitive of the four and pairing it with the secret it
- * authenticates alongside costs nothing.
- *
- * The `Redacted` values go through `Secret.mask`, which registers with the log
+ * The `Redacted` value goes through `Secret.mask`, which registers with the log
  * filter and returns nothing. This site is the reason that member exists
  * (effected#239's sibling): it previously called `Secret.forSigning` purely for
  * the mask and threw the plaintext away, which recorded "declassified for
  * signing" in the kit's audit seam about values that never sign. The kit's
  * invariant now reads *masking is the floor, declassification implies it*, and
  * the honest call for a site that only masks is the one that only masks.
- *
- * `turbo-s3-access-key-id` goes through `outputs.setSecret` because it is a
- * plain `string` rather than a `Redacted` — an asymmetry that is now about the
- * value's shape rather than about which member happened to mask.
  */
 const maskSuppliedSecrets = (inputs: Inputs) =>
 	Effect.gen(function* () {
-		const outputs = yield* ActionOutputs;
-		for (const redacted of [inputs.turboToken, inputs.turboS3SecretAccessKey, inputs.turboS3SessionToken]) {
-			if (Option.isSome(redacted)) yield* Secret.mask(redacted.value);
-		}
-		if (Option.isSome(inputs.turboS3AccessKeyId)) yield* outputs.setSecret(inputs.turboS3AccessKeyId.value);
+		if (Option.isSome(inputs.turboToken)) yield* Secret.mask(inputs.turboToken.value);
 	});
 
-/** `{ [name]: value }` when the option holds one, and nothing when it does not. */
-const whenSome = (name: string, value: Option.Option<string>): Record<string, string> =>
-	Option.match(value, { onNone: () => ({}), onSome: (present) => ({ [name]: present }) });
+/** The one store the embedded server is built over: the GitHub Actions cache. */
+const EMBEDDED_BACKEND = "github";
 
 /**
  * The environment the detached server is configured through.
@@ -213,46 +215,20 @@ const whenSome = (name: string, value: Option.Option<string>): Record<string, st
  * handoff cannot drift. `DetachedProcess.spawn` merges this **over** the
  * parent's environment, which is what carries `ACTIONS_RUNTIME_TOKEN` through
  * to the GitHub backend without this step ever reading it.
- *
- * Absent optional settings are omitted rather than written empty. The worker
- * reads unset and empty as the same case, and an omitted variable is the
- * clearer thing to find in a process listing.
- *
- * The two S3 secrets travel through `Secret.forChildEnv`, which masks the whole
- * set before returning any plaintext — the one sanctioned way a `Redacted`
- * becomes a child's environment variable (oracle 67).
  */
-const spawnEnvironment = (
-	resolution: Extract<TurboCacheResolution, { mode: "embedded" }>,
-	options: { readonly port: number; readonly prefix: string; readonly token: string },
-): Effect.Effect<Record<string, string>, never, ActionOutputs> =>
-	Effect.gen(function* () {
-		const base: Record<string, string> = {
-			[TURBO_SERVER_ENV.port]: String(options.port),
-			[TURBO_SERVER_ENV.prefix]: options.prefix,
-			[TURBO_SERVER_ENV.token]: options.token,
-			[TURBO_SERVER_ENV.backend]: resolution.backend,
-		};
-		if (resolution.backend !== "s3") return base;
-
-		const { s3 } = resolution;
-		const secrets: Record<string, Redacted.Redacted<string>> = {
-			...(Option.isSome(s3.secretAccessKey) ? { [TURBO_SERVER_ENV.s3SecretAccessKey]: s3.secretAccessKey.value } : {}),
-			...(Option.isSome(s3.sessionToken) ? { [TURBO_SERVER_ENV.s3SessionToken]: s3.sessionToken.value } : {}),
-		};
-		return {
-			...base,
-			[TURBO_SERVER_ENV.s3Bucket]: s3.bucket,
-			...whenSome(TURBO_SERVER_ENV.s3Region, s3.region),
-			...whenSome(TURBO_SERVER_ENV.s3Endpoint, s3.endpoint),
-			...whenSome(TURBO_SERVER_ENV.s3AccessKeyId, s3.accessKeyId),
-			...whenSome(TURBO_SERVER_ENV.s3Prefix, s3.prefix),
-			...(yield* Secret.forChildEnv(secrets)),
-		};
-	});
+const spawnEnvironment = (options: {
+	readonly port: number;
+	readonly prefix: string;
+	readonly token: string;
+}): Record<string, string> => ({
+	[TURBO_SERVER_ENV.port]: String(options.port),
+	[TURBO_SERVER_ENV.prefix]: options.prefix,
+	[TURBO_SERVER_ENV.token]: options.token,
+	[TURBO_SERVER_ENV.backend]: EMBEDDED_BACKEND,
+});
 
 /**
- * Starts and wires the embedded server for an `embedded` resolution.
+ * Starts and wires the embedded server.
  *
  * @remarks
  * The order is the contract. The state is persisted **between** the spawn and
@@ -273,7 +249,6 @@ const spawnEnvironment = (
  * port would turn every later cache operation into a connection error.
  */
 const startEmbeddedServer = (
-	resolution: Extract<TurboCacheResolution, { mode: "embedded" }>,
 	args: StartTurboCacheArgs,
 ): Effect.Effect<
 	StartedTurboCache,
@@ -288,11 +263,7 @@ const startEmbeddedServer = (
 		// Masked before the spawn: every later step echoes TURBO_TOKEN in its env
 		// block, and a per-run loopback credential is still a credential.
 		const credential = yield* Secret.forRunnerFile(Redacted.make(randomUUID()));
-		const environment = yield* spawnEnvironment(resolution, {
-			port,
-			prefix: args.inputs.turboCachePrefix,
-			token: credential,
-		});
+		const environment = spawnEnvironment({ port, prefix: args.inputs.turboCachePrefix, token: credential });
 
 		const pid = yield* detached
 			.spawn({
@@ -313,7 +284,7 @@ const startEmbeddedServer = (
 				),
 			);
 
-		const saved = TurboServerState.make({ pid, port, backend: resolution.backend, logFile });
+		const saved = TurboServerState.make({ pid, port, backend: EMBEDDED_BACKEND, logFile });
 		yield* (yield* ActionState).save(STATE_KEYS.turboServer, saved, TurboServerState).pipe(
 			Effect.catch((cause) =>
 				Effect.logWarning(
@@ -325,7 +296,7 @@ const startEmbeddedServer = (
 				),
 			),
 		);
-		yield* Effect.logDebug(`Turbo cache server started: pid=${pid}, backend=${resolution.backend}, log=${logFile}`);
+		yield* Effect.logDebug(`Turbo cache server started: pid=${pid}, backend=${EMBEDDED_BACKEND}, log=${logFile}`);
 
 		const ready = yield* detached.awaitReady(readinessProbe(port)).pipe(
 			Effect.as(true),
@@ -346,6 +317,7 @@ const startEmbeddedServer = (
 				backend: "none",
 				port: Option.none(),
 				state: Option.some(saved),
+				host: Option.none(),
 				environment: {},
 			};
 			return degraded;
@@ -360,11 +332,82 @@ const startEmbeddedServer = (
 		// The step's own line, in the same words the job summary's row uses — one
 		// formatter renders both, so the log and the panel cannot disagree about
 		// what the cache ended up being (oracle 30).
-		yield* Effect.logInfo(formatTurboLine(resolution.backend, Option.some(port)));
+		yield* Effect.logInfo(formatTurboLine(EMBEDDED_BACKEND, Option.some(port)));
 		const started: StartedTurboCache = {
-			backend: resolution.backend,
+			backend: EMBEDDED_BACKEND,
 			port: Option.some(port),
 			state: Option.some(saved),
+			host: Option.none(),
+			environment: exported,
+		};
+		return started;
+	});
+
+/**
+ * The team every hosted run exports.
+ *
+ * @remarks
+ * The hosted service decides what a job may read and write from its token and
+ * ignores the team; turbo refuses to use a remote cache without one. A fixed
+ * word, so it is the same in every repository and never a value to mask.
+ */
+const HOSTED_TEAM = "silk";
+
+/**
+ * Signs in to a hosted cache, or says why not and answers with nothing.
+ *
+ * @remarks
+ * **Cannot fail, and that is the point of it.** A sign-in that does not work
+ * out is one warning line and `None`, which the caller reads as "start the
+ * embedded server": a hosted cache is an optimization over a cache that
+ * already works, and no state of the service may cost a job more than that
+ * line.
+ *
+ * The warning prints the failure's `reason` and, when there is one, its
+ * `detail`, which `SignInError` guarantees is an issuer reason or a status
+ * code. It prints nothing else: not the `turbo-api` input (a URL can carry a
+ * userinfo), not a response, not a cause.
+ *
+ * A defect is answered the same way and described even less. Whatever a defect
+ * says came from code this step does not own, about a request that carries the
+ * job's OIDC token, so it is named as a defect and its message is dropped.
+ */
+const signInOrWarn = (
+	api: string,
+): Effect.Effect<Option.Option<HostedCache>, never, OidcTokenIssuer | HttpClient.HttpClient | ActionOutputs> => {
+	const fallback = (kind: string) =>
+		Effect.logWarning(
+			`Hosted turbo cache sign-in failed (${kind}); using the embedded cache server on the GitHub Actions cache instead.`,
+		).pipe(Effect.as(Option.none<HostedCache>()));
+	return signIn(api).pipe(
+		Effect.map(Option.some),
+		Effect.catch((error) => fallback(error.detail === undefined ? error.reason : `${error.reason}: ${error.detail}`)),
+		Effect.catchDefect(() => fallback("defect")),
+	);
+};
+
+/**
+ * Points turbo at a hosted cache this job has signed in to.
+ *
+ * @remarks
+ * No server, no state, nothing for `post` to reap. `Secret.forRunnerFile` is
+ * what turns the cache token into the string `GITHUB_ENV` needs, and it masks
+ * before it returns, on top of the mask sign-in already registered: the token
+ * is in the log filter before the first variable is exported.
+ */
+const useHostedCache = (hosted: HostedCache): Effect.Effect<StartedTurboCache, ActionOutputError, ActionOutputs> =>
+	Effect.gen(function* () {
+		const outputs = yield* ActionOutputs;
+		const token = yield* Secret.forRunnerFile(hosted.token);
+		const exported = { TURBO_API: hosted.api, TURBO_TOKEN: token, TURBO_TEAM: HOSTED_TEAM };
+		for (const [name, value] of Object.entries(exported)) yield* outputs.exportVariable(name, value);
+		const host = Option.some(new URL(hosted.api).host);
+		yield* Effect.logInfo(formatTurboLine("hosted", Option.none(), host));
+		const started: StartedTurboCache = {
+			backend: "hosted",
+			port: Option.none(),
+			state: Option.none(),
+			host,
 			environment: exported,
 		};
 		return started;
@@ -391,14 +434,25 @@ const startEmbeddedServer = (
  * the inner half of the double catch v1 relied on (oracle 42). A cache that
  * would not start is not a reason to fail a build that never needed it.
  *
- * The four resolutions map exactly as v1's did (oracle 39):
+ * What each resolution ends in (the first four rows are v1's, oracle 39):
  *
  * | resolution | environment exported | backend | port |
  * | --- | --- | --- | --- |
  * | off | none | `none` | absent |
  * | passthrough | `TURBO_TOKEN`, `TURBO_TEAM` | `remote` | absent |
- * | embedded, ready | `TURBO_API`, `TURBO_TOKEN`, `TURBO_TEAM` | `github`/`s3` | bound |
+ * | embedded, ready | `TURBO_API`, `TURBO_TOKEN`, `TURBO_TEAM` | `github` | bound |
  * | embedded, not ready | none | `none` | absent |
+ * | hosted, signed in | `TURBO_API`, `TURBO_TOKEN`, `TURBO_TEAM=silk` | `hosted` | absent |
+ * | hosted, not signed in | as the two embedded rows | as embedded | as embedded |
+ *
+ * **`off` is decided before anything else is.** No token is minted and no
+ * request is sent on a run the table resolves to `off`, whatever `turbo-api`
+ * says: a shared workflow turns the cache off for a fork's code, and that has
+ * to be the end of it.
+ *
+ * A hosted run that cannot sign in is, from the first spawn on, an embedded
+ * run: same server, same exports, same state for `post`. The only trace of the
+ * attempt is one warning naming why.
  *
  * Passthrough exports no `TURBO_API` on purpose — turbo's own default is
  * Vercel's endpoint, and naming it here would pin a URL this action does not
@@ -408,7 +462,11 @@ const startEmbeddedServer = (
  */
 export const startTurboCache = (
 	args: StartTurboCacheArgs,
-): Effect.Effect<StartedTurboCache, TurboCacheError, ActionState | ActionOutputs | HttpClient.HttpClient> =>
+): Effect.Effect<
+	StartedTurboCache,
+	TurboCacheError,
+	ActionState | ActionOutputs | HttpClient.HttpClient | OidcTokenIssuer
+> =>
 	Effect.gen(function* () {
 		const outputs = yield* ActionOutputs;
 		yield* maskSuppliedSecrets(args.inputs);
@@ -418,14 +476,19 @@ export const startTurboCache = (
 			yield* Effect.logDebug("Turbo remote cache is off");
 			return DISABLED;
 		}
+		if (resolution.mode === "hosted") {
+			const hosted = yield* signInOrWarn(resolution.api);
+			return Option.isSome(hosted) ? yield* useHostedCache(hosted.value) : yield* startEmbeddedServer(args);
+		}
 		// Ruling 77, and it fires *here* rather than before the table because this
 		// is where its text is true. v1 said nothing at all when a workflow set one
 		// credential, and the run silently started an embedded server instead of
 		// talking to Vercel — indistinguishable in the log from a workflow that
 		// configured no passthrough at all. Partial credentials cannot reach the
-		// passthrough branch (rule R2 needs both), so past the `off` return the only
-		// thing left to fall through to is the embedded server, and the warning can
-		// say so.
+		// passthrough branch (the rule needs both), so past the `off` and `hosted`
+		// returns the only thing left to fall through to is the embedded server,
+		// and the warning can say so. A hosted run is past this already: it named
+		// a service, so half a Vercel credential is not what it meant and missed.
 		if (hasPartialPassthroughCredentials(args.inputs)) {
 			yield* Effect.logWarning(
 				"Both turbo-token and turbo-team are required for an external remote cache; " +
@@ -441,11 +504,12 @@ export const startTurboCache = (
 				backend: "remote",
 				port: Option.none(),
 				state: Option.none(),
+				host: Option.none(),
 				environment: exported,
 			};
 			return passthrough;
 		}
-		return yield* startEmbeddedServer(resolution, args);
+		return yield* startEmbeddedServer(args);
 	}).pipe(
 		Effect.catch((error) => Effect.logWarning(`Turbo cache setup error: ${error.message}`).pipe(Effect.as(DISABLED))),
 		// Defense in depth, matching post's posture: a defect anywhere in the spawn

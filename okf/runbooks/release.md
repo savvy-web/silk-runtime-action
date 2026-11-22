@@ -6,7 +6,7 @@ status: draft
 resource: ../../.github/workflows/release.yml
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: release-yml
     resource: ../../.github/workflows/release.yml
@@ -19,7 +19,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: 8543639263fa22c4
+    body: 3d273774cc354828
 ---
 
 # Release dev to main
@@ -72,8 +72,10 @@ directly on `main`; `main` always reflects the last released state.
 
 The release is published: a Git tag and a GitHub release exist for the new version, the
 `v<major>` alias tag has been moved by `major-tag`, and `dev` is even with `main` (whether by
-a no-op content match or a completed rebase). Consumers reference this action as
-`savvy-web/silk-runtime-action@v1`.
+a no-op content match or a completed rebase). Consumers reference this action by its major
+alias tag, `savvy-web/silk-runtime-action@v<major>`. As of 2026-11-22 the only alias that
+exists is `v1`: `v2` does not exist until 2.0.0 is released, at which point `major-tag`
+creates it, and `v1` stays where the last 1.x release left it.
 
 See also
 [`../decisions/branch-sync-by-content-not-commits.md`](../decisions/branch-sync-by-content-not-commits.md)

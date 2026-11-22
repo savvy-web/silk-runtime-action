@@ -5,7 +5,7 @@ import { Config, Option } from "effect";
 import type { ToolMode } from "./domain.js";
 
 /**
- * The 19 `action.yml` input names, verbatim, as a const tuple.
+ * The 13 `action.yml` input names, verbatim, as a const tuple.
  *
  * @remarks
  * The counterpart to `OUTPUT_NAMES`. It is what makes "the code and
@@ -19,13 +19,7 @@ export const INPUT_NAMES = [
 	"turbo-cache-prefix",
 	"turbo-token",
 	"turbo-team",
-	"turbo-s3-bucket",
-	"turbo-s3-region",
-	"turbo-s3-endpoint",
-	"turbo-s3-access-key-id",
-	"turbo-s3-secret-access-key",
-	"turbo-s3-session-token",
-	"turbo-s3-prefix",
+	"turbo-api",
 	"install-deps",
 	"ignore-scripts",
 	"bats",
@@ -47,7 +41,7 @@ export type InputName = (typeof INPUT_NAMES)[number];
 export type TurboCacheMode = "auto" | "off";
 
 /**
- * The fully decoded, typed shape of all 19 `action.yml` inputs.
+ * The fully decoded, typed shape of all 13 `action.yml` inputs.
  */
 export interface Inputs {
 	readonly biomeVersion: Option.Option<string>;
@@ -55,13 +49,16 @@ export interface Inputs {
 	readonly turboCachePrefix: string;
 	readonly turboToken: Option.Option<Redacted.Redacted<string>>;
 	readonly turboTeam: Option.Option<string>;
-	readonly turboS3Bucket: Option.Option<string>;
-	readonly turboS3Region: Option.Option<string>;
-	readonly turboS3Endpoint: Option.Option<string>;
-	readonly turboS3AccessKeyId: Option.Option<string>;
-	readonly turboS3SecretAccessKey: Option.Option<Redacted.Redacted<string>>;
-	readonly turboS3SessionToken: Option.Option<Redacted.Redacted<string>>;
-	readonly turboS3Prefix: Option.Option<string>;
+	/**
+	 * The base URL of a hosted remote cache to sign in to, when one was named.
+	 *
+	 * @remarks
+	 * No default, on purpose: the action is public and the URL is the caller's.
+	 * It is read verbatim here; whether it is usable (https, a parseable URL) is
+	 * decided where it is used, so a bad value degrades to the embedded server
+	 * with a warning instead of failing the input decode and the job with it.
+	 */
+	readonly turboApi: Option.Option<string>;
 	readonly installDeps: boolean;
 	/**
 	 * Whether the dependency install skips lifecycle scripts.
@@ -80,7 +77,7 @@ export interface Inputs {
 }
 
 /**
- * Decodes all 19 `action.yml` inputs into a typed {@link Inputs} value, via
+ * Decodes all 13 `action.yml` inputs into a typed {@link Inputs} value, via
  * `ActionInput` accessors so `INPUT_` mangling and empty-string-is-absent
  * semantics stay owned by `@effected/github-actions`, not reimplemented here.
  */
@@ -90,13 +87,7 @@ export const loadInputs: Config.Config<Inputs> = Config.all({
 	turboCachePrefix: ActionInput.string("turbo-cache-prefix").pipe(Config.withDefault("")),
 	turboToken: Config.option(ActionInput.redacted("turbo-token")),
 	turboTeam: Config.option(ActionInput.string("turbo-team")),
-	turboS3Bucket: Config.option(ActionInput.string("turbo-s3-bucket")),
-	turboS3Region: Config.option(ActionInput.string("turbo-s3-region")),
-	turboS3Endpoint: Config.option(ActionInput.string("turbo-s3-endpoint")),
-	turboS3AccessKeyId: Config.option(ActionInput.string("turbo-s3-access-key-id")),
-	turboS3SecretAccessKey: Config.option(ActionInput.redacted("turbo-s3-secret-access-key")),
-	turboS3SessionToken: Config.option(ActionInput.redacted("turbo-s3-session-token")),
-	turboS3Prefix: Config.option(ActionInput.string("turbo-s3-prefix")),
+	turboApi: Config.option(ActionInput.string("turbo-api")),
 	installDeps: ActionInput.boolean("install-deps").pipe(Config.withDefault(true)),
 	ignoreScripts: ActionInput.boolean("ignore-scripts").pipe(Config.withDefault(false)),
 	bats: ActionInput.string("bats").pipe(Config.withDefault("auto")),

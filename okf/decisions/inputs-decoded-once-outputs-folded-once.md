@@ -6,7 +6,7 @@ description: One typed Inputs record decoded at the top of the pipeline, and one
 tags: [architecture, dx]
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: schema-inputs
     resource: ../../src/schema/inputs.ts
@@ -14,14 +14,14 @@ sources:
     resource: ../../src/program.ts
 integrity:
   generated:
-    body: d2cbadfc64b79c7f
+    body: 849b74cb2a74d510
 ---
 
 # Inputs decoded once, outputs folded once
 
 ## Context
 
-The action has 18 inputs and 22 outputs. Each step could read the inputs it
+The action has 13 inputs and 22 outputs. Each step could read the inputs it
 needs directly off `ActionInput` and each could write the outputs it produces
 directly through `ActionOutputs`, but that spreads `INPUT_` naming and
 empty-string-is-absent semantics across every module that touches an input,
@@ -30,7 +30,7 @@ optional feature report?"
 
 ## Decision
 
-`loadInputs` decodes all 18 inputs into one typed `Inputs` record, once, at
+`loadInputs` decodes all 13 inputs into one typed `Inputs` record, once, at
 the top of `program.ts`'s pipeline, through `ActionInput.*` combinators
 composed with `Config.all`[^schema-inputs]. `ActionInput`'s naming and
 absence rules — the runner uppercases an input name and preserves hyphens
@@ -58,7 +58,7 @@ Config.map((raw) => ({
 }));
 ```
 
-(`src/schema/inputs.ts:108-113`.) `turbo-cache` collapses to the two-member
+(`src/schema/inputs.ts:99-105`.) `turbo-cache` collapses to the two-member
 `"auto" | "off"` union the activation table actually branches on, so nothing
 downstream has to re-parse an arbitrary string. `cache-bust` filters out the
 `"false"` and empty-string sentinels a workflow author might write, so

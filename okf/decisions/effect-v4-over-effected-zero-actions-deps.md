@@ -6,7 +6,7 @@ description: Why the action is built on Effect v4 and the first-party @effected 
 tags: [architecture, deps, dx]
 generated:
   by: okfit/claude-code
-  at: 2026-11-13T18:50:00Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: package-json
     resource: ../../package.json
@@ -14,7 +14,7 @@ sources:
     resource: ../../src/layers/app.ts
 integrity:
   generated:
-    body: d04aab1468ba0b5b
+    body: e5b97f5725cc3d4c
 ---
 
 # Effect v4 over the @effected suite, zero @actions/* dependencies
@@ -46,10 +46,11 @@ carries **zero `@actions/*` dependencies**, direct or transitive.
 In Effect v4 the former `@effect/platform` is dissolved into core `effect`:
 `FileSystem`, `Path` and `HttpClient` all import from `effect` itself, and
 only the Node platform layers (`NodeFileSystem`, `NodeHttpClient.layerUndici`)
-ship separately, in `@effect/platform-node`. `layers/app.ts` composes exactly
-two extra services on top of what `ActionRuntime.layer` already
-provides — `ActionCache`, `PackageManagerInstaller` and `ToolInstaller` for
-`MainLive`, `ActionCache` alone for `PostLive`[^layers-app] — because
+ship separately, in `@effect/platform-node`. `layers/app.ts` composes only
+what the kit keeps out of `ActionRuntime.layer` — `ActionCache`,
+`OidcTokenIssuer`, `PackageManagerInstaller`, `ToolInstaller` and
+`WorkspaceDiscovery` for `MainLive`, `ActionCache` alone for
+`PostLive`[^layers-app] — because
 `Action.run`'s own runtime layer already supplies `ActionEnvironment`,
 `ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient` and the Node
 service bundle.

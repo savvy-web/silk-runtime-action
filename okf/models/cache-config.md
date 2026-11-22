@@ -8,7 +8,7 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-11-13T18:50:00Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -21,7 +21,7 @@ sources:
     resource: https://github.com/savvy-web/silk-runtime-action/issues/545
 integrity:
   generated:
-    body: 2958cd932fbcafcf
+    body: be6811593baf440f
 ---
 
 # Cache config — key formats, ladders, lockfile patterns, and archived paths
@@ -212,7 +212,7 @@ Only `.turbo/cache` joins the archive. `.turbo/runs`,
 `.turbo/cookies`, and `.turbo/daemon` are deliberately excluded — a restored stale run summary
 would break "latest run = current run" detection in tooling that parses `turbo --summarize`
 output. This file-cache layer and the embedded turbo remote cache (see
-[embedded-turbo-server](../decisions/embedded-turbo-server.md)) are **complementary, not
+[turbo-cache-backends](../decisions/turbo-cache-backends.md)) are **complementary, not
 alternatives**: the remote cache is primary, and the file layer is a fast local restore on top
 of it. Neither is a candidate for removal in favor of the other.
 

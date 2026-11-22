@@ -58,7 +58,12 @@ export interface RuntimeSummaryFacts {
 	readonly packageManager: NamedVersion;
 	/** The installed Biome version, when one was installed. */
 	readonly biome: Option.Option<string>;
-	readonly turbo: { readonly backend: TurboCacheBackend; readonly port: Option.Option<number> };
+	readonly turbo: {
+		readonly backend: TurboCacheBackend;
+		readonly port: Option.Option<number>;
+		/** The hosted service's host, when the job signed in to one. */
+		readonly host: Option.Option<string>;
+	};
 	/**
 	 * The restore, whole.
 	 *
@@ -122,10 +127,20 @@ const DOT = " · ";
  * `remote` says "passthrough (Vercel)" rather than naming a port because there
  * is no local server — the run talks to Vercel's endpoint, which this action
  * does not own and does not name.
+ *
+ * `hosted` names the **host** of the service the job signed in to, and only
+ * the host: it is what tells one hosted cache from another, and a host cannot
+ * carry the userinfo, path or query a workflow may have put in `turbo-api`.
+ * `host` is read for `hosted` alone; every other backend ignores it.
  */
-export const formatTurboLine = (backend: TurboCacheBackend, port: Option.Option<number>): string => {
+export const formatTurboLine = (
+	backend: TurboCacheBackend,
+	port: Option.Option<number>,
+	host: Option.Option<string> = Option.none(),
+): string => {
 	if (backend === "none") return "disabled";
 	if (backend === "remote") return "passthrough (Vercel)";
+	if (backend === "hosted") return Option.match(host, { onNone: () => "hosted", onSome: (name) => `hosted (${name})` });
 	return `${backend}${DOT}server ready${Option.match(port, { onNone: () => "", onSome: (bound) => ` (:${bound})` })}`;
 };
 
@@ -218,7 +233,7 @@ export const buildRuntimeSummary = (facts: RuntimeSummaryFacts): string => {
 	if (Option.isSome(facts.biome)) rows.push(["Biome", facts.biome.value]);
 	if (Option.isSome(facts.bats)) rows.push(["BATS", batsCell(facts.bats.value)]);
 	if (Option.isSome(facts.kcov)) rows.push(["kcov", kcovCell(facts.kcov.value)]);
-	rows.push(["Turbo cache", formatTurboLine(facts.turbo.backend, facts.turbo.port)]);
+	rows.push(["Turbo cache", formatTurboLine(facts.turbo.backend, facts.turbo.port, facts.turbo.host)]);
 	rows.push(["Dependency cache", cacheCell(facts.cache)]);
 	rows.push(["Dependencies", facts.dependenciesInstalled ? "installed" : "skipped"]);
 

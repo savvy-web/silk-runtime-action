@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
 
 # Least-privilege GITHUB_TOKEN: the jobs only checkout and run the local action;
-# the cache backends use ACTIONS_RUNTIME_TOKEN, not GITHUB_TOKEN.
+# the embedded server uses ACTIONS_RUNTIME_TOKEN, not GITHUB_TOKEN. One job,
+# `hosted-double-build`, raises this to add `id-token: write` for itself alone.
 permissions:
   contents: read
 
@@ -90,102 +91,77 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a cross-job remote cache hit"; exit 1; }
 
-  # Job 3: S3 backend via SeaweedFS — real SigV4 signing path.
-  # SeaweedFS runs via `docker run` rather than a services: container because it
-  # needs a `server -s3` command that service containers cannot specify. With
-  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY set it rejects anonymous and
-  # mis-signed requests. MinIO was used until its images disappeared from both
-  # Docker Hub and quay.io (the upstream project is archived). The bucket is
-  # created with the runner's preinstalled AWS CLI, so no second image is pulled.
-  s3-double-build:
-    name: S3 backend double build (SeaweedFS)
+  # Job 3: the hosted cache, signed in to with this job's own OIDC token.
+  #
+  # The one job in this workflow that is granted `id-token: write`, and the
+  # grant is what it tests: the action mints a token for the service's origin,
+  # trades it for a cache token and points turbo at the service. No secret is
+  # involved, so there is nothing to configure and nothing to gate on.
+  #
+  # Skipped on a pull request from a fork. GitHub issues a fork's run no OIDC
+  # token whatever this file asks for, so the job could only ever exercise the
+  # fallback there, and `hosted-fallback` below already does that on every run.
+  # On `workflow_dispatch` there is no pull request and the condition is true.
+  # Dependabot is skipped too: whether GitHub issues an OIDC token to a
+  # Dependabot pull request run is unconfirmed, and the job must not fail the
+  # suite for that.
+  hosted-double-build:
+    name: Hosted cache double build (OIDC sign-in)
+    if: ${{ !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: __fixtures__/turbo-monorepo
     steps:
       - uses: actions/checkout@v7
-      - name: Start SeaweedFS
+      # A file inside the package, so it is part of the build's task hash: no
+      # earlier run can have put this hash in the service, so the first build
+      # has to upload it and the second can only hit what the first wrote.
+      - name: Make this run's build hash unique
         env:
-          AWS_ACCESS_KEY_ID: s3admin
-          AWS_SECRET_ACCESS_KEY: s3adminsecret
-          AWS_DEFAULT_REGION: us-east-1
-        run: |
-          docker run -d --name seaweedfs -p 9000:8333 \
-            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
-            chrislusf/seaweedfs:4.47 server -s3 -dir=/data
-          for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:9000/healthz; then echo "SeaweedFS ready"; break; fi
-            if [ "$i" -eq 60 ]; then echo "SeaweedFS did not become ready" >&2; docker logs seaweedfs; exit 1; fi
-            sleep 1
-          done
-          aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://turbo-cache
+          NONCE: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: printf '%s' "$NONCE" > packages/app/nonce.txt
       - uses: ./.github/actions/local
         id: setup
         with:
           turbo-cache: auto
           install-deps: "false"
-          turbo-s3-bucket: turbo-cache
-          turbo-s3-region: us-east-1
-          turbo-s3-endpoint: http://127.0.0.1:9000
-          turbo-s3-access-key-id: s3admin
-          turbo-s3-secret-access-key: s3adminsecret
-      - name: Assert the reported backend and port
+          turbo-api: https://cache.savvyweb.systems
+      # A hosted cache is not a local server: a backend, no port, and the
+      # service's own URL where the embedded server's loopback address would be.
+      # The token is never printed; only that one was exported.
+      - name: Assert the job signed in and turbo is pointed at the service
         env:
           BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
           PORT: ${{ steps.setup.outputs.turbo-cache-port }}
         run: |
-          [ "$BACKEND" = "s3" ] || { echo "Expected backend 's3', got '$BACKEND'"; exit 1; }
-          [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+          [ "$BACKEND" = "hosted" ] || { echo "Expected backend 'hosted', got '$BACKEND'"; exit 1; }
+          [ -z "$PORT" ] || { echo "Expected no port, got '$PORT'"; exit 1; }
+          [ "$TURBO_API" = "https://cache.savvyweb.systems" ] || { echo "Unexpected TURBO_API '$TURBO_API'"; exit 1; }
+          [ "$TURBO_TEAM" = "silk" ] || { echo "Expected TURBO_TEAM 'silk', got '$TURBO_TEAM'"; exit 1; }
+          [ -n "$TURBO_TOKEN" ] || { echo "TURBO_TOKEN was not exported"; exit 1; }
       - name: Install fixture dependencies
         run: pnpm install --frozen-lockfile
-      - name: First build (populates S3)
+      - name: First build (populates the hosted cache)
         run: pnpm exec turbo run build --remote-only
       - name: Clear local turbo state
         run: rm -rf .turbo packages/app/.turbo node_modules/.cache/turbo
-      - name: Second build (must be an S3 cache hit)
+      - name: Second build (must be a hosted cache hit)
         run: |
           OUT=$(pnpm exec turbo run build --remote-only)
           echo "$OUT"
-          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected an S3 cache hit"; exit 1; }
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a hosted cache hit"; exit 1; }
 
-  # A `secrets` context cannot be read from a job-level `if:` at all — the
-  # expression is evaluated before secrets are available to the job — so
-  # presence has to become a job *output* first. This one-step gate is the
-  # standard way to spell that, and it never prints the secret: only whether it
-  # was non-empty.
-  real-s3-configured:
-    name: Check real-S3 credentials
-    runs-on: ubuntu-latest
-    outputs:
-      configured: ${{ steps.check.outputs.configured }}
-    steps:
-      - name: Report whether the org S3 secrets are available
-        id: check
-        env:
-          BUCKET: ${{ secrets.TURBO_S3_BUCKET }}
-          REGION: ${{ secrets.TURBO_S3_REGION }}
-        run: |
-          # Both, not just the bucket: an S3 request is signed per region, so a
-          # bucket without one produces a job that runs, spawns a server and
-          # fails every cache write against a misconfigured signer — a red that
-          # says nothing about this action. Skipping is the honest answer to a
-          # half-configured repository.
-          if [ -n "$BUCKET" ] && [ -n "$REGION" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "TURBO_S3_BUCKET and TURBO_S3_REGION are not both set — skipping the real-S3 job." \
-              >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  # Job 4: the same double build against a real S3-compatible service, so the
-  # signing path is proven against something other than SeaweedFS. Forks and any
-  # repository without the org secrets skip it rather than failing.
-  real-s3-double-build:
-    name: S3 backend double build (real S3)
-    needs: real-s3-configured
-    if: needs.real-s3-configured.outputs.configured == 'true'
+  # Job 4: the same input with no `id-token` grant. The runner publishes no
+  # token service, sign-in fails with `oidc: unavailable`, and the action has
+  # to warn, start the embedded server and let the job pass: a `turbo-api` a
+  # job cannot use must cost it nothing. This is what every job in a workflow
+  # without the grant gets, and what a fork's pull request gets everywhere.
+  hosted-fallback:
+    name: Hosted cache falls back without id-token
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -197,35 +173,28 @@ jobs:
         with:
           turbo-cache: auto
           install-deps: "false"
-          # Namespaced per run so a rerun cannot be satisfied by the previous
-          # run's artifacts — the assertion is that *this* job's first build
-          # populated the bucket its second build read.
-          turbo-cache-prefix: ci/${{ github.run_id }}-${{ github.run_attempt }}/
-          turbo-s3-bucket: ${{ secrets.TURBO_S3_BUCKET }}
-          turbo-s3-region: ${{ secrets.TURBO_S3_REGION }}
-          turbo-s3-endpoint: ${{ secrets.TURBO_S3_ENDPOINT }}
-          turbo-s3-access-key-id: ${{ secrets.TURBO_S3_ACCESS_KEY_ID }}
-          turbo-s3-secret-access-key: ${{ secrets.TURBO_S3_SECRET_ACCESS_KEY }}
-      - name: Assert the reported backend and port
+          turbo-api: https://cache.savvyweb.systems
+      - name: Assert the embedded server took over
         env:
           BACKEND: ${{ steps.setup.outputs.turbo-cache-backend }}
           PORT: ${{ steps.setup.outputs.turbo-cache-port }}
         run: |
-          [ "$BACKEND" = "s3" ] || { echo "Expected backend 's3', got '$BACKEND'"; exit 1; }
+          [ "$BACKEND" = "github" ] || { echo "Expected backend 'github', got '$BACKEND'"; exit 1; }
           [ "$PORT" = "41230" ] || { echo "Expected port '41230', got '$PORT'"; exit 1; }
+          [ "$TURBO_API" = "http://127.0.0.1:41230" ] || { echo "Unexpected TURBO_API '$TURBO_API'"; exit 1; }
       - name: Install fixture dependencies
         run: pnpm install --frozen-lockfile
-      - name: First build (populates the bucket)
+      - name: First build (populates the embedded cache)
         run: pnpm exec turbo run build --remote-only
       - name: Clear local turbo state
         run: rm -rf .turbo packages/app/.turbo node_modules/.cache/turbo
-      - name: Second build (must be a real-S3 cache hit)
+      - name: Second build (must be an embedded cache hit)
         run: |
           OUT=$(pnpm exec turbo run build --remote-only)
           echo "$OUT"
-          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a real-S3 cache hit"; exit 1; }
+          echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a remote cache hit"; exit 1; }
 
-  # Job 6: the install's own lifecycle scripts reach the remote cache.
+  # Job 5: the install's own lifecycle scripts reach the remote cache.
   #
   # Every job above passes `install-deps: false` and builds from a later step,
   # so none of them runs turbo *inside* the action's install — the one place
@@ -304,7 +273,7 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -E ">>> FULL TURBO|cache hit" || { echo "Expected a remote hit on the artifact the prepare build uploaded"; exit 1; }
 
-  # Job 7: the other side of job 6. With `ignore-scripts` nothing during the
+  # Job 6: the other side of job 5. With `ignore-scripts` nothing during the
   # install can use the cache, so the action keeps the late start — which this
   # cannot observe — but the cache must still come up for the steps after it.
   ignore-scripts-install:

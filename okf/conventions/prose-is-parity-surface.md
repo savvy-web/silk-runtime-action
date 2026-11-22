@@ -7,7 +7,7 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: format-src
     resource: ../../src/summary/format.ts
@@ -29,7 +29,7 @@ sources:
     resource: ../../src/schema/outputs.ts
 integrity:
   generated:
-    body: ed0cdfa143030dac
+    body: 33a93543e38641fb
 ---
 
 # Prose is parity surface
@@ -57,7 +57,7 @@ the same today.
 `summary/format.ts` is pure and service-free for two reasons. The first is the general one
 that applies to every host-argument-driven module in this action (`steps/cache-config.ts`,
 `turbo-cache/activation.ts`, `turbo-cache/meta.ts`, every descriptor): purity is what lets a
-Linux test pin the Windows store paths, the arch segment, an S3 activation, and a
+Linux test pin the Windows store paths, the arch segment, a hosted activation, and a
 codepoint-verbatim log line without a runner, a filesystem, or a monkey-patched `process`.
 
 The second reason is specific to the formatters, and it is the reason this file exists: **the

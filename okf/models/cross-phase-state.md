@@ -8,7 +8,7 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: state
     resource: ../../src/state.ts
@@ -18,7 +18,7 @@ sources:
     resource: ../../__test__/unit/state.test.ts
 integrity:
   generated:
-    body: 9cea61548325729c
+    body: 685b27bd055d110b
 ---
 
 # Cross-phase state — STATE_KEYS and the four Schema.Class bundles
@@ -141,12 +141,16 @@ first time it runs, whether or not it downloaded anything into it.
 export class TurboServerState extends Schema.Class<TurboServerState>("TurboServerState")({
   pid: ProcessId,
   port: Schema.Number,
-  backend: Schema.Literals(["github", "s3"]),
+  backend: Schema.Literal("github"),
   logFile: Schema.String,
 }) {}
 ```
 
-(`state.ts:92-97`)
+(`state.ts:95-100`)
+
+`backend` has one value, the GitHub Actions cache. It stays in the state because `post`
+names it in the line that reports what the server served. A run that signed in to a hosted
+cache writes no `TurboServerState` at all: there is no process for `post` to stop.
 
 `pid` is `ProcessId`, not a bare `Schema.Number`. The value crosses the phase boundary as text,
 and a truncated state file, an absent key, or `Number("")` all decode to `0` — `ProcessId`'s
@@ -154,7 +158,7 @@ own schema refuses that value rather than letting `0` reach `DetachedProcess.rea
 reaping pid `0` is a different and much worse mistake than reaping nothing. `post` reads this
 state first and unconditionally, ahead of every other branch that can return early — see
 [turbo-artifacts-protocol](../interfaces/turbo-artifacts-protocol.md) and
-[embedded-turbo-server](../decisions/embedded-turbo-server.md) for the server this state
+[turbo-cache-backends](../decisions/turbo-cache-backends.md) for the server this state
 tears down.
 
 ### `KcovCacheState` — the kcov build tree
@@ -167,7 +171,7 @@ export class KcovCacheState extends Schema.Class<KcovCacheState>("KcovCacheState
 }) {}
 ```
 
-(`state.ts:120-124`)
+(`state.ts:123-127`)
 
 Deliberately **not** folded into `CacheState`, and given its own `STATE_KEYS` entry, because
 the two are keyed on entirely different things: the dependency cache on lockfile hashes and

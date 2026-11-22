@@ -2,11 +2,11 @@
 title: "`Secret.adopt` looks like the right member for the turbo server's config reader, and is wrong twice over"
 description: Why the kit's Secret.adopt is the wrong fit for readServerConfig even though its shape matches the detached worker's Redacted.make calls exactly.
 type: Gotcha
-status: draft
+status: deprecated
 stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 resource: ../../src/turbo-cache/server-config.ts
 sources:
   - id: server-config
@@ -16,10 +16,15 @@ tags:
   - dx
 integrity:
   generated:
-    body: 594af42b7183ac9e
+    body: dfa0e657d704c222
 ---
 
 # `Secret.adopt` looks like the right member for the turbo server's config reader, and is wrong twice over
+
+Deprecated: the trap is gone. `s3ConfigFrom` and every `Redacted.make(read(env, …))` call
+site were removed with the S3 backend, and `readServerConfig` now reads one credential,
+`TURBOGHA_TOKEN`, as a plain string and fails when it is empty, which is `Secret.adopt`'s own
+posture rather than its opposite. The text below describes code that no longer exists.
 
 A reader who opens `@effected/github-actions` looking for a way to re-wrap a plaintext
 environment variable as a redacted value will find `Secret.adopt` and reasonably conclude it

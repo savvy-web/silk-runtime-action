@@ -166,6 +166,22 @@ describe("TurboServerState", () => {
 		}),
 	);
 
+	it.effect("rejects the retired s3 backend", () =>
+		Effect.gen(function* () {
+			// The embedded server has one store now; state naming another was
+			// written by something this version does not understand.
+			const exit = yield* Effect.exit(
+				Schema.decodeUnknownEffect(TurboServerState)({
+					pid: 12345,
+					port: 41230,
+					backend: "s3",
+					logFile: "/tmp/silk-turbo-server.log",
+				}),
+			);
+			assert.strictEqual(exit._tag, "Failure");
+		}),
+	);
+
 	it.effect("rejects an unknown backend", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(

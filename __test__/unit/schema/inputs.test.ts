@@ -66,19 +66,27 @@ describe("loadInputs", () => {
 			assert.deepStrictEqual(inputs.additionalLockfiles, []);
 		}).pipe(Effect.provide(ActionInput.layer({}))),
 	);
-	it.effect("parses multiline additional-lockfiles and s3 fields", () =>
+	it.effect("parses multiline additional-lockfiles", () =>
 		Effect.gen(function* () {
 			const inputs = yield* loadInputs;
 			assert.deepStrictEqual(inputs.additionalLockfiles, ["deno.lock", "**/bun.lock"]);
-			assert.strictEqual(Option.isSome(inputs.turboS3Bucket), true);
-		}).pipe(
-			Effect.provide(
-				ActionInput.layer({
-					"additional-lockfiles": "deno.lock\n**/bun.lock",
-					"turbo-s3-bucket": "my-bucket",
-				}),
-			),
-		),
+		}).pipe(Effect.provide(ActionInput.layer({ "additional-lockfiles": "deno.lock\n**/bun.lock" }))),
+	);
+	it.effect("reads turbo-api as absent when the workflow leaves it out", () =>
+		Effect.gen(function* () {
+			// No default: the action is public, and the shared workflows pass the URL.
+			assert.deepStrictEqual((yield* loadInputs).turboApi, Option.none());
+		}).pipe(Effect.provide(ActionInput.layer({}))),
+	);
+	it.effect("reads an empty turbo-api, which is what the runner publishes, as absent", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual((yield* loadInputs).turboApi, Option.none());
+		}).pipe(Effect.provide(ActionInput.layer({ "turbo-api": "" }))),
+	);
+	it.effect("reads a supplied turbo-api verbatim", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual((yield* loadInputs).turboApi, Option.some("https://cache.savvyweb.systems"));
+		}).pipe(Effect.provide(ActionInput.layer({ "turbo-api": "https://cache.savvyweb.systems" }))),
 	);
 	it.effect("normalizes turbo-cache to off only for the literal value 'off'", () =>
 		Effect.gen(function* () {
@@ -138,6 +146,18 @@ describe("bats and kcov inputs", () => {
 });
 
 describe("INPUT_NAMES", () => {
+	it("names turbo-api and no turbo-s3 input", () => {
+		assert.include(INPUT_NAMES, "turbo-api");
+		assert.deepStrictEqual(
+			INPUT_NAMES.filter((name) => name.startsWith("turbo-s3")),
+			[],
+		);
+		assert.deepStrictEqual(
+			declaredInputNames().filter((name) => name.startsWith("turbo-s3")),
+			[],
+		);
+	});
+
 	it("matches the inputs action.yml declares", () => {
 		assert.deepStrictEqual([...INPUT_NAMES].sort(), [...declaredInputNames()].sort());
 	});

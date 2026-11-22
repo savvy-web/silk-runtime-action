@@ -27,7 +27,13 @@ const facts = (overrides: Partial<SummaryFacts> = {}): SummaryFacts => ({
 		restoredKey: Option.some("silk-linux-x64-abc"),
 		lockfiles: ["pnpm-lock.yaml"],
 	}),
-	turboCache: { backend: "github", port: Option.some(41230), state: Option.none(), environment: {} },
+	turboCache: {
+		backend: "github",
+		port: Option.some(41230),
+		state: Option.none(),
+		host: Option.none(),
+		environment: {},
+	},
 	dependenciesInstalled: true,
 	bats: Option.none(),
 	kcov: Option.none(),
@@ -64,6 +70,24 @@ const harness = (options: { readonly summary?: (content: string) => Effect.Effec
 };
 
 describe("writeSummary", () => {
+	it.effect("reports a hosted cache by its host", () => {
+		const { layer, panels } = harness();
+		return Effect.gen(function* () {
+			yield* writeSummary(
+				facts({
+					turboCache: {
+						backend: "hosted",
+						port: Option.none(),
+						state: Option.none(),
+						host: Option.some("cache.savvyweb.systems"),
+						environment: {},
+					},
+				}),
+			);
+			assert.include(panels[0], "| Turbo cache | hosted (cache.savvyweb.systems) |");
+		}).pipe(Effect.provide(layer));
+	});
+
 	it.effect("writes the rendered panel to the job summary", () => {
 		const { panels, layer } = harness();
 		return Effect.gen(function* () {
