@@ -33,8 +33,9 @@ consuming repository's own root `package.json`. It reads `devEngines.packageMana
 `devEngines.runtime` — absolute versions only, no semver ranges — and from that one
 manifest installs Node.js, Bun and/or Deno from official sources, provisions the pinned
 package manager, restores or seeds a dependency cache, and optionally installs the Biome
-CLI, a BATS shell-testing toolchain with kcov coverage, and an embedded Turborepo
-remote-cache server.[^domain-schema] It is built on Effect v4 over the first-party
+CLI, a BATS shell-testing toolchain with kcov coverage, and a Turborepo remote cache: a
+hosted service the job signs in to with its GitHub OIDC token, or an embedded
+server.[^domain-schema] It is built on Effect v4 over the first-party
 `@effected/*` suite, which implements the GitHub Actions runner protocol natively, so the
 action ships with zero `@actions/*` dependencies.[^program]
 
@@ -48,7 +49,9 @@ posture across all three optional toolchains.[^runtime-installation-toolchain] T
 Turborepo remote-cache server is the one exception that runs continuously rather than
 provisioning-and-exiting, and even that server is a detached, self-contained HTTP process
 this action spawns and reaps — never a build participant, and never itself invoking
-`turbo`.[^turbo-server-entry]
+`turbo`.[^turbo-server-entry] A hosted Turborepo cache is outside the boundary
+altogether: the action signs the job in and exports what turbo reads, and the service
+itself lives in another repository.[^turbo-cache-step]
 
 Configuration is exclusively `package.json`'s `devEngines`; there are no runtime or
 package-manager version inputs, so `package.json` and workflow YAML cannot drift apart from
@@ -67,10 +70,14 @@ omitted.[^action-yml]
   `packageManager` field in `package.json` is ignored by the decode.[^domain-schema]
 - **The action never runs the tooling it installs.** It provisions and exports BATS, kcov
   and Biome; the consuming workflow's own steps invoke them.[^runtime-installation-toolchain]
-- **No Vercel account required for Turborepo caching.** The embedded remote-cache server
-  gives a consumer cross-job artifact sharing over storage the runner already has (GitHub
-  Actions cache or S3); passthrough to a real Vercel account is supported but never
+- **No Vercel account and no stored secret required for Turborepo caching.** The embedded
+  remote-cache server gives a consumer cross-job artifact sharing over storage the runner
+  already has, the GitHub Actions cache; a hosted cache is signed in to with the job's own
+  OIDC token; passthrough to a real Vercel account is supported but never
   required.[^turbo-cache-step]
+- **The cache never fails a job.** A hosted cache that cannot be signed in to, and an
+  embedded server that will not start, each cost a warning and nothing
+  else.[^turbo-cache-step]
 
 [^domain-schema]: ../src/schema/domain.ts
 [^program]: ../src/program.ts

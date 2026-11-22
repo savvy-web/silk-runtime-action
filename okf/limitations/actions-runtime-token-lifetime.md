@@ -49,8 +49,9 @@ unreadable envelope never reaches the classifier at all — that is an ordinary 
 an auth failure, and folding it into the same warning would make the message fire on a stale
 entry instead of an expired token.[^server-config]
 
-The **S3 backend is unaffected**: it authenticates with its own long-lived credentials rather
-than the runner's token, so nothing about this limitation applies to it.[^server-config]
+A job that signed in to a **hosted cache is unaffected**: it starts no embedded server and
+holds no runtime token. Its own token has a lifetime too; see
+[hosted-cache-reach](./hosted-cache-reach.md).
 
 ## Why this is acceptable
 

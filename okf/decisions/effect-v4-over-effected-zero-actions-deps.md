@@ -46,10 +46,11 @@ carries **zero `@actions/*` dependencies**, direct or transitive.
 In Effect v4 the former `@effect/platform` is dissolved into core `effect`:
 `FileSystem`, `Path` and `HttpClient` all import from `effect` itself, and
 only the Node platform layers (`NodeFileSystem`, `NodeHttpClient.layerUndici`)
-ship separately, in `@effect/platform-node`. `layers/app.ts` composes exactly
-two extra services on top of what `ActionRuntime.layer` already
-provides — `ActionCache`, `PackageManagerInstaller` and `ToolInstaller` for
-`MainLive`, `ActionCache` alone for `PostLive`[^layers-app] — because
+ship separately, in `@effect/platform-node`. `layers/app.ts` composes only
+what the kit keeps out of `ActionRuntime.layer` — `ActionCache`,
+`OidcTokenIssuer`, `PackageManagerInstaller`, `ToolInstaller` and
+`WorkspaceDiscovery` for `MainLive`, `ActionCache` alone for
+`PostLive`[^layers-app] — because
 `Action.run`'s own runtime layer already supplies `ActionEnvironment`,
 `ActionLogger`, `ActionOutputs`, `ActionState`, `HttpClient` and the Node
 service bundle.

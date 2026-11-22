@@ -212,7 +212,7 @@ Only `.turbo/cache` joins the archive. `.turbo/runs`,
 `.turbo/cookies`, and `.turbo/daemon` are deliberately excluded — a restored stale run summary
 would break "latest run = current run" detection in tooling that parses `turbo --summarize`
 output. This file-cache layer and the embedded turbo remote cache (see
-[embedded-turbo-server](../decisions/embedded-turbo-server.md)) are **complementary, not
+[turbo-cache-backends](../decisions/turbo-cache-backends.md)) are **complementary, not
 alternatives**: the remote cache is primary, and the file layer is a fast local restore on top
 of it. Neither is a candidate for removal in favor of the other.
 

@@ -61,7 +61,15 @@ committed.[^fixtures-claude]
 | Workflow | Jobs | Covers |
 | --- | --- | --- |
 | `test.yml` (`Fixtures`) | `test-node-create-cache`, `test-node-restore-cache`, `test-feature-detection`, `test-additional-inputs`, plus an aggregating `summary` | Cold install + cache save; cache restore on a second run; Biome/turbo auto-detection; `additional-lockfiles`/`additional-cache-paths` (newline-separated is the only supported multiline format) |
-| `test-turbo-cache.yml` | `double-build`, `dependent-job-hit`, `s3-double-build`, `real-s3-configured`, `real-s3-double-build` | Within-job double build (GitHub backend), a cross-job cache hit via `needs:`, a SeaweedFS-backed S3 double build, a real-S3 secrets-presence gate, and a real-S3 double build[^test-turbo-yml] |
+| `test-turbo-cache.yml` | `double-build`, `dependent-job-hit`, `hosted-double-build`, `hosted-fallback`, `prepare-script-build`, `ignore-scripts-install` | Within-job double build (GitHub backend); a cross-job cache hit via `needs:`; a double build against the hosted cache after OIDC sign-in, the one job granted `id-token: write` and skipped on a fork's pull request; the same `turbo-api` with no `id-token` grant, which must warn, start the embedded server and pass; a `prepare`-script build during the action's own install, on all three operating systems; and an `ignore-scripts` install that must still start the cache[^test-turbo-yml] |
+
+The two hosted jobs were added on the branch `feat/hosted-turbo-cache` and, as of
+2026-11-22, have never run: the branch is local and unpushed, so nothing here is proven in
+CI yet. `hosted-double-build` writes a per-run nonce into the fixture package so its build
+hash is one no earlier run can have uploaded, then asserts `turbo-cache-backend` is
+`hosted`, the port output is empty, `TURBO_API` is the service's URL, `TURBO_TEAM` is `silk`
+and `TURBO_TOKEN` is set. `hosted-fallback` asserts the backend is `github`, the port is
+`41230` and `TURBO_API` is the loopback address.[^test-turbo-yml]
 
 Both `on: pull_request` filters watch `main`, `dev` and `changeset-release/main` — the
 third spelled the way changesets spells it, singular `changeset`. It read
@@ -134,7 +142,7 @@ expected item by definition. An empty **expected** is still a deliberate skip �
 **A `uses:` step runs at `GITHUB_WORKSPACE` regardless of `defaults.run.working-directory`.**
 A `run:` step honours the default; a `uses:` step does not. `test-turbo-cache.yml`'s jobs
 set `install-deps: "false"` on every fixture-scoped `uses: ./.github/actions/local` step
-(for example `.github/workflows/test-turbo-cache.yml:18-27`) and let a `run:` step — which
+(for example `.github/workflows/test-turbo-cache.yml:17-32`) and let a `run:` step — which
 does honour the working directory — install the fixture's own dependencies instead. See
 [uses-step-ignores-working-directory](../gotchas/uses-step-ignores-working-directory.md)
 for the gotcha this fact produces when it is missed.
@@ -163,8 +171,8 @@ silently omitted from the report.
 
 `/* v8 ignore */` is reserved for code only a real runner can execute: `main.ts`'s
 `Action.run` call (`src/main.ts:20-23`), `post.ts`'s entry-point guard
-(`src/post.ts:396-399`), and the whole body of `turbo-server.ts`
-(`src/turbo-server.ts:26-146`). Each of those is covered by the e2e matrices instead.
+(`src/post.ts:466-469`), and the whole body of `turbo-server.ts`
+(`src/turbo-server.ts:27-156`). Each of those is covered by the e2e matrices instead.
 
 **Tooling note:** the vitest-agent coverage tool needs the project named explicitly
 (`@savvy-web/silk-runtime-action`); the no-argument default reports nothing and looks like

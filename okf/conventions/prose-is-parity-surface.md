@@ -57,7 +57,7 @@ the same today.
 `summary/format.ts` is pure and service-free for two reasons. The first is the general one
 that applies to every host-argument-driven module in this action (`steps/cache-config.ts`,
 `turbo-cache/activation.ts`, `turbo-cache/meta.ts`, every descriptor): purity is what lets a
-Linux test pin the Windows store paths, the arch segment, an S3 activation, and a
+Linux test pin the Windows store paths, the arch segment, a hosted activation, and a
 codepoint-verbatim log line without a runner, a filesystem, or a monkey-patched `process`.
 
 The second reason is specific to the formatters, and it is the reason this file exists: **the

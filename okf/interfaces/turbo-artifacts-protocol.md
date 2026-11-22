@@ -24,8 +24,9 @@ The embedded cache server implements Turbo's `/v8/artifacts` remote-cache contra
 over a generic `BlobStore`. This is the contract a `turbo run` step depends on once it is pointed at
 the server through `TURBO_API` — see
 [turbo-worker-environment](./turbo-worker-environment.md) for how the server itself is
-configured, and [embedded-turbo-server](../decisions/embedded-turbo-server.md) for why it
-exists at all.
+configured, and [turbo-cache-backends](../decisions/turbo-cache-backends.md) for why it
+exists at all. A job that signed in to a hosted cache talks to that service instead, and
+nothing here describes it.
 
 ## Routes
 
