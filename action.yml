@@ -92,7 +92,7 @@ outputs:
   turbo-enabled:
     description: Whether Turbo configuration was detected (true | false)
   turbo-cache-backend:
-    description: Active turbo cache backend (github | s3 | remote | none)
+    description: Active turbo cache backend (github | hosted | remote | none)
   turbo-cache-port:
     description: Local port the embedded turbo cache server bound to (empty when not started)
   cache-hit:

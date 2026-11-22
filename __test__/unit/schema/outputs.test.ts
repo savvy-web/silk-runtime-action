@@ -139,7 +139,7 @@ describe("emitOutputs", () => {
 				turboEnabled: true,
 				// The two enum fields cannot take a sentinel, so they take values
 				// distinct from each other and from every default.
-				turboCacheBackend: "s3",
+				turboCacheBackend: "hosted",
 				turboCachePort: "sentinel-7",
 				cacheHit: "partial",
 				storeCacheHit: "true",
@@ -165,7 +165,7 @@ describe("emitOutputs", () => {
 				"kcov-version": "sentinel-12",
 				"kcov-cache-hit": "true",
 				"turbo-enabled": "true",
-				"turbo-cache-backend": "s3",
+				"turbo-cache-backend": "hosted",
 				"turbo-cache-port": "sentinel-7",
 				"cache-hit": "partial",
 				"store-cache-hit": "true",

@@ -12,11 +12,14 @@ import {
 	DetachedNotReadyError,
 	DetachedProcess,
 	DetachedSpawnFailedError,
+	OidcTokenError,
+	OidcTokenIssuer,
 	ProcessId,
 } from "@effected/github-actions";
-import { Effect, FileSystem, Layer, Logger, Option, Redacted } from "effect";
+import { Effect, Fiber, FileSystem, Layer, Logger, Option, Redacted } from "effect";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
+import { TestClock } from "effect/testing";
 
 import type { Inputs } from "../../../src/schema/inputs.js";
 import { STATE_KEYS, TurboServerState } from "../../../src/state.js";
@@ -99,6 +102,12 @@ interface Recorded {
 	readonly order: Array<string>;
 	/** Every log line the step emitted. */
 	readonly logs: Array<string>;
+	/** The subset of `logs` emitted at warning level. */
+	readonly warnings: Array<string>;
+	/** Audiences an OIDC token was minted for, in order. */
+	readonly audiences: Array<string | undefined>;
+	/** Requests the step itself issued (sign-in), as `METHOD url`, in order. */
+	readonly requests: Array<string>;
 	/**
 	 * The readiness probes handed to `awaitReady`.
 	 *
@@ -118,6 +127,9 @@ const recorder = (): Recorded => ({
 	saved: [],
 	order: [],
 	logs: [],
+	warnings: [],
+	audiences: [],
+	requests: [],
 	probes: [],
 });
 
@@ -163,26 +175,78 @@ const detachedTest = (
 			})) as unknown as DetachedProcessOps["awaitReady"],
 	});
 
+/** The hosted service a shared workflow names. */
+const HOSTED_API = "https://cache.savvyweb.systems";
+
+/** The job's OIDC token, which nothing this step logs or returns may contain. */
+const OIDC_TOKEN = "oidc-header.oidc-payload.oidc-signature";
+
+/** The cache token a successful sign-in answers with. */
+const CACHE_TOKEN = "cache-header.cache-payload.cache-signature";
+
+/** A marker a refusal's body carries, so a test can prove the body went nowhere. */
+const BODY_MARKER = "body-marker-4c1e";
+
 /**
- * An `HttpClient` that dies if the step itself issues a request.
+ * How the hosted service answers the step's sign-in.
  *
  * @remarks
- * The step never runs the probe — it hands it to `awaitReady`, which this
- * suite's seam captures without running. So `HttpClient` is in the step's `R`
- * statically and unused dynamically, and the honest default is a client that
- * fails loudly rather than one that answers. The cases that exercise the probe
- * run the captured value themselves, against `httpClientStub`.
+ * Absent, the step is expected to issue no request at all and the client dies
+ * if it does: the embedded and passthrough paths never run the readiness probe
+ * themselves (they hand it to `awaitReady`, which this suite's seam captures
+ * without running), and `off` sends nothing by definition.
  */
-const httpClientUnused: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(
-	HttpClient.HttpClient,
-	HttpClient.make(() => Effect.die(new Error("the step issued an HTTP request; only the captured probe should"))),
-);
+type HostedAnswer =
+	| { readonly kind: "ok" }
+	| { readonly kind: "status"; readonly status: number }
+	| { readonly kind: "malformed" }
+	| { readonly kind: "refused-connection" }
+	| { readonly kind: "never" };
+
+/** What a hosted test wires: the issuer's answer and the service's. */
+interface HostedDoubles {
+	readonly token?: Effect.Effect<Redacted.Redacted<string>, OidcTokenError>;
+	readonly answer?: HostedAnswer;
+}
+
+const signInClient = (recorded: Recorded, answer: HostedAnswer | undefined): Layer.Layer<HttpClient.HttpClient> =>
+	Layer.succeed(
+		HttpClient.HttpClient,
+		HttpClient.make((request, url) => {
+			recorded.requests.push(`${request.method} ${url.toString()}`);
+			recorded.order.push("request");
+			if (answer === undefined) {
+				return Effect.die(new Error("the step issued an HTTP request; only the captured probe should"));
+			}
+			const respond = (status: number, body: unknown) =>
+				Effect.succeed(HttpClientResponse.fromWeb(request, new Response(JSON.stringify(body), { status })));
+			switch (answer.kind) {
+				case "ok":
+					return respond(200, { token: CACHE_TOKEN, expiresAt: 1_800_000_000 });
+				case "status":
+					return respond(answer.status, { code: "refused", message: BODY_MARKER });
+				case "malformed":
+					return respond(200, { message: BODY_MARKER });
+				case "never":
+					return Effect.never;
+				case "refused-connection":
+					return Effect.fail(
+						new HttpClientError.HttpClientError({
+							reason: new HttpClientError.TransportError({
+								request,
+								cause: new Error(`connect ECONNREFUSED while sending Bearer ${OIDC_TOKEN}`),
+							}),
+						}),
+					);
+			}
+		}),
+	);
 
 /** The services `startTurboCache` needs, all recording into `recorded`. */
 const layer = (
 	recorded: Recorded,
-	options: { readonly save?: Effect.Effect<void, ActionStateError> } = {},
-): Layer.Layer<ActionOutputs | ActionState | HttpClient.HttpClient> =>
+	options: { readonly save?: Effect.Effect<void, ActionStateError>; readonly hosted?: HostedDoubles } = {},
+): Layer.Layer<ActionOutputs | ActionState | HttpClient.HttpClient | OidcTokenIssuer> =>
 	Layer.mergeAll(
 		ActionOutputs.layerTest({
 			exportVariable: (name, value) =>
@@ -190,7 +254,11 @@ const layer = (
 					recorded.exported.push([name, value]);
 					recorded.order.push(`export:${name}`);
 				}),
-			setSecret: (value) => Effect.sync(() => void recorded.masked.push(value)),
+			setSecret: (value) =>
+				Effect.sync(() => {
+					recorded.masked.push(value);
+					recorded.order.push(`mask:${value}`);
+				}),
 		}),
 		ActionState.layerTest({
 			save: ((key: string, value: TurboServerState) =>
@@ -200,8 +268,25 @@ const layer = (
 					return options.save ?? Effect.void;
 				})) as ActionState["Service"]["save"],
 		}),
-		Logger.layer([Logger.make(({ message }) => void recorded.logs.push(String(message)))]),
-		httpClientUnused,
+		Logger.layer([
+			Logger.make(({ message, logLevel }) => {
+				recorded.logs.push(String(message));
+				if (logLevel === "Warn") recorded.warnings.push(String(message));
+			}),
+		]),
+		signInClient(recorded, options.hosted?.answer),
+		// With no hosted doubles the issuer is the kit's bare double, whose `token`
+		// dies naming itself: a run that was not meant to sign in must not mint.
+		options.hosted === undefined
+			? OidcTokenIssuer.layerTest()
+			: OidcTokenIssuer.layerTest({
+					token: (audience) =>
+						Effect.suspend(() => {
+							recorded.audiences.push(audience);
+							recorded.order.push("mint");
+							return options.hosted?.token ?? Effect.succeed(Redacted.make(OIDC_TOKEN));
+						}),
+				}),
 	);
 
 /** Runs the step over recording doubles and hands back both halves. */
@@ -212,6 +297,7 @@ const run = (
 		readonly detached?: DetachedProcessOps;
 		readonly save?: Effect.Effect<void, ActionStateError>;
 		readonly port?: number;
+		readonly hosted?: HostedDoubles;
 	} = {},
 ): Effect.Effect<{ readonly started: StartedTurboCache; readonly recorded: Recorded }, TurboCacheError> =>
 	Effect.suspend(() => {
@@ -224,7 +310,12 @@ const run = (
 			...(args.port === undefined ? {} : { port: args.port }),
 		}).pipe(
 			Effect.map((started) => ({ started, recorded })),
-			Effect.provide(layer(recorded, args.save === undefined ? {} : { save: args.save })),
+			Effect.provide(
+				layer(recorded, {
+					...(args.save === undefined ? {} : { save: args.save }),
+					...(args.hosted === undefined ? {} : { hosted: args.hosted }),
+				}),
+			),
 		);
 	});
 
@@ -447,6 +538,278 @@ describe("startTurboCache: passthrough", () => {
 
 			assert.strictEqual(started.backend, "none");
 			assert.notInclude(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
+		}),
+	);
+});
+
+describe("startTurboCache: hosted", () => {
+	const hostedInputs = (overrides: Partial<Inputs> = {}): Inputs =>
+		inputs({ turboApi: Option.some(`${HOSTED_API}/`), ...overrides });
+
+	it.effect("hosted: exports the three variables and starts no server", () =>
+		Effect.gen(function* () {
+			const { started, recorded } = yield* run({ inputs: hostedInputs(), hosted: { answer: { kind: "ok" } } });
+
+			assert.deepStrictEqual(recorded.exported, [
+				["TURBO_API", HOSTED_API],
+				["TURBO_TOKEN", CACHE_TOKEN],
+				["TURBO_TEAM", "silk"],
+			]);
+			assert.deepStrictEqual(recorded.spawns, []);
+			assert.deepStrictEqual(recorded.saved, []);
+			assert.strictEqual(started.backend, "hosted");
+			assert.strictEqual(Option.isNone(started.port), true);
+			assert.strictEqual(Option.isNone(started.state), true);
+			assert.deepStrictEqual(started.host, Option.some("cache.savvyweb.systems"));
+			// One token, minted for the origin; one request, the trade.
+			assert.deepStrictEqual(recorded.audiences, [HOSTED_API]);
+			assert.deepStrictEqual(recorded.requests, [`POST ${HOSTED_API}/auth/github`]);
+		}),
+	);
+
+	it.effect("hosted: the same variables are handed to the install child", () =>
+		Effect.gen(function* () {
+			const { started } = yield* run({ inputs: hostedInputs(), hosted: { answer: { kind: "ok" } } });
+			assert.deepStrictEqual(started.environment, {
+				TURBO_API: HOSTED_API,
+				TURBO_TOKEN: CACHE_TOKEN,
+				TURBO_TEAM: "silk",
+			});
+		}),
+	);
+
+	it.effect("hosted: the cache token is masked before anything is exported", () =>
+		Effect.gen(function* () {
+			const { recorded } = yield* run({ inputs: hostedInputs(), hosted: { answer: { kind: "ok" } } });
+
+			const masked = recorded.order.indexOf(`mask:${CACHE_TOKEN}`);
+			assert.isAtLeast(masked, 0);
+			for (const name of ["TURBO_API", "TURBO_TOKEN", "TURBO_TEAM"]) {
+				assert.isBelow(masked, recorded.order.indexOf(`export:${name}`), name);
+			}
+			// And after the trade it came from: there is no earlier point to mask at.
+			assert.isBelow(recorded.order.indexOf("request"), masked);
+		}),
+	);
+
+	it.effect("hosted: says where the cache is, in the panel's own words", () =>
+		Effect.gen(function* () {
+			const { recorded } = yield* run({ inputs: hostedInputs(), hosted: { answer: { kind: "ok" } } });
+			assert.include(recorded.logs, "hosted (cache.savvyweb.systems)");
+			assert.deepStrictEqual(recorded.warnings, []);
+		}),
+	);
+
+	it.effect("hosted: never logs the cache token or the OIDC token on success", () =>
+		Effect.gen(function* () {
+			const { recorded } = yield* run({ inputs: hostedInputs(), hosted: { answer: { kind: "ok" } } });
+			const text = recorded.logs.join("\n");
+			assert.notInclude(text, CACHE_TOKEN);
+			assert.notInclude(text, OIDC_TOKEN);
+		}),
+	);
+
+	/** Every way sign-in fails, with the words its warning has to carry. */
+	const failures: ReadonlyArray<{
+		readonly name: string;
+		readonly inputs: Inputs;
+		readonly hosted: HostedDoubles;
+		readonly words: ReadonlyArray<string>;
+		/** Requests the step is allowed to have issued before giving up. */
+		readonly requests: number;
+	}> = [
+		{
+			name: "notHttps",
+			inputs: inputs({ turboApi: Option.some("http://cache.savvyweb.systems") }),
+			hosted: { answer: { kind: "ok" } },
+			words: ["notHttps"],
+			requests: 0,
+		},
+		{
+			name: "notHttps (not a URL)",
+			inputs: inputs({ turboApi: Option.some("cache.savvyweb.systems") }),
+			hosted: { answer: { kind: "ok" } },
+			words: ["notHttps"],
+			requests: 0,
+		},
+		{
+			name: "oidc",
+			inputs: hostedInputs(),
+			hosted: { token: Effect.fail(new OidcTokenError({ reason: "unavailable", detail: BODY_MARKER })) },
+			words: ["oidc", "unavailable"],
+			requests: 0,
+		},
+		{
+			name: "refused",
+			inputs: hostedInputs(),
+			hosted: { answer: { kind: "status", status: 403 } },
+			words: ["refused", "403"],
+			requests: 1,
+		},
+		{
+			name: "malformed",
+			inputs: hostedInputs(),
+			hosted: { answer: { kind: "malformed" } },
+			words: ["malformed"],
+			requests: 1,
+		},
+		{
+			name: "transport",
+			inputs: hostedInputs(),
+			hosted: { answer: { kind: "refused-connection" } },
+			words: ["transport"],
+			requests: 1,
+		},
+	];
+
+	for (const failure of failures) {
+		it.effect(
+			`hosted: sign-in fails (${failure.name}) → one warning naming the reason, then the embedded server as before`,
+			() =>
+				Effect.gen(function* () {
+					const { started, recorded } = yield* run({ inputs: failure.inputs, hosted: failure.hosted });
+
+					assert.lengthOf(recorded.warnings, 1);
+					for (const word of failure.words) assert.include(recorded.warnings[0], word);
+					assert.include(recorded.warnings[0], "embedded cache server");
+					assert.lengthOf(recorded.requests, failure.requests);
+
+					// The embedded server, exactly as a run with no turbo-api gets it.
+					assert.lengthOf(recorded.spawns, 1);
+					assert.strictEqual(started.backend, "github");
+					assert.strictEqual(Option.getOrThrow(started.port), 41230);
+					assert.strictEqual(Option.isNone(started.host), true);
+					assert.strictEqual(exported(recorded, "TURBO_API"), "http://127.0.0.1:41230");
+					const credential = (recorded.spawns[0] as DetachedSpawnOptions).env?.TURBOGHA_TOKEN;
+					assert.strictEqual(exported(recorded, "TURBO_TOKEN"), credential);
+					assert.strictEqual(exported(recorded, "TURBO_TEAM"), credential);
+					assert.lengthOf(recorded.saved, 1);
+					assert.include(recorded.logs, "github · server ready (:41230)");
+				}),
+		);
+	}
+
+	it.effect("hosted: sign-in fails (timeout) → one warning naming the reason, then the embedded server as before", () =>
+		Effect.gen(function* () {
+			const recorded = recorder();
+			const fiber = yield* startTurboCache({
+				inputs: hostedInputs(),
+				turbo: { enabled: true },
+				detached: detachedTest(recorded),
+				serverEntry: SERVER_ENTRY,
+			}).pipe(Effect.provide(layer(recorded, { hosted: { answer: { kind: "never" } } })), Effect.forkChild);
+
+			// A hung service holds the step, and nothing is started, for the bound…
+			yield* TestClock.adjust("9999 millis");
+			assert.isUndefined(fiber.pollUnsafe());
+			assert.deepStrictEqual(recorded.spawns, []);
+
+			// …and not a millisecond longer.
+			yield* TestClock.adjust("1 millis");
+			const started = yield* Fiber.join(fiber);
+			assert.lengthOf(recorded.warnings, 1);
+			assert.include(recorded.warnings[0], "timeout");
+			assert.lengthOf(recorded.spawns, 1);
+			assert.strictEqual(started.backend, "github");
+		}),
+	);
+
+	it.effect("hosted: the warning carries no token", () =>
+		Effect.gen(function* () {
+			for (const failure of failures) {
+				const { recorded } = yield* run({ inputs: failure.inputs, hosted: failure.hosted });
+
+				const text = recorded.logs.join("\n");
+				assert.notInclude(text, OIDC_TOKEN, failure.name);
+				assert.notInclude(text, "oidc-payload", failure.name);
+				assert.notInclude(text, CACHE_TOKEN, failure.name);
+				// Nor what the far side wrote, nor the request it was written to.
+				assert.notInclude(text, BODY_MARKER, failure.name);
+				assert.notInclude(text, "Bearer", failure.name);
+				assert.notInclude(text, "ECONNREFUSED", failure.name);
+			}
+		}),
+	);
+
+	it.effect("hosted: the warning does not repeat the turbo-api input", () =>
+		Effect.gen(function* () {
+			// The input is the caller's string, and a URL can carry a userinfo.
+			const { recorded } = yield* run({
+				inputs: inputs({ turboApi: Option.some("http://user:hunter2@cache.savvyweb.systems") }),
+				hosted: { answer: { kind: "ok" } },
+			});
+			assert.lengthOf(recorded.warnings, 1);
+			assert.notInclude(recorded.logs.join("\n"), "hunter2");
+		}),
+	);
+
+	it.effect("hosted: a defect while signing in still ends in the embedded server", () =>
+		Effect.gen(function* () {
+			// The bare issuer double dies when asked for a token. Whatever a defect
+			// says is not this step's to print, so the warning names it as a defect
+			// and nothing more.
+			const recorded = recorder();
+			const started = yield* startTurboCache({
+				inputs: hostedInputs(),
+				turbo: { enabled: true },
+				detached: detachedTest(recorded),
+				serverEntry: SERVER_ENTRY,
+			}).pipe(Effect.provide(layer(recorded)));
+
+			assert.strictEqual(started.backend, "github");
+			assert.lengthOf(recorded.spawns, 1);
+			assert.lengthOf(recorded.warnings, 1);
+			assert.include(recorded.warnings[0], "defect");
+			assert.notInclude(recorded.warnings[0], "OidcTokenIssuer");
+		}),
+	);
+
+	it.effect("off with turbo-api set: nothing minted, fetched, exported or started", () =>
+		Effect.gen(function* () {
+			for (const args of [
+				{ inputs: hostedInputs({ turboCache: "off" }), turbo: true },
+				{ inputs: hostedInputs(), turbo: false },
+			]) {
+				const { started, recorded } = yield* run({ ...args, hosted: { answer: { kind: "ok" } } });
+
+				assert.deepStrictEqual(recorded.audiences, []);
+				assert.deepStrictEqual(recorded.requests, []);
+				assert.deepStrictEqual(recorded.exported, []);
+				assert.deepStrictEqual(recorded.spawns, []);
+				assert.deepStrictEqual(recorded.saved, []);
+				assert.deepStrictEqual(recorded.masked, []);
+				assert.deepStrictEqual(recorded.warnings, []);
+				assert.strictEqual(started.backend, "none");
+				assert.deepStrictEqual(started.environment, {});
+			}
+		}),
+	);
+
+	it.effect("hosted: wins over a Vercel token and team, whose token is still masked", () =>
+		Effect.gen(function* () {
+			const { started, recorded } = yield* run({
+				inputs: hostedInputs({
+					turboToken: Option.some(Redacted.make("vercel-token")),
+					turboTeam: Option.some("acme"),
+				}),
+				hosted: { answer: { kind: "ok" } },
+			});
+
+			assert.strictEqual(started.backend, "hosted");
+			assert.strictEqual(exported(recorded, "TURBO_TOKEN"), CACHE_TOKEN);
+			assert.strictEqual(exported(recorded, "TURBO_TEAM"), "silk");
+			assert.include(recorded.masked, "vercel-token");
+		}),
+	);
+
+	it.effect("hosted: says nothing about half a Vercel credential", () =>
+		Effect.gen(function* () {
+			// That warning promises the embedded server because Vercel was meant and
+			// missed. A run that named a hosted service did not mean Vercel.
+			for (const hosted of [{ answer: { kind: "ok" } }, { answer: { kind: "status", status: 500 } }] as const) {
+				const { recorded } = yield* run({ inputs: hostedInputs({ turboTeam: Option.some("acme") }), hosted });
+				assert.notInclude(recorded.logs.join("\n"), "Both turbo-token and turbo-team are required");
+			}
 		}),
 	);
 });
@@ -773,7 +1136,8 @@ describe("the state startTurboCache saves", () => {
 						}),
 						realState({ GITHUB_STATE: file }),
 						Logger.layer([Logger.make(() => {})]),
-						httpClientUnused,
+						signInClient(recorder(), undefined),
+						OidcTokenIssuer.layerTest(),
 					),
 				),
 			);

@@ -57,7 +57,7 @@ export interface OutputsModel {
 	readonly kcovVersion: string;
 	readonly kcovCacheHit: boolean;
 	readonly turboEnabled: boolean;
-	readonly turboCacheBackend: "github" | "s3" | "remote" | "none";
+	readonly turboCacheBackend: "github" | "hosted" | "remote" | "none";
 	readonly turboCachePort: string;
 	readonly cacheHit: "true" | "partial" | "false";
 	/**

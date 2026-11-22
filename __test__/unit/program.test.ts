@@ -10,6 +10,7 @@ import {
 	ActionState,
 	AmbientPackageManager,
 	CachedPackageManager,
+	OidcTokenIssuer,
 	PackageManagerInstaller,
 	ToolInstaller,
 	ToolInstallerError,
@@ -369,6 +370,7 @@ const makeLayer = (
 	| Path.Path
 	| ChildProcessSpawnerNS.ChildProcessSpawner
 	| HttpClient.HttpClient
+	| OidcTokenIssuer
 	| WorkspaceDiscovery
 > =>
 	Layer.mergeAll(
@@ -395,6 +397,9 @@ const makeLayer = (
 		childProcessSpawnerTest(options.spawns),
 		options.inputs ?? actionInputTest,
 		httpClientTest,
+		// The bare double, whose members die naming themselves: no program test
+		// names a `turbo-api`, so none may mint a token.
+		OidcTokenIssuer.layerTest(),
 	);
 
 /** The four variables the program quiets its own install steps with (oracle 43). */
@@ -806,11 +811,13 @@ describe("program", () => {
 		// The fold itself, pinned without a detached child: the program run above
 		// can only reach the `off` row, and the other three rows differ only in
 		// what this function is handed.
+		const base = { port: Option.none<number>(), state: Option.none(), host: Option.none<string>(), environment: {} };
 		const rows: ReadonlyArray<readonly [StartedTurboCache, string, string]> = [
-			[{ backend: "none", port: Option.none(), state: Option.none(), environment: {} }, "none", ""],
-			[{ backend: "remote", port: Option.none(), state: Option.none(), environment: {} }, "remote", ""],
-			[{ backend: "github", port: Option.some(41230), state: Option.none(), environment: {} }, "github", "41230"],
-			[{ backend: "s3", port: Option.some(41230), state: Option.none(), environment: {} }, "s3", "41230"],
+			[{ ...base, backend: "none" }, "none", ""],
+			[{ ...base, backend: "remote" }, "remote", ""],
+			[{ ...base, backend: "github", port: Option.some(41230) }, "github", "41230"],
+			// A hosted cache is not a local server: a backend and no port.
+			[{ ...base, backend: "hosted", host: Option.some("cache.savvyweb.systems") }, "hosted", ""],
 		];
 		for (const [started, backend, port] of rows) {
 			assert.deepStrictEqual(turboCacheOutputs(started), { turboCacheBackend: backend, turboCachePort: port });
