@@ -2,7 +2,7 @@ import type { ActionOutputs } from "@effected/github-actions";
 import { OidcTokenIssuer, Secret } from "@effected/github-actions";
 import type { Duration } from "effect";
 import { Data, Effect, Option, Redacted, Schema } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 /**
  * A hosted remote cache this job has signed in to.
@@ -75,7 +75,7 @@ const SignInResponse = Schema.Struct({
 const decodeSignInResponse = Schema.decodeUnknownEffect(SignInResponse);
 
 /** The two strings sign-in derives from the input: where to send, and who the token is for. */
-interface Target {
+export interface SignInTarget {
 	/** Scheme, host and base path, with no trailing slash. */
 	readonly api: string;
 	/** The token's audience: the origin, which is what the service verifies against. */
@@ -94,7 +94,7 @@ interface Target {
  * the input, so a userinfo, a query or a fragment in the input reaches neither
  * the request nor the `TURBO_API` every later step echoes.
  */
-const targetOf = (input: string): Option.Option<Target> => {
+const targetOf = (input: string): Option.Option<SignInTarget> => {
 	if (!URL.canParse(input)) return Option.none();
 	const url = new URL(input);
 	if (url.protocol !== "https:") return Option.none();
@@ -124,35 +124,57 @@ export const signIn = (
 ): Effect.Effect<HostedCache, SignInError, OidcTokenIssuer | HttpClient.HttpClient | ActionOutputs> =>
 	Option.match(targetOf(input), {
 		onNone: () => Effect.fail(new SignInError({ reason: "notHttps" })),
-		onSome: (target) =>
-			Effect.gen(function* () {
-				const issuer = yield* OidcTokenIssuer;
-				const client = yield* HttpClient.HttpClient;
-
-				const identity = yield* issuer
-					.token(target.audience)
-					.pipe(Effect.mapError((error) => new SignInError({ reason: "oidc", detail: error.reason })));
-
-				const response = yield* client
-					.execute(HttpClientRequest.post(`${target.api}${SIGN_IN_PATH}`).pipe(HttpClientRequest.bearerToken(identity)))
-					.pipe(Effect.mapError(() => new SignInError({ reason: "transport" })));
-				if (response.status < 200 || response.status >= 300) {
-					return yield* new SignInError({ reason: "refused", detail: String(response.status) });
-				}
-
-				const answer = yield* response.json.pipe(
-					Effect.flatMap(decodeSignInResponse),
-					Effect.mapError(() => new SignInError({ reason: "malformed" })),
-				);
-				const token = Redacted.make(answer.token);
-				yield* Secret.mask(token);
-
-				const hosted: HostedCache = { api: target.api, token, expiresAt: answer.expiresAt };
-				return hosted;
-			}).pipe(
-				Effect.timeoutOrElse({
-					duration: SIGN_IN_TIMEOUT,
-					orElse: () => Effect.fail(new SignInError({ reason: "timeout" })),
-				}),
-			),
+		onSome: signInAt,
 	});
+
+/**
+ * Sign-in below the https check: mint, trade, mask, all inside the bound.
+ *
+ * @remarks
+ * Exported for one reason, and it is not a second way in: a test that runs
+ * sign-in over the real fetch client needs a loopback listener, which speaks
+ * plain http, and {@link signIn} refuses that before it sends anything.
+ * Production reaches this only through `signIn`, with a target `targetOf`
+ * built from an https URL.
+ */
+export const signInAt = (
+	target: SignInTarget,
+): Effect.Effect<HostedCache, SignInError, OidcTokenIssuer | HttpClient.HttpClient | ActionOutputs> =>
+	Effect.gen(function* () {
+		const issuer = yield* OidcTokenIssuer;
+		const client = yield* HttpClient.HttpClient;
+
+		const identity = yield* issuer
+			.token(target.audience)
+			.pipe(Effect.mapError((error) => new SignInError({ reason: "oidc", detail: error.reason })));
+
+		const response = yield* client
+			.execute(HttpClientRequest.post(`${target.api}${SIGN_IN_PATH}`).pipe(HttpClientRequest.bearerToken(identity)))
+			.pipe(
+				// A redirect is a refusal, never a second request. The runtime's client
+				// is fetch, which follows one by default: the answer would then be the
+				// *target's*, its token exported while `TURBO_API` still named this
+				// host, over plain http if that is where it pointed. `manual` hands the
+				// 3xx back as it is, so it falls into the refused branch below.
+				Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+				Effect.mapError(() => new SignInError({ reason: "transport" })),
+			);
+		if (response.status < 200 || response.status >= 300) {
+			return yield* new SignInError({ reason: "refused", detail: String(response.status) });
+		}
+
+		const answer = yield* response.json.pipe(
+			Effect.flatMap(decodeSignInResponse),
+			Effect.mapError(() => new SignInError({ reason: "malformed" })),
+		);
+		const token = Redacted.make(answer.token);
+		yield* Secret.mask(token);
+
+		const hosted: HostedCache = { api: target.api, token, expiresAt: answer.expiresAt };
+		return hosted;
+	}).pipe(
+		Effect.timeoutOrElse({
+			duration: SIGN_IN_TIMEOUT,
+			orElse: () => Effect.fail(new SignInError({ reason: "timeout" })),
+		}),
+	);
