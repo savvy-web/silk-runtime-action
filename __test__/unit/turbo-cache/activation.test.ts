@@ -11,13 +11,7 @@ const baseInputs: Inputs = {
 	turboCachePrefix: "",
 	turboToken: Option.none(),
 	turboTeam: Option.none(),
-	turboS3Bucket: Option.none(),
-	turboS3Region: Option.none(),
-	turboS3Endpoint: Option.none(),
-	turboS3AccessKeyId: Option.none(),
-	turboS3SecretAccessKey: Option.none(),
-	turboS3SessionToken: Option.none(),
-	turboS3Prefix: Option.none(),
+	turboApi: Option.none(),
 	installDeps: true,
 	ignoreScripts: false,
 	bats: "auto",
@@ -36,34 +30,21 @@ const passthroughCredentials = {
 	turboTeam: Option.some("my-team"),
 } as const;
 
-/** The one S3 field the table probes, plus the one that rides beside it. */
-const s3Credentials = {
-	turboS3Bucket: Option.some("my-bucket"),
-	turboS3Region: Option.some("us-east-1"),
-} as const;
-
-/** The `s3` payload `s3Credentials` resolves to. */
-const s3Settings = {
-	bucket: "my-bucket",
-	region: Option.some("us-east-1"),
-	endpoint: Option.none(),
-	accessKeyId: Option.none(),
-	secretAccessKey: Option.none(),
-	sessionToken: Option.none(),
-	prefix: Option.none(),
-};
+/** The hosted service, as a shared workflow passes it. */
+const hostedApi = { turboApi: Option.some("https://cache.savvyweb.systems") } as const;
 
 describe("resolveTurboCache", () => {
 	it("is off when turbo is not detected", () => {
 		assert.deepStrictEqual(resolveTurboCache({ turboDetected: false, inputs: baseInputs }), { mode: "off" });
 	});
 
+	it("no turbo.json wins over turbo-api", () => {
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: false, inputs: inputs(hostedApi) }), { mode: "off" });
+	});
+
 	it("is off when turbo is not detected even with every credential set", () => {
 		assert.deepStrictEqual(
-			resolveTurboCache({
-				turboDetected: false,
-				inputs: inputs({ ...passthroughCredentials, ...s3Credentials }),
-			}),
+			resolveTurboCache({ turboDetected: false, inputs: inputs({ ...passthroughCredentials, ...hostedApi }) }),
 			{ mode: "off" },
 		);
 	});
@@ -74,17 +55,50 @@ describe("resolveTurboCache", () => {
 		});
 	});
 
+	it("off wins over turbo-api", () => {
+		// The fork leg of a shared workflow sets `turbo-cache: off`; nothing a
+		// caller also passes may turn sign-in back on.
+		assert.deepStrictEqual(
+			resolveTurboCache({ turboDetected: true, inputs: inputs({ turboCache: "off", ...hostedApi }) }),
+			{ mode: "off" },
+		);
+	});
+
 	it("is off when the mode input says off even with every credential set", () => {
 		assert.deepStrictEqual(
 			resolveTurboCache({
 				turboDetected: true,
-				inputs: inputs({ turboCache: "off", ...passthroughCredentials, ...s3Credentials }),
+				inputs: inputs({ turboCache: "off", ...passthroughCredentials, ...hostedApi }),
 			}),
 			{ mode: "off" },
 		);
 	});
 
-	it("is passthrough when token and team are both present", () => {
+	it("turbo-api selects hosted", () => {
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: inputs(hostedApi) }), {
+			mode: "hosted",
+			api: "https://cache.savvyweb.systems",
+		});
+	});
+
+	it("turbo-api wins over a Vercel token and team", () => {
+		assert.deepStrictEqual(
+			resolveTurboCache({ turboDetected: true, inputs: inputs({ ...passthroughCredentials, ...hostedApi }) }),
+			{ mode: "hosted", api: "https://cache.savvyweb.systems" },
+		);
+	});
+
+	it("turbo-api wins over half a Vercel credential", () => {
+		assert.deepStrictEqual(
+			resolveTurboCache({
+				turboDetected: true,
+				inputs: inputs({ turboTeam: passthroughCredentials.turboTeam, ...hostedApi }),
+			}),
+			{ mode: "hosted", api: "https://cache.savvyweb.systems" },
+		);
+	});
+
+	it("a token and team without turbo-api is passthrough", () => {
 		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: inputs(passthroughCredentials) }), {
 			mode: "passthrough",
 			token: Redacted.make("vercel-token"),
@@ -92,96 +106,24 @@ describe("resolveTurboCache", () => {
 		});
 	});
 
-	it("prefers passthrough over s3 when both are configured", () => {
-		assert.deepStrictEqual(
-			resolveTurboCache({ turboDetected: true, inputs: inputs({ ...passthroughCredentials, ...s3Credentials }) }),
-			{ mode: "passthrough", token: Redacted.make("vercel-token"), team: "my-team" },
-		);
+	it("nothing set is embedded", () => {
+		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: baseInputs }), { mode: "embedded" });
 	});
 
-	it("is embedded s3 when a bucket is present and no external credentials are", () => {
-		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: inputs(s3Credentials) }), {
-			mode: "embedded",
-			backend: "s3",
-			s3: s3Settings,
-		});
-	});
-
-	it("carries every s3 field through to the resolution", () => {
-		const resolution = resolveTurboCache({
-			turboDetected: true,
-			inputs: inputs({
-				...s3Credentials,
-				turboS3Endpoint: Option.some("http://127.0.0.1:9000"),
-				turboS3AccessKeyId: Option.some("minioadmin"),
-				turboS3SecretAccessKey: Option.some(Redacted.make("minioadmin")),
-				turboS3SessionToken: Option.some(Redacted.make("session")),
-				turboS3Prefix: Option.some("cache/"),
-			}),
-		});
-
-		assert.deepStrictEqual(resolution, {
-			mode: "embedded",
-			backend: "s3",
-			s3: {
-				bucket: "my-bucket",
-				region: Option.some("us-east-1"),
-				endpoint: Option.some("http://127.0.0.1:9000"),
-				accessKeyId: Option.some("minioadmin"),
-				secretAccessKey: Option.some(Redacted.make("minioadmin")),
-				sessionToken: Option.some(Redacted.make("session")),
-				prefix: Option.some("cache/"),
-			},
-		});
-	});
-
-	it("is embedded github when nothing at all is configured", () => {
-		assert.deepStrictEqual(resolveTurboCache({ turboDetected: true, inputs: baseInputs }), {
-			mode: "embedded",
-			backend: "github",
-		});
-	});
-
-	it("falls through to embedded github when only the token is set", () => {
+	it("falls through to embedded when only the token is set", () => {
 		// Quirk 77: partial passthrough credentials are not an error and not a
-		// passthrough — R2 needs both, so the resolution walks on. Ruling 77 adds a
-		// warning at the call site; the table itself is unchanged.
+		// passthrough — the rule needs both, so the resolution walks on. Ruling 77
+		// adds a warning at the call site; the table itself is unchanged.
 		assert.deepStrictEqual(
 			resolveTurboCache({ turboDetected: true, inputs: inputs({ turboToken: passthroughCredentials.turboToken }) }),
-			{ mode: "embedded", backend: "github" },
+			{ mode: "embedded" },
 		);
 	});
 
-	it("falls through to embedded github when only the team is set", () => {
+	it("falls through to embedded when only the team is set", () => {
 		assert.deepStrictEqual(
 			resolveTurboCache({ turboDetected: true, inputs: inputs({ turboTeam: passthroughCredentials.turboTeam }) }),
-			{ mode: "embedded", backend: "github" },
-		);
-	});
-
-	it("falls through to embedded s3 when passthrough credentials are partial and a bucket is set", () => {
-		assert.deepStrictEqual(
-			resolveTurboCache({
-				turboDetected: true,
-				inputs: inputs({ turboTeam: passthroughCredentials.turboTeam, ...s3Credentials }),
-			}),
-			{ mode: "embedded", backend: "s3", s3: s3Settings },
-		);
-	});
-
-	it("probes only the bucket, never the other s3 fields", () => {
-		// Rule R3 reads `bucket` and nothing else (oracle 3): S3 credentials with no
-		// bucket are the github backend, not a misconfigured S3 one.
-		assert.deepStrictEqual(
-			resolveTurboCache({
-				turboDetected: true,
-				inputs: inputs({
-					turboS3Region: Option.some("us-east-1"),
-					turboS3AccessKeyId: Option.some("key"),
-					turboS3SecretAccessKey: Option.some(Redacted.make("secret")),
-				}),
-			}),
-			{ mode: "embedded", backend: "github" },
+			{ mode: "embedded" },
 		);
 	});
 });

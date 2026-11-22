@@ -70,13 +70,7 @@ const BASE_INPUTS: Inputs = {
 	turboCachePrefix: "",
 	turboToken: Option.none(),
 	turboTeam: Option.none(),
-	turboS3Bucket: Option.none(),
-	turboS3Region: Option.none(),
-	turboS3Endpoint: Option.none(),
-	turboS3AccessKeyId: Option.none(),
-	turboS3SecretAccessKey: Option.none(),
-	turboS3SessionToken: Option.none(),
-	turboS3Prefix: Option.none(),
+	turboApi: Option.none(),
 	installDeps: true,
 	ignoreScripts: false,
 	bats: "auto",
@@ -333,23 +327,15 @@ describe("startTurboCache: off", () => {
 
 	it.effect("still masks every secret the workflow supplied", () =>
 		Effect.gen(function* () {
-			// Oracle 7 + ruling 78: masking precedes the activation table, because a
-			// secret a workflow set is worth redacting whether or not this
-			// resolution uses it — and this one uses none of them.
+			// Oracle 7: masking precedes the activation table, because a secret a
+			// workflow set is worth redacting whether or not this resolution uses it
+			// — and this one uses none of them.
 			const { recorded } = yield* run({
 				turbo: false,
-				inputs: inputs({
-					turboToken: Option.some(Redacted.make("vercel-token")),
-					turboS3AccessKeyId: Option.some("AKIAEXAMPLE"),
-					turboS3SecretAccessKey: Option.some(Redacted.make("s3-secret")),
-					turboS3SessionToken: Option.some(Redacted.make("s3-session")),
-				}),
+				inputs: inputs({ turboToken: Option.some(Redacted.make("vercel-token")) }),
 			});
 
 			assert.include(recorded.masked, "vercel-token");
-			assert.include(recorded.masked, "AKIAEXAMPLE");
-			assert.include(recorded.masked, "s3-secret");
-			assert.include(recorded.masked, "s3-session");
 		}),
 	);
 });
@@ -404,17 +390,6 @@ describe("startTurboCache: passthrough", () => {
 			const { recorded } = yield* run({ inputs: passthroughInputs });
 			assert.deepStrictEqual(recorded.spawns, []);
 			assert.deepStrictEqual(recorded.saved, []);
-		}),
-	);
-
-	it.effect("beats an S3 bucket configured alongside it", () =>
-		Effect.gen(function* () {
-			const { started, recorded } = yield* run({
-				inputs: inputs({ ...passthroughInputs, turboS3Bucket: Option.some("turbo-cache") }),
-			});
-
-			assert.strictEqual(started.backend, "remote");
-			assert.deepStrictEqual(recorded.spawns, []);
 		}),
 	);
 
@@ -506,11 +481,14 @@ describe("startTurboCache: embedded", () => {
 			assert.strictEqual(env.TURBOGHA_PORT, "41230");
 			assert.strictEqual(env.TURBOGHA_PREFIX, "pr-42/");
 			assert.strictEqual(env.TURBOGHA_BACKEND, "github");
-			// No S3 variable belongs in a GitHub-backend spawn.
-			assert.deepStrictEqual(
-				Object.keys(env).filter((name) => name.startsWith("TURBOGHA_S3_")),
-				[],
-			);
+			// Those four and nothing else: no setting rides along that the worker
+			// does not parse.
+			assert.deepStrictEqual(Object.keys(env).sort(), [
+				"TURBOGHA_BACKEND",
+				"TURBOGHA_PORT",
+				"TURBOGHA_PREFIX",
+				"TURBOGHA_TOKEN",
+			]);
 		}),
 	);
 
@@ -619,69 +597,6 @@ describe("startTurboCache: embedded", () => {
 			// The probe's own URL is that address plus the status route — not a
 			// coincidence of two independently-correct constants.
 			assert.deepStrictEqual(probed.urls, [`${api}/v8/artifacts/status`]);
-		}),
-	);
-});
-
-describe("startTurboCache: S3 backend", () => {
-	const s3Inputs = inputs({
-		turboS3Bucket: Option.some("turbo-cache"),
-		turboS3Region: Option.some("us-east-1"),
-		turboS3Endpoint: Option.some("http://127.0.0.1:9000"),
-		turboS3AccessKeyId: Option.some("minioadmin"),
-		turboS3SecretAccessKey: Option.some(Redacted.make("miniosecret")),
-		turboS3SessionToken: Option.some(Redacted.make("miniosession")),
-		turboS3Prefix: Option.some("builds/"),
-	});
-
-	it.effect("carries every S3 setting into the worker's environment", () =>
-		Effect.gen(function* () {
-			const { started, recorded } = yield* run({ inputs: s3Inputs });
-
-			assert.strictEqual(started.backend, "s3");
-			const env = (recorded.spawns[0] as DetachedSpawnOptions).env ?? {};
-			assert.strictEqual(env.TURBOGHA_BACKEND, "s3");
-			assert.strictEqual(env.TURBOGHA_S3_BUCKET, "turbo-cache");
-			assert.strictEqual(env.TURBOGHA_S3_REGION, "us-east-1");
-			assert.strictEqual(env.TURBOGHA_S3_ENDPOINT, "http://127.0.0.1:9000");
-			assert.strictEqual(env.TURBOGHA_S3_ACCESS_KEY_ID, "minioadmin");
-			assert.strictEqual(env.TURBOGHA_S3_SECRET_ACCESS_KEY, "miniosecret");
-			assert.strictEqual(env.TURBOGHA_S3_SESSION_TOKEN, "miniosession");
-			assert.strictEqual(env.TURBOGHA_S3_PREFIX, "builds/");
-		}),
-	);
-
-	it.effect("masks both S3 secrets before either reaches the child", () =>
-		Effect.gen(function* () {
-			const { recorded } = yield* run({ inputs: s3Inputs });
-
-			// `Secret.forChildEnv` is the only sanctioned way a `Redacted` becomes a
-			// child's environment variable, and it masks the whole set first.
-			assert.include(recorded.masked, "miniosecret");
-			assert.include(recorded.masked, "miniosession");
-			assert.include(recorded.masked, "minioadmin");
-		}),
-	);
-
-	it.effect("omits the optional settings the workflow left unset", () =>
-		Effect.gen(function* () {
-			const { recorded } = yield* run({ inputs: inputs({ turboS3Bucket: Option.some("turbo-cache") }) });
-
-			const env = (recorded.spawns[0] as DetachedSpawnOptions).env ?? {};
-			assert.strictEqual(env.TURBOGHA_S3_BUCKET, "turbo-cache");
-			// The worker reads unset and empty as the same case; an omitted variable
-			// is the clearer thing to find in a process listing.
-			assert.strictEqual("TURBOGHA_S3_ENDPOINT" in env, false);
-			assert.strictEqual("TURBOGHA_S3_SESSION_TOKEN" in env, false);
-			assert.strictEqual("TURBOGHA_S3_PREFIX" in env, false);
-		}),
-	);
-
-	it.effect("records s3 in the state the post phase reads", () =>
-		Effect.gen(function* () {
-			const { recorded } = yield* run({ inputs: s3Inputs });
-			const [, saved] = recorded.saved[0] as readonly [string, TurboServerState];
-			assert.strictEqual(saved.backend, "s3");
 		}),
 	);
 });
@@ -845,7 +760,7 @@ describe("the state startTurboCache saves", () => {
 
 			const recorded = recorder();
 			const started = yield* startTurboCache({
-				inputs: inputs({ turboS3Bucket: Option.some("turbo-cache") }),
+				inputs: inputs(),
 				turbo: { enabled: true },
 				detached: detachedTest(recorded, { pid: 31_337 }),
 				serverEntry: SERVER_ENTRY,
@@ -870,7 +785,7 @@ describe("the state startTurboCache saves", () => {
 
 			assert.deepStrictEqual(restored, Option.getOrThrow(started.state));
 			assert.strictEqual(restored.pid, ProcessId.make(31_337));
-			assert.strictEqual(restored.backend, "s3");
+			assert.strictEqual(restored.backend, "github");
 			// The encoded form has to be plain JSON, on one line.
 			assert.notInclude(written, "_id");
 		}).pipe(Effect.provide(NodeFileSystem.layer), Effect.scoped),
