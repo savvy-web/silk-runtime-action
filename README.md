@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: savvy-web/silk-runtime-action@v1
+      - uses: savvy-web/silk-runtime-action@v2
       - run: pnpm test
       - run: pnpm build
 ```
@@ -58,7 +58,7 @@ Versions must be **absolute** (`"24.10.0"`), never ranges. Anything containing `
 2. **Package manager** — npm or pnpm (12 or later) provisioned at the pinned version and added to `PATH`. Bun and Deno are their own package managers, so naming either is a no-op.
 3. **Dependencies** — installed with the reproducible flag when a lockfile is present.
 4. **Biome** — installed when `biome.jsonc` or `biome.json` declares a version in its `$schema`, or when `biome-version` is set.
-5. **Turbo remote cache** — an embedded cache server, or passthrough to Vercel, when `turbo.json` is detected.
+5. **Turbo remote cache** — a hosted cache the job signs in to, passthrough to Vercel, or an embedded cache server, when `turbo.json` is detected.
 
 ## Inputs
 
@@ -67,17 +67,11 @@ All inputs are optional. Runtime and package manager versions are read exclusive
 | Input | Description | Default |
 | ----- | ----------- | ------- |
 | `biome-version` | Biome version to install (e.g. `2.3.14`). Auto-detects from the `biome.jsonc`/`biome.json` `$schema` field when empty. | `""` |
-| `turbo-cache` | Turbo remote cache mode (`auto` \| `off`). `auto` starts an embedded cache server when `turbo.json` is present and no Vercel credentials are set. | `"auto"` |
+| `turbo-cache` | Turbo remote cache mode (`auto` \| `off`). `auto` uses `turbo-api` when it is set, else Vercel when both credentials are set, else an embedded cache server, whenever `turbo.json` is present. `off` disables all of it. | `"auto"` |
 | `turbo-cache-prefix` | Key prefix/namespace for embedded turbo cache artifacts. | `""` |
 | `turbo-token` | Turbo remote cache token. With `turbo-team`, selects Vercel passthrough and disables the embedded server. | `""` |
 | `turbo-team` | Turbo team slug. With `turbo-token`, selects Vercel passthrough and disables the embedded server. | `""` |
-| `turbo-s3-bucket` | S3 bucket for the embedded turbo cache backend. Its presence selects the S3 backend. | `""` |
-| `turbo-s3-region` | S3 region for the embedded turbo cache backend. | `""` |
-| `turbo-s3-endpoint` | Custom S3 endpoint (R2/MinIO/Spaces). Leave empty for AWS S3. | `""` |
-| `turbo-s3-access-key-id` | S3 access key ID for the embedded turbo cache backend. | `""` |
-| `turbo-s3-secret-access-key` | S3 secret access key for the embedded turbo cache backend. | `""` |
-| `turbo-s3-session-token` | S3 session token, for temporary credentials. | `""` |
-| `turbo-s3-prefix` | Key prefix within the S3 bucket. | `""` |
+| `turbo-api` | Base URL of a hosted Turborepo remote cache that signs the job in with its GitHub OIDC token. Must be `https`, and the job needs `id-token: write`. When sign-in is not possible the embedded server is used instead. Wins over `turbo-token`/`turbo-team`. | `""` |
 | `install-deps` | Whether to install dependencies (`true` \| `false`). | `"true"` |
 | `ignore-scripts` | Skip dependency lifecycle scripts during the install (`true` \| `false`). Passes `--ignore-scripts` to npm/pnpm/bun. No effect when `install-deps` is `false`, or for deno. | `"false"` |
 | `bats` | Provision the BATS toolchain — bats-core, bats-support, bats-assert, bats-file, bats-mock (`auto` \| `true` \| `false`). `auto` installs when a `*.bats` file or a `vitest-bats` dependency is present. | `"auto"` |
@@ -114,7 +108,7 @@ tools are installed and validated on Linux and macOS.
 | `kcov-version` | The kcov version that was installed, or empty |
 | `kcov-cache-hit` | Whether kcov was restored from the Actions cache rather than built (`true` \| `false`) |
 | `turbo-enabled` | Whether `turbo.json` was detected (`true` \| `false`) |
-| `turbo-cache-backend` | Active turbo cache backend (`github` \| `s3` \| `remote` \| `none`) |
+| `turbo-cache-backend` | Active turbo cache backend: `github` (embedded server on the Actions cache) \| `hosted` (signed in to `turbo-api`) \| `remote` (Vercel passthrough) \| `none` |
 | `turbo-cache-port` | Local port the embedded turbo cache server bound to, or empty when it did not start |
 | `cache-hit` | Workspace cache status (`true` \| `partial` \| `false`) |
 | `store-cache-hit` | Package-manager store cache status (`true` \| `partial` \| `false`). Keyed independently of `cache-hit` |
@@ -128,14 +122,14 @@ tools are installed and validated on Linux and macOS.
 ### Basic Node.js project
 
 ```yaml
-- uses: savvy-web/silk-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v2
 - run: pnpm test
 ```
 
 ### Multiple runtimes
 
 ```yaml
-- uses: savvy-web/silk-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v2
 
 - name: Test on Node.js
   run: pnpm test
@@ -165,7 +159,7 @@ Declare them as an array, and the action installs each one and puts it on `PATH`
 ### Installing dependencies yourself
 
 ```yaml
-- uses: savvy-web/silk-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v2
   with:
     install-deps: false
 
@@ -179,7 +173,7 @@ The runtimes, package manager and dependency cache are still set up — only the
 ```yaml
 - name: Set up runtime
   id: setup
-  uses: savvy-web/silk-runtime-action@v1
+  uses: savvy-web/silk-runtime-action@v2
 
 - name: Show what was installed
   run: |
@@ -191,23 +185,32 @@ The runtimes, package manager and dependency cache are still set up — only the
     # Cache:   one of true, partial, false
 ```
 
-### Turbo remote cache on S3
+### Turbo remote cache on a hosted service
 
 ```yaml
-- uses: savvy-web/silk-runtime-action@v1
-  with:
-    turbo-s3-bucket: my-turbo-cache
-    turbo-s3-region: us-east-1
-    turbo-s3-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    turbo-s3-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: savvy-web/silk-runtime-action@v2
+        with:
+          turbo-api: https://cache.example.com
 ```
 
-Point `turbo-s3-endpoint` at Cloudflare R2, MinIO or DigitalOcean Spaces to use an S3-compatible store instead of AWS.
+`turbo-api` names a Turborepo remote cache that accepts GitHub's OIDC tokens. The action asks the runner for a token whose audience is the URL's origin, sends it to `POST <turbo-api>/auth/github`, and exports the cache token it gets back as a masked `TURBO_TOKEN`, with `TURBO_API` set to the service and `TURBO_TEAM` to `silk`. No secret is stored anywhere: the job's identity is the credential.
+
+The job needs `id-token: write`. Without it, or when the service refuses the token, answers something else, cannot be reached or takes longer than 10 seconds, the action logs one warning naming the reason and starts the embedded cache server instead. Sign-in never fails a job. A pull request from a fork gets no OIDC token from GitHub, so it always takes the fallback.
+
+The URL must be `https`. Grant `id-token: write` only to jobs that build code you trust: the permission lets a job mint a token for any audience, not only this one.
 
 ### Turbo passthrough to Vercel
 
 ```yaml
-- uses: savvy-web/silk-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v2
   with:
     turbo-token: ${{ secrets.TURBO_TOKEN }}
     turbo-team: ${{ secrets.TURBO_TEAM }}
@@ -260,16 +263,16 @@ The resolved list is reported on the `lockfiles` output, both archives' paths on
 
 When `turbo.json` is detected, the action resolves one of four strategies, in order:
 
-1. `turbo-cache: off`, or no `turbo.json` — nothing starts, and `turbo-cache-backend` reports `none`.
-2. `turbo-token` **and** `turbo-team` — Turborepo talks straight to Vercel Remote Cache and the embedded server stays down. Reported as `remote`.
-3. `turbo-s3-bucket` — an embedded remote cache server starts, backed by S3 or any S3-compatible store. Reported as `s3`.
+1. `turbo-cache: off`, or no `turbo.json` — nothing starts, no token is requested, and `turbo-cache-backend` reports `none`.
+2. `turbo-api` — the job signs in to that service with its GitHub OIDC token and Turborepo talks to it directly. Reported as `hosted`. When sign-in is not possible, the action warns and continues at rule 4.
+3. `turbo-token` **and** `turbo-team` — Turborepo talks straight to Vercel Remote Cache and the embedded server stays down. Reported as `remote`.
 4. Otherwise — an embedded remote cache server starts, backed by the GitHub Actions cache. Reported as `github`.
 
-Passthrough wins over S3 when both are configured. The S3 rule probes the bucket alone, so credentials without a bucket fall through to the GitHub backend rather than starting a misconfigured S3 one. Supplying only one of `turbo-token`/`turbo-team` logs a warning and falls through to an embedded server.
+`off` wins over everything, so a workflow can switch the cache off for one job whatever else it passes. `turbo-api` wins over Vercel credentials when both are configured. Without `turbo-api`, supplying only one of `turbo-token`/`turbo-team` logs a warning and falls through to the embedded server.
 
 Alongside whichever remote cache is active, each workspace member's local Turbo artifact directory (`.turbo/cache`, `packages/a/.turbo/cache`, …) is added to the dependency file cache as a fast local-restore layer. The other `.turbo` subdirectories are deliberately excluded — a restored stale run summary breaks "latest run is the current run" detection in tooling that parses `turbo --summarize`.
 
-The embedded server is torn down in the action's post step. On the GitHub backend it captures `ACTIONS_RUNTIME_TOKEN` when it spawns, and that token is a short-lived JWT, so very long jobs can see late cache writes rejected with `401`. The S3 backend uses its own credentials and is unaffected.
+The embedded server is torn down in the action's post step. It captures `ACTIONS_RUNTIME_TOKEN` when it spawns, and that token is a short-lived JWT, so very long jobs can see late cache writes rejected with `401`. A hosted cache has no server to tear down; its token carries the expiry the service gave it.
 
 ## Job summary
 
@@ -301,7 +304,7 @@ Replace the range with the exact version you want — `24.10.0` rather than `^24
 Turn the install off and run it yourself with whatever flags the repository needs:
 
 ```yaml
-- uses: savvy-web/silk-runtime-action@v1
+- uses: savvy-web/silk-runtime-action@v2
   with:
     install-deps: false
 
@@ -310,7 +313,7 @@ Turn the install off and run it yourself with whatever flags the repository need
 
 ### Turbo is not using the cache you configured
 
-Check the `turbo-cache-backend` output against the resolution order above. The most common surprise is a leftover `turbo-token`/`turbo-team` pair winning over the S3 inputs you just added.
+Check the `turbo-cache-backend` output against the resolution order above. With `turbo-api` set, `github` instead of `hosted` means sign-in did not happen: the step's warning names why, and `oidc: unavailable` is a job without `id-token: write`.
 
 ## Contributing
 

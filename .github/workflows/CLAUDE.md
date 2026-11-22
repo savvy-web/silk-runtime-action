@@ -12,7 +12,7 @@ that legible.
 | Workflow | What it does |
 | --- | --- |
 | [test.yml](test.yml) (`Fixtures`) | The fixture matrix — four jobs plus an aggregating summary |
-| [test-turbo-cache.yml](test-turbo-cache.yml) | The embedded turbo remote-cache server, end to end |
+| [test-turbo-cache.yml](test-turbo-cache.yml) | The turbo remote cache, embedded and hosted, end to end |
 | [release.yml](release.yml) (`Silk`) | Delegates to `savvy-web/.github`'s shared release workflow at `@main` |
 | [branch-sync.yml](branch-sync.yml) | Keeps the `dev` / `main` pair coherent; moves the `v<major>` tag |
 | [silk-update.yml](silk-update.yml) | Config-dependency updates (schedule commented out; dispatch only) |
@@ -66,11 +66,16 @@ aggregate blind to it.
 
 ## `test-turbo-cache.yml`
 
-Exercises the embedded remote-cache server end to end: a within-job double build on the
-GitHub backend, a cross-job cache hit, an S3 backend run against SeaweedFS, and a real-S3 job
-gated on the `TURBO_S3_*` secrets being present. Fixtures install their own dependencies in
-`run:` steps (`install-deps: "false"`) because `uses:` steps always execute at the repository
-root.
+Exercises the turbo remote cache end to end: a within-job double build on the embedded
+server, a cross-job cache hit, and the hosted cache both ways. `hosted-double-build` is the
+only job granted `id-token: write`; it passes `turbo-api`, asserts
+`turbo-cache-backend == hosted`, and requires the second build to hit an artifact whose hash
+a nonce file makes unique to the run. It is skipped on a fork's pull request, where GitHub
+issues no OIDC token. `hosted-fallback` passes the same input **without** the grant and
+asserts the embedded server took over (`github`, port `41230`) and the job still passes.
+Never add `id-token: write` at the workflow level here: the grant belongs to the one job that
+tests it. Fixtures install their own dependencies in `run:` steps (`install-deps: "false"`)
+because `uses:` steps always execute at the repository root.
 
 ## The composite actions
 

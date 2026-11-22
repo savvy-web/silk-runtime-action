@@ -14,7 +14,8 @@ turbo-server.ts          # detached cache-server entry: http plumbing only, impo
 state.ts                 # STATE_KEYS + four Schema.Class bundles — CacheState,
                          # StoreCacheState, KcovCacheState, TurboServerState
 layers/app.ts            # MainLive (ActionCache + ToolInstaller +
-                         # PackageManagerInstaller) / PostLive (ActionCache) — only
+                         # PackageManagerInstaller + OidcTokenIssuer +
+                         # WorkspaceDiscovery) / PostLive (ActionCache) — only
                          # what ActionServices lacks
 schema/domain.ts         # RuntimeName, PackageManagerName, AbsoluteVersion
                          # (@effected/semver ExactVersionString), RuntimeSpec,
@@ -22,10 +23,10 @@ schema/domain.ts         # RuntimeName, PackageManagerName, AbsoluteVersion
 schema/inputs.ts         # INPUT_NAMES + Inputs + loadInputs (ActionInput Config)
 schema/outputs.ts        # OUTPUT_NAMES + OutputsModel + initialOutputs + emitOutputs
 summary/format.ts        # every string this action renders — see below
-turbo-cache/             # activation (the backend-selection table), meta
-                         # (TurboArtifactMeta envelope schema), handler
-                         # (routes/auth/keys), server-config (TURBOGHA_* env →
-                         # backend layer)
+turbo-cache/             # activation (the decision table), sign-in (OIDC
+                         # token → hosted cache token), meta (TurboArtifactMeta
+                         # envelope schema), handler (routes/auth/keys),
+                         # server-config (TURBOGHA_* env → the GitHub store)
 descriptors/             # descriptor.ts (RuntimePlan/RuntimeDescriptor) + node, bun,
                          # deno, biome, bats, kcov — pure per-host URL/archive/subpath
                          # resolution

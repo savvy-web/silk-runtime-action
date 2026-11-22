@@ -9,7 +9,7 @@ inputs:
     required: false
     default: ""
   turbo-cache:
-    description: Turbo remote cache mode (auto | off). auto starts an embedded cache server when turbo.json is present and no external Vercel creds are set.
+    description: Turbo remote cache mode (auto | off). auto uses turbo-api when it is set, else external Vercel creds when both are set, else an embedded cache server, whenever turbo.json is present. off disables all of it.
     required: false
     default: "auto"
   turbo-cache-prefix:
@@ -24,32 +24,8 @@ inputs:
     description: Turbo team slug (selects passthrough/external Vercel mode and disables the embedded server).
     required: false
     default: ""
-  turbo-s3-bucket:
-    description: S3 bucket for the embedded turbo cache backend. Presence selects the S3 backend.
-    required: false
-    default: ""
-  turbo-s3-region:
-    description: S3 region for the embedded turbo cache backend.
-    required: false
-    default: ""
-  turbo-s3-endpoint:
-    description: Custom S3 endpoint (R2/MinIO/Spaces). Leave empty for AWS S3.
-    required: false
-    default: ""
-  turbo-s3-access-key-id:
-    description: S3 access key id for the embedded turbo cache backend.
-    required: false
-    default: ""
-  turbo-s3-secret-access-key:
-    description: S3 secret access key for the embedded turbo cache backend.
-    required: false
-    default: ""
-  turbo-s3-session-token:
-    description: Optional S3 session token for temporary credentials.
-    required: false
-    default: ""
-  turbo-s3-prefix:
-    description: Optional key prefix within the S3 bucket.
+  turbo-api:
+    description: Base URL of a hosted Turborepo remote cache that signs the job in with its GitHub OIDC token. Requires https and the id-token write permission. When sign-in is not possible the embedded cache server is used instead. Takes precedence over turbo-token and turbo-team.
     required: false
     default: ""
   install-deps:
@@ -116,7 +92,7 @@ outputs:
   turbo-enabled:
     description: Whether Turbo configuration was detected (true | false)
   turbo-cache-backend:
-    description: Active turbo cache backend (github | s3 | remote | none)
+    description: Active turbo cache backend (github | hosted | remote | none)
   turbo-cache-port:
     description: Local port the embedded turbo cache server bound to (empty when not started)
   cache-hit:

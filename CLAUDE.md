@@ -12,8 +12,8 @@ A **JavaScript runtime setup GitHub Action**, entirely driven by `package.json`:
   `bun`/`deno` are no-ops, being their own package managers)
 * **Dependency caching** — key derived from detected lockfiles, Biome version, turbo presence
 * **Optional Biome** — auto-detected from `biome.jsonc` / `biome.json` `$schema`
-* **Turbo** — detection plus an embedded remote cache server (Actions cache or S3), or
-  passthrough to Vercel
+* **Turbo** — detection plus a remote cache: a hosted service the job signs in to with its
+  OIDC token (`turbo-api`), passthrough to Vercel, or an embedded server on the Actions cache
 
 ## Requirements
 
@@ -56,9 +56,9 @@ refuses an earlier pnpm's layout — and yarn is not supported. A top-level core
   Services are class-based `Context.Service` with exported `*Shape` companion types.
 * **Action services:** `@effected/github-actions` — zero `@actions/*` deps.
   Imported: `Action`, `ActionCache`, `ActionEnvironment`, `ActionInput`, `ActionLogger`,
-  `ActionOutputs` (incl. `layerDetached`), `ActionState`, `BlobStore` /
-  `GitHubCacheBlobStore`, `CacheKey` (incl. `digest`), `ChildEnv`, `DetachedProcess`,
-  `GitHubMarkdown`, `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
+  `ActionOutputs`, `ActionState`, `BlobStore` / `GitHubCacheBlobStore`, `CacheKey` (incl.
+  `digest`), `ChildEnv`, `DetachedProcess`, `GitHubMarkdown`, `OidcTokenIssuer`,
+  `PackageManagerInstaller`, `ProcessId`, `Secret`, `ToolInstaller`.
   `GitHubContext.branch` (off `ActionEnvironment.github`) is the branch fallback chain.
   **Do not cite a version here** — every `@effected/*` range is `catalog:effected`, resolved
   by the `@effected/pnpm-plugin-effected` config dependency, so the installed version is in
@@ -145,6 +145,23 @@ checkout into memory (#545). See
 [`okf/models/cache-config.md`](okf/models/cache-config.md) for what each excluded path
 would break.
 
+### Hosted turbo cache: sign-in, and what it must never do
+
+`turbo-api` makes the turbo step mint an OIDC token for the URL's origin, trade it at
+`POST <turbo-api>/auth/github` and export `TURBO_API`, a masked `TURBO_TOKEN` and
+`TURBO_TEAM=silk` (`src/turbo-cache/sign-in.ts`, `src/steps/turbo-cache.ts`). Three rules
+hold whatever else changes:
+
+* **The cache never fails a job.** Every sign-in failure, a defect included, is one warning
+  and the embedded server. Sign-in as a whole is bounded at 10 seconds.
+* **`off` is decided first.** `turbo-cache: off` or no `turbo.json` mints nothing and sends
+  nothing, whatever `turbo-api` says; shared workflows rely on it for a fork's code.
+* **Nothing about a failure is logged but its kind.** `SignInError` carries a reason and at
+  most an issuer reason or an HTTP status: never a cause (core's `HttpClient` errors hold the
+  request, bearer included), never a response body, never the `turbo-api` input.
+
+The S3 backend and the seven `turbo-s3-*` inputs were removed in 2.0.0.
+
 ### Known limitation: `ACTIONS_RUNTIME_TOKEN` lifetime
 
 See
@@ -227,7 +244,7 @@ Where a topic lives:
 │   ├── schema/                # domain.ts, inputs.ts, outputs.ts
 │   ├── steps/                 # one contract module per pipeline step, in order
 │   ├── summary/format.ts      # pure log/panel formatters
-│   ├── turbo-cache/           # activation, handler, meta, server-config
+│   ├── turbo-cache/           # activation, sign-in, handler, meta, server-config
 │   └── descriptors/           # descriptor.ts + node / bun / deno / biome / bats / kcov
 ├── __test__/unit/             # Vitest suites, mirroring src/ (never co-located)
 ├── __fixtures__/              # workflow integration test fixtures
@@ -263,15 +280,10 @@ versions come only from `devEngines` — there are no version inputs.
 | `ignore-scripts` | `"false"` | Skip lifecycle scripts during the install — `--ignore-scripts` (npm/pnpm/bun). Inert when `install-deps` is `false` or the manager is deno. Part of the cache key |
 | `bats` | `"auto"` | `auto` \| `true` \| `false`. `auto` installs bats-core, bats-support, bats-assert, bats-file and bats-mock when a `*.bats` file or a `vitest-bats` dependency is present |
 | `kcov` | `"auto"` | `auto` \| `true` \| `false`. `auto` follows the bats decision; built from source and cached, never installed when bats is off |
-| `turbo-cache` | `"auto"` | `auto` \| `off`. `auto` starts the embedded server when `turbo.json` exists and no Vercel creds are set |
+| `turbo-cache` | `"auto"` | `auto` \| `off`. With a `turbo.json`, `auto` uses `turbo-api`, else Vercel creds, else the embedded server. `off` wins over everything: nothing is minted, sent or started |
 | `turbo-cache-prefix` | `""` | Key namespace for embedded cache artifacts |
 | `turbo-token` / `turbo-team` | `""` | Both together select Vercel passthrough and disable the embedded server |
-| `turbo-s3-bucket` | `""` | Presence selects the S3 backend |
-| `turbo-s3-region` | `""` | S3 region |
-| `turbo-s3-endpoint` | `""` | Custom endpoint (R2/MinIO/Spaces); empty means AWS |
-| `turbo-s3-access-key-id` / `-secret-access-key` | `""` | S3 credentials |
-| `turbo-s3-session-token` | `""` | For temporary credentials |
-| `turbo-s3-prefix` | `""` | Key prefix within the bucket |
+| `turbo-api` | `""` | Base URL of a hosted cache. The job signs in with its GitHub OIDC token (needs `id-token: write`, `https` only) and falls back to the embedded server, with one warning, when it cannot. No default: the action is public. Wins over `turbo-token`/`turbo-team` |
 | `additional-lockfiles` | `""` | Extra lockfile globs for the cache key; newline-separated |
 | `additional-cache-paths` | `""` | Extra paths to cache/restore; newline-separated |
 | `cache-bust` | `"false"` | Appended to the cache key, to force a miss. **Testing only** |
@@ -289,7 +301,7 @@ versions come only from `devEngines` — there are no version inputs.
 | `kcov-version` / `kcov-enabled` | Installed kcov version (empty if not) / `"true"` \| `"false"` |
 | `kcov-cache-hit` | Whether kcov was restored from the Actions cache rather than built |
 | `turbo-enabled` | Whether `turbo.json` was detected |
-| `turbo-cache-backend` | `"github"` (embedded Actions cache) \| `"s3"` (embedded S3) \| `"remote"` (Vercel passthrough) \| `"none"` |
+| `turbo-cache-backend` | `"github"` (embedded Actions cache) \| `"hosted"` (signed in to `turbo-api`) \| `"remote"` (Vercel passthrough) \| `"none"` |
 | `turbo-cache-port` | Port the embedded server bound to; empty when not started |
 | `cache-hit` | `"true"` \| `"partial"` \| `"false"` — the workspace archive |
 | `store-cache-hit` | `"true"` \| `"partial"` \| `"false"` — the package-manager store, keyed independently |
