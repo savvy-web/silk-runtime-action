@@ -231,8 +231,8 @@ Follow the prompts to:
 5. **Users reference by tag:**
 
    ```yaml
-   - uses: savvy-web/silk-runtime-action@v1
-   - uses: savvy-web/silk-runtime-action@v1.2.3
+   - uses: savvy-web/silk-runtime-action@v2
+   - uses: savvy-web/silk-runtime-action@v2.2.3
    ```
 
 ## Common Issues
