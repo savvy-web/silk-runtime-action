@@ -153,14 +153,16 @@ would break.
 hold whatever else changes:
 
 * **The cache never fails a job.** Every sign-in failure, a defect included, is one warning
-  and the embedded server. Sign-in as a whole is bounded at 10 seconds.
+  and the embedded server. Sign-in as a whole is bounded at 10 seconds, and a redirect is a
+  refusal, never followed. A failed `GITHUB_ENV` write after a successful sign-in ends with
+  no cache, as on the embedded and passthrough paths.
 * **`off` is decided first.** `turbo-cache: off` or no `turbo.json` mints nothing and sends
   nothing, whatever `turbo-api` says; shared workflows rely on it for a fork's code.
 * **Nothing about a failure is logged but its kind.** `SignInError` carries a reason and at
   most an issuer reason or an HTTP status: never a cause (core's `HttpClient` errors hold the
   request, bearer included), never a response body, never the `turbo-api` input.
 
-The S3 backend and the seven `turbo-s3-*` inputs were removed in 2.0.0.
+The S3 backend is removed on this major line; the seven `turbo-s3-*` inputs no longer exist.
 
 ### Known limitation: `ACTIONS_RUNTIME_TOKEN` lifetime
 

@@ -203,9 +203,9 @@ jobs:
 
 `turbo-api` names a Turborepo remote cache that accepts GitHub's OIDC tokens. The action asks the runner for a token whose audience is the URL's origin, sends it to `POST <turbo-api>/auth/github`, and exports the cache token it gets back as a masked `TURBO_TOKEN`, with `TURBO_API` set to the service and `TURBO_TEAM` to `silk`. No secret is stored anywhere: the job's identity is the credential.
 
-The job needs `id-token: write`. Without it, or when the service refuses the token, answers something else, cannot be reached or takes longer than 10 seconds, the action logs one warning naming the reason and starts the embedded cache server instead. Sign-in never fails a job. A pull request from a fork gets no OIDC token from GitHub, so it always takes the fallback.
+The job needs `id-token: write`. Without it, or when the service refuses the token, answers something else, cannot be reached or takes longer than 10 seconds, the action logs one warning naming the reason and starts the embedded cache server instead. Sign-in never fails a job. On the `pull_request` event, a pull request from a fork gets no OIDC token from GitHub, so it always takes the fallback. If the sign-in succeeds and the runner then refuses the write to `GITHUB_ENV`, the run continues with no remote cache, as it does when the embedded server cannot export its own variables.
 
-The URL must be `https`. Grant `id-token: write` only to jobs that build code you trust: the permission lets a job mint a token for any audience, not only this one.
+The URL must be `https`. Grant `id-token: write` only to jobs that build code you trust: the permission lets a job mint a token for any audience, not only this one. The case to watch is `pull_request_target`, which runs with the base repository's permissions: a job there that checks out and builds a fork's code would hand that code a token minter, so leave the grant off it and pass `turbo-cache: off`.
 
 ### Turbo passthrough to Vercel
 

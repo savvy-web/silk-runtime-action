@@ -102,9 +102,12 @@ jobs:
   # token whatever this file asks for, so the job could only ever exercise the
   # fallback there, and `hosted-fallback` below already does that on every run.
   # On `workflow_dispatch` there is no pull request and the condition is true.
+  # Dependabot is skipped too: whether GitHub issues an OIDC token to a
+  # Dependabot pull request run is unconfirmed, and the job must not fail the
+  # suite for that.
   hosted-double-build:
     name: Hosted cache double build (OIDC sign-in)
-    if: ${{ !github.event.pull_request.head.repo.fork }}
+    if: ${{ !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
