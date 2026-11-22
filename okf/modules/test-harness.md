@@ -7,7 +7,7 @@ kind: harness
 resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
-  at: 2026-11-13T18:50:00Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: test-fixture-action
     resource: ../../.github/actions/test-fixture/action.yml
@@ -23,7 +23,7 @@ sources:
     resource: ../../vitest.config.ts
 integrity:
   generated:
-    body: 26154612e78f4bd9
+    body: 2707cfc4d9b49aa2
 ---
 
 # test-harness

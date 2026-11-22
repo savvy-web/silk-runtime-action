@@ -6,6 +6,7 @@ status: draft
 bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: sign-in
     resource: ../../src/turbo-cache/sign-in.ts
@@ -23,6 +24,9 @@ tags:
   - caching
   - ci
   - github
+integrity:
+  generated:
+    body: 3548cf629c1883bc
 ---
 
 # What the hosted turbo cache cannot reach — forks, jobs without id-token, long jobs, and the prefix input

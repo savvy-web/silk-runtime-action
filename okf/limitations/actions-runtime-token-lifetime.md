@@ -6,7 +6,7 @@ status: draft
 bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: server-config
     resource: ../../src/turbo-cache/server-config.ts
@@ -17,7 +17,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: ed02c032d8652e94
+    body: 1f6695b72344e8d1
 ---
 
 # "ACTIONS_RUNTIME_TOKEN" expires under a long-running embedded Turbo server

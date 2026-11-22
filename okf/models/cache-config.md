@@ -8,7 +8,7 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-11-13T18:50:00Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: cache-config
     resource: ../../src/steps/cache-config.ts
@@ -21,7 +21,7 @@ sources:
     resource: https://github.com/savvy-web/silk-runtime-action/issues/545
 integrity:
   generated:
-    body: 2958cd932fbcafcf
+    body: be6811593baf440f
 ---
 
 # Cache config — key formats, ladders, lockfile patterns, and archived paths

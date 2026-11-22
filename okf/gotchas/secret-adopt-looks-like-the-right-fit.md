@@ -6,7 +6,7 @@ status: deprecated
 stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 resource: ../../src/turbo-cache/server-config.ts
 sources:
   - id: server-config
@@ -16,7 +16,7 @@ tags:
   - dx
 integrity:
   generated:
-    body: 594af42b7183ac9e
+    body: dfa0e657d704c222
 ---
 
 # `Secret.adopt` looks like the right member for the turbo server's config reader, and is wrong twice over

@@ -7,7 +7,7 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-11-21T22:19:28Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -29,7 +29,7 @@ sources:
     resource: ../../src/steps/install-runtimes.ts
 integrity:
   generated:
-    body: 352cda8d215cfba3
+    body: a3c7e6144535ad3b
 ---
 
 # silk-runtime-action

@@ -6,7 +6,7 @@ description: Why the action is built on Effect v4 and the first-party @effected 
 tags: [architecture, deps, dx]
 generated:
   by: okfit/claude-code
-  at: 2026-11-13T18:50:00Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: package-json
     resource: ../../package.json
@@ -14,7 +14,7 @@ sources:
     resource: ../../src/layers/app.ts
 integrity:
   generated:
-    body: d04aab1468ba0b5b
+    body: e5b97f5725cc3d4c
 ---
 
 # Effect v4 over the @effected suite, zero @actions/* dependencies

@@ -6,6 +6,7 @@ status: draft
 supersedes: ./embedded-turbo-server.md
 generated:
   by: okfit/claude-code
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -44,6 +45,9 @@ tags:
   - caching
   - ci
   - security
+integrity:
+  generated:
+    body: 5c1c6fc268244b97
 ---
 
 # A hosted cache signed in to by OIDC is tried first, and the embedded server on the GitHub cache is the fallback

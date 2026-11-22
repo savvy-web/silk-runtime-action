@@ -8,7 +8,7 @@ tags:
   - caching
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: state
     resource: ../../src/state.ts
@@ -18,7 +18,7 @@ sources:
     resource: ../../__test__/unit/state.test.ts
 integrity:
   generated:
-    body: 9cea61548325729c
+    body: 685b27bd055d110b
 ---
 
 # Cross-phase state — STATE_KEYS and the four Schema.Class bundles

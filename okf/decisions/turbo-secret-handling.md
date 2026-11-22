@@ -5,7 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: turbo-cache-step
     resource: ../../src/steps/turbo-cache.ts
@@ -19,7 +19,7 @@ tags:
   - security
 integrity:
   generated:
-    body: 39751fa42c6f2b99
+    body: cc9d578da519e85c
 ---
 
 # Turbo credentials are masked unconditionally, declassified only through Secret.*

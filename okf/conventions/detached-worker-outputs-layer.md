@@ -7,7 +7,7 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: server-config-platform-layer
     resource: ../../src/turbo-cache/server-config.ts
@@ -15,7 +15,7 @@ sources:
     resource: ../../src/turbo-server.ts
 integrity:
   generated:
-    body: daab88b150eefb60
+    body: c0768db568baa695
 ---
 
 # A detached worker never gets the real `ActionOutputs` layer

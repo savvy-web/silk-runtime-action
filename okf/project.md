@@ -5,7 +5,7 @@ description: What this project is, its boundaries, and its non-goals.
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: domain-schema
     resource: ../src/schema/domain.ts
@@ -21,7 +21,7 @@ sources:
     resource: ../src/steps/turbo-cache.ts
 integrity:
   generated:
-    body: 8d5a3200739fa002
+    body: 9841ecc184c1b649
 ---
 
 # silk-runtime-action

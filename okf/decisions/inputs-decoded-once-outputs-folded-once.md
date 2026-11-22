@@ -6,7 +6,7 @@ description: One typed Inputs record decoded at the top of the pipeline, and one
 tags: [architecture, dx]
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: schema-inputs
     resource: ../../src/schema/inputs.ts
@@ -14,7 +14,7 @@ sources:
     resource: ../../src/program.ts
 integrity:
   generated:
-    body: d2cbadfc64b79c7f
+    body: 849b74cb2a74d510
 ---
 
 # Inputs decoded once, outputs folded once

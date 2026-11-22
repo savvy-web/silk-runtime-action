@@ -6,7 +6,7 @@ status: draft
 resource: ../../.github/workflows/release.yml
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: release-yml
     resource: ../../.github/workflows/release.yml
@@ -19,7 +19,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: 8543639263fa22c4
+    body: 3d273774cc354828
 ---
 
 # Release dev to main

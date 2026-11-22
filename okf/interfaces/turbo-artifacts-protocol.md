@@ -7,7 +7,7 @@ kind: wire
 resource: ../../src/turbo-cache/handler.ts
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: handler
     resource: ../../src/turbo-cache/handler.ts
@@ -15,7 +15,7 @@ sources:
     resource: ../../src/turbo-cache/meta.ts
 integrity:
   generated:
-    body: 24a5efa491257fcc
+    body: 7038a01a683d4669
 ---
 
 # Turbo artifacts wire protocol — routes, auth, keys, and metadata

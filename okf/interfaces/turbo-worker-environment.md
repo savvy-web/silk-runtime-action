@@ -7,7 +7,7 @@ kind: runtime
 resource: ../../src/turbo-cache/server-config.ts
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: server-config
     resource: ../../src/turbo-cache/server-config.ts
@@ -15,7 +15,7 @@ sources:
     resource: ../../src/steps/turbo-cache.ts
 integrity:
   generated:
-    body: 0d345232e9aeeccb
+    body: c138bb2e0d930797
 ---
 
 # Turbo worker environment — the main-to-worker handoff contract

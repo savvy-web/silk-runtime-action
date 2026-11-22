@@ -6,7 +6,7 @@ status: draft
 stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 resource: ../../.github/workflows/test-turbo-cache.yml
 sources:
   - id: test-turbo-cache-yml
@@ -16,7 +16,7 @@ tags:
   - testing
 integrity:
   generated:
-    body: 1e09678e9f54e515
+    body: 2bad91aee13148cd
 ---
 
 # `defaults.run.working-directory` does not reach a `uses:` step

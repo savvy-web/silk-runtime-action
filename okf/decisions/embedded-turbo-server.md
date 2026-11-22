@@ -5,7 +5,7 @@ type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -27,7 +27,7 @@ tags:
   - ci
 integrity:
   generated:
-    body: f0ec85ac37306d47
+    body: a738ff03d72fc405
 ---
 
 # An embedded, detached Turbo remote-cache server over a Vercel account

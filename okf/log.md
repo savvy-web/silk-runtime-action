@@ -1,5 +1,29 @@
 # Log
 
+## 2026-11-22
+
+* Updated A detached worker never gets the real ActionOutputs layer
+* Added A hosted cache signed in to by OIDC is tried first, and the embedded server on the GitHub cache is the fallback
+* Updated ACTIONS_RUNTIME_TOKEN expires under a long-running embedded Turbo server
+* Updated Action contract — inputs, outputs, and exported environment
+* Updated An embedded, detached Turbo remote-cache server over a Vercel account
+* Updated Cache config — key formats, ladders, lockfile patterns, and archived paths
+* Updated Cross-phase state — STATE_KEYS and the four Schema.Class bundles
+* Updated Effect v4 over the @effected suite, zero @actions/* dependencies
+* Updated Inputs decoded once, outputs folded once
+* Updated Prose is parity surface
+* Updated Release dev to main
+* Updated Turbo artifacts wire protocol — routes, auth, keys, and metadata
+* Updated Turbo credentials are masked unconditionally, declassified only through Secret.*
+* Updated Turbo worker environment — the main-to-worker handoff contract
+* Added What the hosted turbo cache cannot reach — forks, jobs without id-token, long jobs, and the prefix input
+* Updated `Secret.adopt` looks like the right member for the turbo server's config reader, and is wrong twice over
+* Updated `defaults.run.working-directory` does not reach a `uses:` step
+* Updated silk-runtime-action
+* Updated silk-runtime-action
+* Updated test-harness
+* Updated turbo-cache-server
+
 ## 2026-11-21
 
 * Updated Log levels and buffering

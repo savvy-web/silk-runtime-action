@@ -7,7 +7,7 @@ kind: action
 resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
-  at: 2026-11-21T22:19:28Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -27,7 +27,7 @@ sources:
     resource: ../../src/state.ts
 integrity:
   generated:
-    body: cf217b3d0decd543
+    body: cf6f18ab0618e2c3
 ---
 
 # turbo-cache-server

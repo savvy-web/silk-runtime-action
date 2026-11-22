@@ -7,7 +7,7 @@ kind: runtime
 resource: ../../action.yml
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: action-yml
     resource: ../../action.yml
@@ -25,7 +25,7 @@ sources:
     resource: ../../__test__/unit/schema/inputs.test.ts
 integrity:
   generated:
-    body: 99dc963326e9cfc6
+    body: 90eae2f77591c8a2
 ---
 
 # Action contract — inputs, outputs, and exported environment

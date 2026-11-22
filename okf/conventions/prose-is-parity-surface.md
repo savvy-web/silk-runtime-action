@@ -7,7 +7,7 @@ status: draft
 stale_after: "2027-03-13T00:00:00Z"
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: format-src
     resource: ../../src/summary/format.ts
@@ -29,7 +29,7 @@ sources:
     resource: ../../src/schema/outputs.ts
 integrity:
   generated:
-    body: ed0cdfa143030dac
+    body: 33a93543e38641fb
 ---
 
 # Prose is parity surface
