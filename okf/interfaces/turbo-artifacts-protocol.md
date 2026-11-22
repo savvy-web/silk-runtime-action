@@ -7,7 +7,7 @@ kind: wire
 resource: ../../src/turbo-cache/handler.ts
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: handler
     resource: ../../src/turbo-cache/handler.ts
@@ -15,7 +15,7 @@ sources:
     resource: ../../src/turbo-cache/meta.ts
 integrity:
   generated:
-    body: 24a5efa491257fcc
+    body: 7038a01a683d4669
 ---
 
 # Turbo artifacts wire protocol — routes, auth, keys, and metadata
@@ -24,8 +24,9 @@ The embedded cache server implements Turbo's `/v8/artifacts` remote-cache contra
 over a generic `BlobStore`. This is the contract a `turbo run` step depends on once it is pointed at
 the server through `TURBO_API` — see
 [turbo-worker-environment](./turbo-worker-environment.md) for how the server itself is
-configured, and [embedded-turbo-server](../decisions/embedded-turbo-server.md) for why it
-exists at all.
+configured, and [turbo-cache-backends](../decisions/turbo-cache-backends.md) for why it
+exists at all. A job that signed in to a hosted cache talks to that service instead, and
+nothing here describes it.
 
 ## Routes
 

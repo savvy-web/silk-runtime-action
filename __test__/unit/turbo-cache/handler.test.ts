@@ -28,7 +28,7 @@ const request = (overrides: Partial<TurboRequest>): TurboRequest => ({
  * @remarks
  * `layerMemory` is not a double: it runs the real `BlobEnvelope` encode and
  * decode, so a PUT/GET pair here proves the metadata survives storage the same
- * way it does over S3 or the Actions cache.
+ * way it does over the Actions cache.
  */
 const overMemory = (
 	requests: ReadonlyArray<TurboRequest>,

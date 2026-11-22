@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { BlobStore, BlobStoreError, TruncatedBlobEnvelopeError } from "@effected/github-actions";
-import { Effect, Redacted, Result } from "effect";
+import { Effect, Result } from "effect";
 
 import {
 	DEFAULT_TURBO_SERVER_PORT,
@@ -12,16 +12,6 @@ import {
 
 /** The minimum the worker will boot on: a token, and nothing else. */
 const bootable = { [TURBO_SERVER_ENV.token]: "run-token" } as const;
-
-/** The environment an S3-backed server is spawned with. */
-const s3Environment = {
-	...bootable,
-	[TURBO_SERVER_ENV.backend]: "s3",
-	[TURBO_SERVER_ENV.s3Bucket]: "turbo-cache",
-	[TURBO_SERVER_ENV.s3Region]: "us-east-1",
-	[TURBO_SERVER_ENV.s3AccessKeyId]: "minioadmin",
-	[TURBO_SERVER_ENV.s3SecretAccessKey]: "minioadmin-secret",
-} as const;
 
 /** The config a successful read produced, or a failure the test did not expect. */
 const configOf = (env: Record<string, string | undefined>) => {
@@ -86,116 +76,51 @@ describe("readServerConfig", () => {
 		assert.strictEqual(configOf({ ...bootable, [TURBO_SERVER_ENV.port]: "65535" }).port, 65_535);
 	});
 
-	it("reads the s3 backend", () => {
-		const config = configOf(s3Environment);
-
-		assert.strictEqual(config.backend, "s3");
-		if (config.backend !== "s3") return;
-		assert.strictEqual(config.s3.bucket, "turbo-cache");
-		assert.strictEqual(config.s3.region, "us-east-1");
-		assert.strictEqual(config.s3.accessKeyId, "minioadmin");
-		assert.strictEqual(Redacted.value(config.s3.secretAccessKey), "minioadmin-secret");
+	it("treats any backend name as github, the retired s3 included", () => {
+		// The embedded server has one store. A worker handed `s3` by something
+		// stale must not go looking for a bucket it no longer knows how to sign for.
+		for (const name of ["azure", "s3", "", "GITHUB"]) {
+			assert.deepStrictEqual(configOf({ ...bootable, [TURBO_SERVER_ENV.backend]: name }), {
+				port: DEFAULT_TURBO_SERVER_PORT,
+				prefix: "",
+				token: "run-token",
+				backend: "github",
+			});
+		}
 	});
 
-	it("omits the optional s3 fields when they are unset", () => {
-		// Oracle 48: endpoint, session token and prefix are spread in only when
-		// nonempty — an empty endpoint would point the signer at nothing, and an
-		// empty prefix would namespace every key under a leading separator.
-		const config = configOf(s3Environment);
-
-		assert.strictEqual(config.backend === "s3" && "endpoint" in config.s3, false);
-		assert.strictEqual(config.backend === "s3" && "sessionToken" in config.s3, false);
-		assert.strictEqual(config.backend === "s3" && "prefix" in config.s3, false);
-	});
-
-	it("omits the optional s3 fields when they are empty", () => {
+	it("ignores every S3 variable a stale environment still carries", () => {
 		const config = configOf({
-			...s3Environment,
-			[TURBO_SERVER_ENV.s3Endpoint]: "",
-			[TURBO_SERVER_ENV.s3SessionToken]: "",
-			[TURBO_SERVER_ENV.s3Prefix]: "",
+			...bootable,
+			TURBOGHA_BACKEND: "s3",
+			TURBOGHA_S3_BUCKET: "turbo-cache",
+			TURBOGHA_S3_SECRET_ACCESS_KEY: "stale-secret",
 		});
-
-		assert.strictEqual(config.backend === "s3" && "endpoint" in config.s3, false);
-		assert.strictEqual(config.backend === "s3" && "sessionToken" in config.s3, false);
-		assert.strictEqual(config.backend === "s3" && "prefix" in config.s3, false);
+		assert.notInclude(JSON.stringify(config), "turbo-cache");
+		assert.notInclude(JSON.stringify(config), "stale-secret");
 	});
+});
 
-	it("carries the optional s3 fields when they are set", () => {
-		const config = configOf({
-			...s3Environment,
-			[TURBO_SERVER_ENV.s3Endpoint]: "http://127.0.0.1:9000",
-			[TURBO_SERVER_ENV.s3SessionToken]: "session",
-			[TURBO_SERVER_ENV.s3Prefix]: "cache/",
+describe("TURBO_SERVER_ENV", () => {
+	it("names the four variables the worker is configured with and no S3 one", () => {
+		assert.deepStrictEqual(TURBO_SERVER_ENV, {
+			port: "TURBOGHA_PORT",
+			prefix: "TURBOGHA_PREFIX",
+			token: "TURBOGHA_TOKEN",
+			backend: "TURBOGHA_BACKEND",
 		});
-
-		assert.strictEqual(config.backend, "s3");
-		if (config.backend !== "s3") return;
-		assert.strictEqual(config.s3.endpoint, "http://127.0.0.1:9000");
-		assert.strictEqual(config.s3.prefix, "cache/");
-		assert.strictEqual(config.s3.sessionToken === undefined ? "" : Redacted.value(config.s3.sessionToken), "session");
-	});
-
-	it("reads an absent s3 credential as empty rather than failing", () => {
-		// The S3 layer reports its own misconfiguration, with the bucket and status
-		// a failed request carries. Guessing at it here would refuse to boot on a
-		// backend that a workflow may have configured through some other means.
-		const config = configOf({ ...bootable, [TURBO_SERVER_ENV.backend]: "s3" });
-
-		assert.strictEqual(config.backend, "s3");
-		if (config.backend !== "s3") return;
-		assert.strictEqual(config.s3.bucket, "");
-		assert.strictEqual(Redacted.value(config.s3.secretAccessKey), "");
-	});
-
-	it("treats any other backend name as github", () => {
-		assert.strictEqual(configOf({ ...bootable, [TURBO_SERVER_ENV.backend]: "azure" }).backend, "github");
 	});
 });
 
 describe("serverBlobStoreLayer", () => {
-	/** Builds the layer and answers with the store it provides. */
-	const build = (env: Record<string, string | undefined>) =>
-		Effect.runPromise(
+	it("builds the github backend", async () => {
+		const members = await Effect.runPromise(
 			Effect.gen(function* () {
 				const store = yield* BlobStore;
 				return [typeof store.get, typeof store.put, typeof store.has];
-			}).pipe(Effect.provide(serverBlobStoreLayer(configOf(env)))),
+			}).pipe(Effect.provide(serverBlobStoreLayer)),
 		);
-
-	it("builds the github backend", async () => {
-		assert.deepStrictEqual(await build(bootable), ["function", "function", "function"]);
-	});
-
-	it("builds the s3 backend", async () => {
-		assert.deepStrictEqual(await build(s3Environment), ["function", "function", "function"]);
-	});
-
-	it("never writes the s3 credentials to this process's log", async () => {
-		// The S3 backend declassifies its signing key through `Secret.forSigning`,
-		// which masks first — and masking is `::add-mask::<plaintext>` written to
-		// stdout for the *runner* to parse. This process is detached, so its stdout
-		// is a temp file nothing parses, and the real `ActionOutputs` layer would
-		// write both secrets there in the clear. `console.log` is the channel
-		// `Console.log` ends up on, so capturing it is capturing the leak.
-		const secret = "s3-secret-that-must-not-appear";
-		const session = "s3-session-that-must-not-appear";
-		const said: Array<string> = [];
-		const original = console.log;
-		console.log = (...args: ReadonlyArray<unknown>) => void said.push(args.map(String).join(" "));
-		try {
-			await build({
-				...s3Environment,
-				[TURBO_SERVER_ENV.s3SecretAccessKey]: secret,
-				[TURBO_SERVER_ENV.s3SessionToken]: session,
-			});
-		} finally {
-			console.log = original;
-		}
-
-		assert.notInclude(said.join("\n"), secret);
-		assert.notInclude(said.join("\n"), session);
-		assert.notInclude(said.join("\n"), "add-mask");
+		assert.deepStrictEqual(members, ["function", "function", "function"]);
 	});
 });
 

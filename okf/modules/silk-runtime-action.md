@@ -7,7 +7,7 @@ kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
-  at: 2026-11-21T22:19:28Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: main
     resource: ../../src/main.ts
@@ -29,7 +29,7 @@ sources:
     resource: ../../src/steps/install-runtimes.ts
 integrity:
   generated:
-    body: 352cda8d215cfba3
+    body: a3c7e6144535ad3b
 ---
 
 # silk-runtime-action
@@ -70,9 +70,9 @@ worker, because a setup file that quietly stopped being wired up is otherwise in
 | Turbo server | `src/turbo-server.ts` | Detached server entry — HTTP plumbing only |
 | Layers | `src/layers/app.ts` | `MainLive` and `PostLive` |
 | State | `src/state.ts` | `STATE_KEYS`, `CacheState`, `StoreCacheState`, `TurboServerState`, `KcovCacheState`, `isExactHit`[^state] |
-| Schemas | `src/schema/{domain,inputs,outputs}.ts` | `devEngines` domain, 19 inputs, 22 outputs[^schema-inputs][^schema-outputs] |
+| Schemas | `src/schema/{domain,inputs,outputs}.ts` | `devEngines` domain, 13 inputs, 22 outputs[^schema-inputs][^schema-outputs] |
 | Steps | `src/steps/*.ts` | One contract module per pipeline step, plus `cache-config.ts` (pure) |
-| Turbo cache | `src/turbo-cache/{activation,meta,handler,server-config}.ts` | Everything the embedded cache decides — see [turbo-cache-server](./turbo-cache-server.md) |
+| Turbo cache | `src/turbo-cache/{activation,sign-in,meta,handler,access-log,server-config}.ts` | Everything the turbo cache decides: the activation table, sign-in to a hosted cache, and the embedded server — see [turbo-cache-server](./turbo-cache-server.md) |
 | Formatters | `src/summary/format.ts` | Pure, verbatim log lines and the job-summary panel |
 | Descriptors | `src/descriptors/{descriptor,node,bun,deno,biome,bats,kcov}.ts` | Pure per-tool download plans |
 | Build config | `effected.toml` (`[action]` tables) | `effected action build`: three entries (incl. `workers`), minify, `ignore` list, `importCheck` off for the `turbo-server` worker only, `persistLocal` |
@@ -131,18 +131,26 @@ action.yml (node24 runtime)
 and `SecureRandom` crypto services from `NodeCrypto` — `NodeServices` carries no crypto
 since Effect 4.1. Nothing in
 `layers/app.ts` rebuilds any of those; it adds only what the kit deliberately keeps out of
-the default runtime, because those modules pull in a blob-storage client.[^layers-app]
+the default runtime.[^layers-app]
 
 ```ts
-// src/layers/app.ts:43-53
+// src/layers/app.ts:66-77
 export const MainLive = Layer.mergeAll(
   ActionCache.layer,
+  OidcTokenIssuer.layer,
   PackageManagerInstaller.layer,
-  WorkspaceDiscovery.layer().pipe(Layer.provide(WorkspaceRoot.layer)),
+  WorkspaceDiscovery.layer({ stopAt: "." }).pipe(Layer.provide(WorkspaceRoot.layer)),
 ).pipe(Layer.provideMerge(ToolInstaller.layer));
 
 export const PostLive = ActionCache.layer;
 ```
+
+`OidcTokenIssuer` is the runner's OIDC token service, which sign-in to a hosted turbo cache
+mints from. Its requirements (`ActionEnvironment`, `HttpClient`, `ActionOutputs`) are all
+already provided, and building the layer asks the runner for nothing: a job without
+`id-token: write` fails at *use*, with `unavailable`, which the turbo step answers by
+starting the embedded server. So the layer is composed for every run, including the ones
+whose `turbo-api` is empty and never mint at all.[^layers-app]
 
 `ToolInstaller` is `provideMerge`d rather than merged: one instance satisfies
 `PackageManagerInstaller`'s requirement *and* stays visible to `installRuntimes`, which
@@ -256,16 +264,18 @@ defence in depth.
 | `steps/setup-package-manager.ts` | `PackageManagerInstaller`, `ActionOutputs`, `ActionLogger` |
 | `steps/install-dependencies.ts` | `ChildProcessSpawner`, `FileSystem`, `ActionLogger` |
 | `steps/install-biome.ts` | `ToolInstaller`, `ActionOutputs`, `FileSystem`, `ActionLogger` |
-| `steps/turbo-cache.ts` | `ActionState`, `ActionOutputs`, `HttpClient` |
+| `steps/turbo-cache.ts` | `ActionState`, `ActionOutputs`, `HttpClient`, `OidcTokenIssuer` |
 | `steps/summary.ts` | `ActionOutputs`, `ActionLogger` |
 | `summary/format.ts` | — (pure) |
 | `turbo-cache/activation.ts`, `meta.ts` | — (pure) |
+| `turbo-cache/sign-in.ts` | `OidcTokenIssuer`, `HttpClient`, `ActionOutputs` |
 | `turbo-cache/handler.ts` | `BlobStore` |
 | `post.ts` | `ActionCache`, `ActionState`, `FileSystem` |
 
 `ActionRuntime.layer` provides `ActionEnvironment`, `ActionLogger`, `ActionOutputs`,
 `ActionState`, `HttpClient` and `NodeServices`. `MainLive` adds `ActionCache`,
-`PackageManagerInstaller`, `ToolInstaller` and `WorkspaceDiscovery`; `PostLive` adds
+`OidcTokenIssuer`, `PackageManagerInstaller`, `ToolInstaller` and `WorkspaceDiscovery`;
+`PostLive` adds
 `ActionCache` alone.
 
 A frozen contract is sometimes wider than the implementation needs — `loadConfig` declares
@@ -310,7 +320,7 @@ lockfile list are all logged at debug level. See
 
 ## Input access pattern
 
-All 19 inputs are decoded once, at the top of the pipeline, through `Config.all` composing
+All 13 inputs are decoded once, at the top of the pipeline, through `Config.all` composing
 `ActionInput.*` combinators (`src/schema/inputs.ts`).[^schema-inputs] Three conventions are
 load-bearing:
 
@@ -321,9 +331,10 @@ load-bearing:
   variable at all.
 - **Empty is absent.** `ActionInput` treats an unsupplied input and an empty string as the
   same case.
-- **Secrets are `Redacted`.** `turbo-token`, `turbo-s3-secret-access-key` and
-  `turbo-s3-session-token` are read with `ActionInput.redacted` and only declassified
-  through `Secret.*`.
+- **Secrets are `Redacted`.** `turbo-token`, the one secret a workflow can supply, is read
+  with `ActionInput.redacted` and only declassified through `Secret.*`. `turbo-api` is a
+  plain string, read verbatim: whether it is a usable https URL is decided at sign-in, so a
+  bad value degrades to the embedded server instead of failing the decode.
 
 Two normalizations happen in the `Config.map` rather than at a use site: `turbo-cache`
 collapses to `"auto" | "off"`, and `cache-bust` filters out the `"false"` and empty
@@ -346,7 +357,7 @@ sentinels so downstream code sees a plain `Option`.
 
 ## Related concepts
 
-- [embedded-turbo-server](../decisions/embedded-turbo-server.md)
+- [turbo-cache-backends](../decisions/turbo-cache-backends.md)
 - [seams-as-defaulted-parameters](../decisions/seams-as-defaulted-parameters.md)
 - [per-step-error-taxonomy](../decisions/per-step-error-taxonomy.md)
 - [pipeline-step-ordering](../decisions/pipeline-step-ordering.md)

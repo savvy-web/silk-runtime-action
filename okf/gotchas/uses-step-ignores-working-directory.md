@@ -6,7 +6,7 @@ status: draft
 stale_after: 2027-03-13T00:00:00Z
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 resource: ../../.github/workflows/test-turbo-cache.yml
 sources:
   - id: test-turbo-cache-yml
@@ -16,7 +16,7 @@ tags:
   - testing
 integrity:
   generated:
-    body: 1e09678e9f54e515
+    body: 2bad91aee13148cd
 ---
 
 # `defaults.run.working-directory` does not reach a `uses:` step
@@ -59,8 +59,8 @@ install and *does* honor the working-directory default:
 - uses: ./.github/actions/local
 ```
 
-That comment and pattern repeat at `.github/workflows/test-turbo-cache.yml:21-27` (job 1),
-again ahead of the `uses:` step in the cross-job cache-hit job, and again in the S3-backed
+The comment is at `.github/workflows/test-turbo-cache.yml:22-27` (job 1) and is referred
+back to in the cross-job cache-hit job; the pattern repeats in the two hosted-cache
 jobs — every fixture-scoped `uses:` step in the file pairs `install-deps: "false"` with a
 `run:` step that performs the real install.[^test-turbo-cache-yml] Turbo detection and the
 embedded cache server are unaffected by disabling the dependency install, because both read

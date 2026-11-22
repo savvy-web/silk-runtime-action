@@ -187,7 +187,7 @@ export const writeSummary = (facts: SummaryFacts): Effect.Effect<void, SummaryEr
 			runtimes: facts.runtimes,
 			packageManager: { name: facts.outputs.packageManager, version: facts.outputs.packageManagerVersion },
 			biome: Option.map(facts.biome, (installed) => installed.version),
-			turbo: { backend: facts.turboCache.backend, port: facts.turboCache.port },
+			turbo: { backend: facts.turboCache.backend, port: facts.turboCache.port, host: facts.turboCache.host },
 			cache: facts.cache,
 			dependenciesInstalled: facts.dependenciesInstalled,
 			bats: Option.map(facts.bats, (installed) => ({

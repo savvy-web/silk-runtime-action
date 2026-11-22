@@ -134,7 +134,25 @@ describe("formatTurboLine", () => {
 
 	it("names the embedded backend and the port it bound", () => {
 		assert.strictEqual(formatTurboLine("github", Option.some(41230)), "github · server ready (:41230)");
-		assert.strictEqual(formatTurboLine("s3", Option.some(41230)), "s3 · server ready (:41230)");
+	});
+
+	it("names the host of a hosted cache", () => {
+		assert.strictEqual(
+			formatTurboLine("hosted", Option.none(), Option.some("cache.savvyweb.systems")),
+			"hosted (cache.savvyweb.systems)",
+		);
+	});
+
+	it("says hosted alone when no host is known", () => {
+		assert.strictEqual(formatTurboLine("hosted", Option.none()), "hosted");
+		assert.strictEqual(formatTurboLine("hosted", Option.none(), Option.none()), "hosted");
+	});
+
+	it("keeps the Vercel text for a passthrough whatever host it is handed", () => {
+		assert.strictEqual(
+			formatTurboLine("remote", Option.none(), Option.some("cache.savvyweb.systems")),
+			"passthrough (Vercel)",
+		);
 	});
 
 	it("drops the port when the embedded server bound none", () => {
@@ -165,7 +183,7 @@ describe("buildRuntimeSummary", () => {
 		],
 		packageManager: { name: "pnpm", version: "11.8.0" },
 		biome: Option.some("2.4.16"),
-		turbo: { backend: "github", port: Option.some(41230) },
+		turbo: { backend: "github", port: Option.some(41230), host: Option.none() },
 		cache: cacheState({ restoredKey: "silk-linux-x64-abc", lockfiles: ["pnpm-lock.yaml", "deno.lock"] }),
 		dependenciesInstalled: true,
 		bats: Option.none(),
@@ -209,13 +227,21 @@ describe("buildRuntimeSummary", () => {
 		const panel = buildRuntimeSummary({
 			...complete,
 			biome: Option.none(),
-			turbo: { backend: "none", port: Option.none() },
+			turbo: { backend: "none", port: Option.none(), host: Option.none() },
 			cache: cacheState({ primaryKey: "" }),
 			dependenciesInstalled: false,
 		});
 		assert.include(panel, "| Turbo cache | disabled |");
 		assert.include(panel, "| Dependency cache | ⬜ miss |");
 		assert.include(panel, "| Dependencies | skipped |");
+	});
+
+	it("names the hosted cache's host in the turbo row", () => {
+		const panel = buildRuntimeSummary({
+			...complete,
+			turbo: { backend: "hosted", port: Option.none(), host: Option.some("cache.savvyweb.systems") },
+		});
+		assert.include(panel, "| Turbo cache | hosted (cache.savvyweb.systems) |");
 	});
 
 	it("says so in the details when no lockfile matched", () => {
@@ -245,7 +271,7 @@ describe("buildRuntimeSummary with bats and kcov", () => {
 		],
 		packageManager: { name: "pnpm", version: "11.8.0" },
 		biome: Option.some("2.4.16"),
-		turbo: { backend: "github", port: Option.some(41230) },
+		turbo: { backend: "github", port: Option.some(41230), host: Option.none() },
 		cache: cacheState({ restoredKey: "silk-linux-x64-abc", lockfiles: ["pnpm-lock.yaml", "deno.lock"] }),
 		dependenciesInstalled: true,
 		bats: Option.none(),

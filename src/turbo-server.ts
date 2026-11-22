@@ -44,7 +44,7 @@ if (Result.isFailure(configured)) {
 }
 
 const config = configured.success;
-const runtime = ManagedRuntime.make(serverBlobStoreLayer(config));
+const runtime = ManagedRuntime.make(serverBlobStoreLayer);
 
 const handler = makeTurboHandler({
 	prefix: config.prefix,
@@ -54,7 +54,7 @@ const handler = makeTurboHandler({
 		// its symptom is now named. Without this a job that ran long enough for the
 		// token to expire simply stops caching, and the only trace is turbo
 		// reporting misses.
-		if (config.backend === "github" && isAuthShapedFailure(error)) {
+		if (isAuthShapedFailure(error)) {
 			say(
 				"the Actions cache refused a request — ACTIONS_RUNTIME_TOKEN has most likely expired, so cache writes from here on are lost",
 			);

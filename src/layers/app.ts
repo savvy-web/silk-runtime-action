@@ -18,13 +18,14 @@
  * @module layers/app
  */
 
-import { ActionCache, PackageManagerInstaller, ToolInstaller } from "@effected/github-actions";
+import { ActionCache, OidcTokenIssuer, PackageManagerInstaller, ToolInstaller } from "@effected/github-actions";
 import { WorkspaceDiscovery, WorkspaceRoot } from "@effected/workspaces";
 import { Layer } from "effect";
 
 /**
  * The `main` phase's extra services: the runner cache (dependency restore), the
- * tool cache (runtime and Biome installs) and package-manager provisioning.
+ * tool cache (runtime and Biome installs), package-manager provisioning and the
+ * runner's OIDC token service (sign-in to a hosted turbo cache).
  *
  * @remarks
  * `PackageManagerInstaller` builds on the tool cache, so `ToolInstaller` is
@@ -33,6 +34,14 @@ import { Layer } from "effect";
  * directly. Everything the two layers still require — `ActionEnvironment`,
  * `FileSystem`, `Path`, `ChildProcessSpawner`, `HttpClient` — `ActionServices`
  * already provides.
+ *
+ * `OidcTokenIssuer` is here because the kit keeps it out of the default
+ * runtime too, and its requirements (`ActionEnvironment`, `HttpClient`,
+ * `ActionOutputs`) are all `ActionServices`. Building the layer asks the
+ * runner for nothing: a job without `id-token: write` fails at *use*, with
+ * `unavailable`, which the turbo step answers by starting the embedded server.
+ * So the layer is safe to compose for every run, including the ones whose
+ * `turbo-api` is empty and never mint at all.
  *
  * `WorkspaceDiscovery` is what tells `restoreCache` which directories the
  * workspace actually has, so the archive names each member's `node_modules`
@@ -56,6 +65,7 @@ import { Layer } from "effect";
  */
 export const MainLive = Layer.mergeAll(
 	ActionCache.layer,
+	OidcTokenIssuer.layer,
 	PackageManagerInstaller.layer,
 	WorkspaceDiscovery.layer({ stopAt: "." }).pipe(Layer.provide(WorkspaceRoot.layer)),
 ).pipe(Layer.provideMerge(ToolInstaller.layer));

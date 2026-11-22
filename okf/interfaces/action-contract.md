@@ -7,7 +7,7 @@ kind: runtime
 resource: ../../action.yml
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: action-yml
     resource: ../../action.yml
@@ -25,13 +25,13 @@ sources:
     resource: ../../__test__/unit/schema/inputs.test.ts
 integrity:
   generated:
-    body: 99dc963326e9cfc6
+    body: 90eae2f77591c8a2
 ---
 
 # Action contract — inputs, outputs, and exported environment
 
-This is the promise a consuming workflow can rely on: 18 inputs (`action.yml:6-82`), all
-optional and auto-detected when omitted; **22 outputs** (`action.yml:83-129`), published in a
+This is the promise a consuming workflow can rely on: 13 inputs (`action.yml:6-58`), all
+optional and auto-detected when omitted; **22 outputs** (`action.yml:59-105`), published in a
 fixed order every run; and a small set of environment variables exported for later workflow
 steps to read.[^action-yml]
 
@@ -41,6 +41,16 @@ Every input is optional. There are no runtime or package-manager version inputs 
 `devEngines` in `package.json` is the only source of versions (see
 [dev-engines-manifest](./dev-engines-manifest.md)). `cache-bust` (default `"false"`) exists
 for testing only and should not be wired into normal workflow logic.[^action-yml]
+
+`turbo-api` names a hosted Turborepo remote cache and has **no default**: the action is
+public and the URL is the caller's. It must be an `https` URL, and the job needs the
+`id-token: write` permission for the sign-in to succeed. When it cannot, the action logs one
+warning and uses the embedded server; `turbo-api` never fails a job. It takes precedence
+over `turbo-token` and `turbo-team`, and `turbo-cache: off` takes precedence over all of
+them. There are no `turbo-s3-*` inputs: a workflow that still passes one gets the runner's
+"unexpected input" warning and the embedded server.[^action-yml] `turbo-api` and the removal
+are on an unreleased branch as of 2026-11-22; the released 1.x action still has the S3
+inputs and no `turbo-api`.
 
 ## Outputs
 
@@ -56,6 +66,11 @@ name) is **truthful**: it is true only when a dependency-install command actuall
 succeeded, never an echo of the `install-deps` input. A consumer must not read `install-deps:
 true` as proof that dependencies landed — deno's install is always skipped regardless of the
 input, and a truthful flag is what tells a reader that.
+
+`turbo-cache-backend` is one of `github` (the embedded server on the GitHub Actions cache),
+`hosted` (signed in to `turbo-api`), `remote` (Vercel passthrough) and `none`.
+`turbo-cache-port` is the embedded server's port and is empty for every other
+backend.[^action-yml][^outputs-schema]
 
 A consumer relying on `bats-enabled` or `kcov-enabled` must read them as **install success**,
 not detection success — the same posture `biome-enabled` already documents: an install that
@@ -80,7 +95,7 @@ resolve in a plain `.bats` file, because `$HOME/.local/share` is the one locatio
 that spawns the binary directly does not have to re-derive the tool-cache layout by shelling
 out to `command -v`.
 
-For the embedded turbo cache, the exported set follows the resolved backend rather than being
+For the turbo cache, the exported set follows the resolved backend rather than being
 constant:
 
 | Resolution | Exported environment |
@@ -89,11 +104,15 @@ constant:
 | passthrough | `TURBO_TOKEN`, `TURBO_TEAM` |
 | embedded, ready | `TURBO_API`, `TURBO_TOKEN`, `TURBO_TEAM` |
 | embedded, not ready | none |
+| hosted, signed in | `TURBO_API` (the service's URL), `TURBO_TOKEN`, `TURBO_TEAM=silk` |
+| hosted, not signed in | as the two embedded rows |
 
 Passthrough deliberately exports no `TURBO_API`: turbo's own default is Vercel's endpoint,
 and naming a URL here would pin one this action does not own. A consumer must not assume
-`TURBO_API` is always set whenever turbo caching is active — its absence is how a passthrough
-run is told apart from an embedded one, short of reading `turbo-cache-backend`.
+`TURBO_API` is always set whenever turbo caching is active, and must not read a loopback
+`TURBO_API` as the only alternative to none: an embedded run exports
+`http://127.0.0.1:<port>` and a hosted run exports the service's own URL.
+`turbo-cache-backend` is the output that says which.
 
 ## Stability contract
 

@@ -1,6 +1,6 @@
 # Convention
 
-* [A detached worker never gets the real ActionOutputs layer](detached-worker-outputs-layer.md) - The detached turbo-server process must compose ActionOutputs.layerDetached, never the real ActionOutputs.layer, because masking on a detached process's stdout leaks rather than protects.
+* [A detached worker never gets the real ActionOutputs layer](detached-worker-outputs-layer.md) - A detached process must never compose the real ActionOutputs.layer, because a workflow command written to a detached process's stdout, a mask included, leaks rather than protects. The turbo-server worker composes no ActionOutputs at all; a worker that needs the service takes ActionOutputs.layerDetached.
 * [Commit source and dist together](commit-source-and-dist-together.md) - Every commit that touches src/ must also carry a rebuilt dist/ and .github/actions/local/, be GPG-signed with the maintainer's verified key, and land on dev rather than main.
 * [Cross-phase state's encoded form must be plain JSON](plain-json-cross-phase-state.md) - Every Schema field that crosses the main-to-post boundary must encode to plain JSON, and must be tested against the real ActionState layer, never an in-memory double.
 * [Dependency honesty](dependency-honesty.md) - Every declared @effected/\* dependency must be imported by src/ or be a required peer of one that is, and no resolved version ever gets written into prose.

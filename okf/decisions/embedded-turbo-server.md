@@ -1,11 +1,11 @@
 ---
 title: An embedded, detached Turbo remote-cache server over a Vercel account
-description: Why the action stands up its own Turbo remote-cache HTTP server rather than requiring Vercel, why it runs detached at a fixed port, and the current-state choices that shape it.
+description: Superseded by turbo-cache-backends, kept as the record of the earlier choice. Why the action stands up its own Turbo remote-cache HTTP server rather than requiring Vercel, why it runs detached at a fixed port, and the current-state choices that shape it.
 type: Decision
 status: draft
 generated:
   by: okfit/claude-code
-  at: 2026-09-13T20:36:06Z
+  at: 2026-11-22T05:18:42Z
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -27,10 +27,14 @@ tags:
   - ci
 integrity:
   generated:
-    body: f0ec85ac37306d47
+    body: a738ff03d72fc405
 ---
 
 # An embedded, detached Turbo remote-cache server over a Vercel account
+
+Superseded by [turbo-cache-backends](./turbo-cache-backends.md): the S3 backend this record
+describes is removed, and a hosted cache signed in to by OIDC is tried ahead of the embedded
+server. The text below is kept as the record of the earlier choice and is not maintained.
 
 ## Context
 

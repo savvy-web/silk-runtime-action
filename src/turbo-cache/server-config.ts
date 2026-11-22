@@ -1,7 +1,7 @@
-import { NodeCrypto, NodeFileSystem, NodeHttpClient } from "@effect/platform-node";
-import type { BlobEnvelopeError, BlobStoreError, S3Config } from "@effected/github-actions";
-import { ActionEnvironment, ActionOutputs, BlobStore, GitHubCacheBlobStore } from "@effected/github-actions";
-import { Layer, Redacted, Result } from "effect";
+import { NodeFileSystem, NodeHttpClient } from "@effect/platform-node";
+import type { BlobEnvelopeError, BlobStore, BlobStoreError } from "@effected/github-actions";
+import { ActionEnvironment, GitHubCacheBlobStore } from "@effected/github-actions";
+import { Layer, Result } from "effect";
 
 /**
  * The environment variables the detached cache server is configured with.
@@ -22,13 +22,6 @@ export const TURBO_SERVER_ENV = {
 	prefix: "TURBOGHA_PREFIX",
 	token: "TURBOGHA_TOKEN",
 	backend: "TURBOGHA_BACKEND",
-	s3Bucket: "TURBOGHA_S3_BUCKET",
-	s3Region: "TURBOGHA_S3_REGION",
-	s3Endpoint: "TURBOGHA_S3_ENDPOINT",
-	s3AccessKeyId: "TURBOGHA_S3_ACCESS_KEY_ID",
-	s3SecretAccessKey: "TURBOGHA_S3_SECRET_ACCESS_KEY",
-	s3SessionToken: "TURBOGHA_S3_SESSION_TOKEN",
-	s3Prefix: "TURBOGHA_S3_PREFIX",
 } as const;
 
 /**
@@ -46,48 +39,26 @@ export const DEFAULT_TURBO_SERVER_PORT = 41_230;
 /** The highest port a TCP listen accepts. */
 const MAX_PORT = 65_535;
 
-/** What the detached server needs to know to run. */
-export type TurboServerConfig = {
+/**
+ * What the detached server needs to know to run.
+ *
+ * @remarks
+ * `backend` has one value. It stays a field because the worker says it in its
+ * startup line and `post` reports it, and both read better naming the store
+ * than assuming it.
+ */
+export interface TurboServerConfig {
 	readonly port: number;
 	readonly prefix: string;
 	readonly token: string;
-} & ({ readonly backend: "github" } | { readonly backend: "s3"; readonly s3: S3Config });
+	readonly backend: "github";
+}
 
 /** The environment as `process.env` hands it over. */
 type Environment = Readonly<Record<string, string | undefined>>;
 
 /** A variable's value, with unset and empty the same case. */
 const read = (env: Environment, name: string): string => env[name] ?? "";
-
-/**
- * The S3 settings, assembled the way the backend wants them.
- *
- * @remarks
- * Oracle 48: the three optional fields are spread in **only when nonempty**.
- * `exactOptionalPropertyTypes` makes that a spread rather than an assignment,
- * and the distinction is real — an empty endpoint would point the signer at
- * nothing rather than at AWS, and an empty prefix would namespace every key
- * under a leading separator.
- *
- * A missing bucket or credential is read as empty rather than refused. The S3
- * backend reports its own misconfiguration, carrying the bucket and the status
- * a failed request came back with; a guess here would be a worse message for
- * the same fault.
- */
-const s3ConfigFrom = (env: Environment): S3Config => {
-	const endpoint = read(env, TURBO_SERVER_ENV.s3Endpoint);
-	const sessionToken = read(env, TURBO_SERVER_ENV.s3SessionToken);
-	const prefix = read(env, TURBO_SERVER_ENV.s3Prefix);
-	return {
-		bucket: read(env, TURBO_SERVER_ENV.s3Bucket),
-		region: read(env, TURBO_SERVER_ENV.s3Region),
-		accessKeyId: read(env, TURBO_SERVER_ENV.s3AccessKeyId),
-		secretAccessKey: Redacted.make(read(env, TURBO_SERVER_ENV.s3SecretAccessKey)),
-		...(endpoint === "" ? {} : { endpoint }),
-		...(sessionToken === "" ? {} : { sessionToken: Redacted.make(sessionToken) }),
-		...(prefix === "" ? {} : { prefix }),
-	};
-};
 
 /**
  * Reads the detached server's configuration out of an environment.
@@ -111,8 +82,9 @@ const s3ConfigFrom = (env: Environment): S3Config => {
  * process would die with a stack trace instead of the one line it exists to
  * print.
  *
- * Any backend name other than `s3` is the GitHub Actions cache, matching v1's
- * `backend === "s3" ? … : github`.
+ * `TURBOGHA_BACKEND` is not read. The embedded server has one store, the
+ * GitHub Actions cache, so whatever that variable says the answer is `github`;
+ * the step still writes it, for an operator reading a runner's process list.
  */
 export const readServerConfig = (env: Environment): Result.Result<TurboServerConfig, string> => {
 	const token = read(env, TURBO_SERVER_ENV.token);
@@ -120,69 +92,42 @@ export const readServerConfig = (env: Environment): Result.Result<TurboServerCon
 		return Result.fail(`${TURBO_SERVER_ENV.token} is not set — refusing to start an unauthenticated cache server`);
 	}
 	const port = Number(read(env, TURBO_SERVER_ENV.port));
-	const common = {
+	return Result.succeed({
 		port: Number.isInteger(port) && port > 0 && port <= MAX_PORT ? port : DEFAULT_TURBO_SERVER_PORT,
 		prefix: read(env, TURBO_SERVER_ENV.prefix),
 		token,
-	};
-	return Result.succeed(
-		read(env, TURBO_SERVER_ENV.backend) === "s3"
-			? { ...common, backend: "s3", s3: s3ConfigFrom(env) }
-			: { ...common, backend: "github" },
-	);
+		backend: "github",
+	});
 };
 
 /**
- * Everything the store needs that is not the store: the platform services both
- * backends are built over.
+ * Everything the store needs that is not the store: the platform services the
+ * GitHub cache backend is built over.
  *
  * @remarks
  * The action's own layers come from `ActionRuntime`, which this process does
  * not have — a detached worker composes its own. `ActionEnvironment` is here
- * because the GitHub backend reads the runner's cache url and runtime token
- * from it; `ActionOutputs` because the S3 backend requires it.
+ * because the backend reads the runner's cache url and runtime token from it.
  *
- * `layerDetached` rather than the real `ActionOutputs.layer`, and **this is a
- * leak fix rather than a tidiness one**. The S3 backend declassifies its
- * signing key through `Secret.forSigning`, which masks first — and masking is
- * `::add-mask::<plaintext>` on stdout, a workflow command the runner parses out
- * of a *step's* log. This process is not a step: it is detached, and its stdout
- * is a file in the temp directory (oracle 27, 31) that no runner reads. The
- * real layer therefore writes the S3 secret in plaintext into a file `post`
- * prints the path of — which this action shipped for exactly one round.
- *
- * The kit's layer replaces the interim double this repo hand-built for that
- * fix, and improves on it in two ways worth naming: its `R` is `never`, so a
- * worker composing it *structurally cannot* write a runner file, and the
- * members that configure the parent job's later steps fail typed with
- * `reason: "detached"` rather than throwing an unstubbed-member defect.
+ * There is deliberately no `ActionOutputs` in a worker. It is detached, so its
+ * stdout is a file in the temp directory (oracle 27, 31) that no runner parses:
+ * a workflow command written here, a mask included, would spell its argument
+ * into that file in the clear. Nothing the GitHub backend does needs one.
  */
-const platform = (() => {
-	const fileSystem = NodeFileSystem.layer;
-	const environment = ActionEnvironment.layer.pipe(Layer.provide(fileSystem));
-	// Only the crypto families `BlobStore.layerS3` requires: SigV4 hashes payloads
-	// through `Digest` and derives its signing key through `Mac`.
-	return Layer.mergeAll(
-		NodeHttpClient.layerUndici,
-		NodeCrypto.layerDigest,
-		NodeCrypto.layerMac,
-		environment,
-		ActionOutputs.layerDetached,
-	);
-})();
+const platform = Layer.mergeAll(
+	NodeHttpClient.layerUndici,
+	ActionEnvironment.layer.pipe(Layer.provide(NodeFileSystem.layer)),
+);
 
 /**
- * The blob backend a configuration selects (oracle 48).
+ * The blob backend the server stores artifacts in: the GitHub Actions cache.
  *
  * @remarks
- * Both backends are `BlobStore` — the choice is a layer and nothing above it
- * knows which one it got, which is the whole reason the handler is written
- * against the service rather than against either client.
+ * A `BlobStore` layer, which is the seam the handler is written against —
+ * nothing above it knows which store it got, so a second backend would again
+ * be a layer and nothing else.
  */
-export const serverBlobStoreLayer = (config: TurboServerConfig): Layer.Layer<BlobStore> =>
-	config.backend === "s3"
-		? BlobStore.layerS3(config.s3).pipe(Layer.provide(platform))
-		: GitHubCacheBlobStore.layer.pipe(Layer.provide(platform));
+export const serverBlobStoreLayer: Layer.Layer<BlobStore> = GitHubCacheBlobStore.layer.pipe(Layer.provide(platform));
 
 /**
  * Whether a store failure looks like an authentication problem.

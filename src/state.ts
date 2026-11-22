@@ -88,11 +88,14 @@ export class StoreCacheState extends Schema.Class<StoreCacheState>("StoreCacheSt
  * the phase boundary as text through `GITHUB_STATE`, and a truncated state
  * file, an absent key, or `Number("")` all decode to `0` — `ProcessId`
  * refuses that value rather than letting it reach `DetachedProcess.reap`.
+ *
+ * `backend` has one value, the GitHub Actions cache. It stays in the state
+ * because `post` names it in the line that reports what the server served.
  */
 export class TurboServerState extends Schema.Class<TurboServerState>("TurboServerState")({
 	pid: ProcessId,
 	port: Schema.Number,
-	backend: Schema.Literals(["github", "s3"]),
+	backend: Schema.Literal("github"),
 	logFile: Schema.String,
 }) {}
 

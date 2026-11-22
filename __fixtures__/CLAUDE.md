@@ -52,9 +52,12 @@ from hitting the entry its own first attempt saved — and every step is `contin
 
 **[test-turbo-cache.yml](../.github/workflows/test-turbo-cache.yml)** — `turbo-monorepo`
 only, on PRs and dispatch. Within-job double build (GitHub backend), cross-job cache hit on
-a cold runner, an S3 double build against SeaweedFS, and the same against real S3 behind a
-secrets-presence gate job so forks skip rather than fail. Each asserts the reported
-`turbo-cache-backend` and `turbo-cache-port` before proving the cache hit.
+a cold runner, a double build against the hosted cache signed in to with the job's OIDC
+token (skipped on a fork's pull request), and the same input without `id-token: write`,
+which must fall back to the embedded server. Each asserts the reported
+`turbo-cache-backend` and `turbo-cache-port` before proving the cache hit. The hosted job
+writes a `nonce.txt` into `packages/app` first, so its hash is new to the service and the
+hit can only be on what the job itself uploaded.
 
 Two more jobs run `turbo-prepare` **at the workspace root with the action's own install on**
 — the only jobs in the suite where turbo runs inside the install. `prepare-script-build`
