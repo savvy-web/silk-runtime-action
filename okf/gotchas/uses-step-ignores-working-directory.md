@@ -14,7 +14,7 @@ sources:
 tags:
   - ci
   - testing
-integrity:
+x-okfit-integrity:
   generated:
     body: 2bad91aee13148cd
 ---

@@ -19,7 +19,7 @@ tags:
   - ci
   - caching
   - testing
-integrity:
+x-okfit-integrity:
   generated:
     body: 5b59297bd0195fb2
 ---

@@ -16,7 +16,7 @@ sources:
 tags:
   - deps
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: e66fea1de5437414
 ---

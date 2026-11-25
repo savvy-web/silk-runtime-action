@@ -3,7 +3,7 @@ type: Limitation
 title: One embedded Turbo cache server per runner
 description: The embedded Turbo remote-cache server listens on a fixed port, so a second concurrent job on the same runner cannot start its own server and runs without a remote cache instead.
 status: draft
-bounds: ../modules/turbo-cache-server.md
+x-okfit-bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
@@ -14,7 +14,7 @@ sources:
     resource: ../../src/turbo-server.ts
 tags:
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: a8830aef7eeca580
 ---

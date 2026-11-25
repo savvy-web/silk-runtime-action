@@ -17,7 +17,7 @@ tags:
   - architecture
   - compat
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: 3f9d680375caa714
 ---

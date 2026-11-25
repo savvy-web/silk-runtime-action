@@ -3,7 +3,7 @@ type: Limitation
 title: "ACTIONS_RUNTIME_TOKEN expires under a long-running embedded Turbo server"
 description: The GitHub Actions cache backend for the embedded Turbo server captures a short-lived runtime token at spawn time, so a very long job can lose cache writes partway through with no refresh channel to recover them.
 status: draft
-bounds: ../modules/turbo-cache-server.md
+x-okfit-bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
   at: 2026-11-22T05:18:42Z
@@ -15,7 +15,7 @@ sources:
 tags:
   - caching
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: 1f6695b72344e8d1
 ---

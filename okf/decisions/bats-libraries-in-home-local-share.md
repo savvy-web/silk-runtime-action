@@ -15,7 +15,7 @@ tags:
   - compat
   - dx
   - caching
-integrity:
+x-okfit-integrity:
   generated:
     body: fb62372727033faf
 ---

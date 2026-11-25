@@ -17,7 +17,7 @@ tags:
   - caching
   - performance
   - architecture
-integrity:
+x-okfit-integrity:
   generated:
     body: 6aca95e6c5adb8aa
 ---

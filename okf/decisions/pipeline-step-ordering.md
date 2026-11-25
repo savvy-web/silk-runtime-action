@@ -10,7 +10,7 @@ generated:
 sources:
   - id: program
     resource: ../../src/program.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: da8d99f34665e1b3
 ---

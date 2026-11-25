@@ -13,7 +13,7 @@ sources:
     resource: ../../src/post.ts
 tags:
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: a945d005bb7356b5
 ---

@@ -14,7 +14,7 @@ sources:
     resource: ../../effected.toml
   - id: root-claude-common-commands
     resource: ../../CLAUDE.md
-integrity:
+x-okfit-integrity:
   generated:
     body: 7f6d08476f406312
 ---

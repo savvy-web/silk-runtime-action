@@ -17,7 +17,7 @@ sources:
 tags:
   - release
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: 3d273774cc354828
 ---

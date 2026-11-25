@@ -3,7 +3,7 @@ type: Module
 title: test-harness
 description: The fixture matrix and composite actions that exercise the built action on real runners.
 status: draft
-kind: harness
+x-okfit-kind: harness
 resource: ../../.github/actions/test-fixture
 generated:
   by: okfit/claude-code
@@ -21,7 +21,7 @@ sources:
     resource: ../../.github/workflows/test-turbo-cache.yml
   - id: vitest-config
     resource: ../../vitest.config.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 2707cfc4d9b49aa2
 ---

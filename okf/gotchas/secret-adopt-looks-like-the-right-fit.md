@@ -14,7 +14,7 @@ sources:
 tags:
   - security
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: dfa0e657d704c222
 ---

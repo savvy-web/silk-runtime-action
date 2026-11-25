@@ -12,7 +12,7 @@ sources:
 tags:
   - ci
   - release
-integrity:
+x-okfit-integrity:
   generated:
     body: ec48625c30bcc3f9
 ---

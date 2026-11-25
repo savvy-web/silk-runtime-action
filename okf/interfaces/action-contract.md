@@ -3,7 +3,7 @@ title: Action contract — inputs, outputs, and exported environment
 description: The inputs, outputs, and exported environment a consuming workflow can rely on.
 status: draft
 type: Interface
-kind: runtime
+x-okfit-kind: runtime
 resource: ../../action.yml
 generated:
   by: okfit/claude-code
@@ -23,7 +23,7 @@ sources:
     resource: ../../__test__/unit/schema/outputs.test.ts
   - id: inputs-parity-test
     resource: ../../__test__/unit/schema/inputs.test.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 90eae2f77591c8a2
 ---

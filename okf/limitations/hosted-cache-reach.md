@@ -3,7 +3,7 @@ type: Limitation
 title: What the hosted turbo cache cannot reach — forks, jobs without id-token, long jobs, and the prefix input
 description: A fork's pull request and any job without id-token write always take the embedded fallback, turbo cannot refresh the hosted cache token mid-job so a job that outlives it loses the cache late, and the hosted service ignores turbo-cache-prefix.
 status: draft
-bounds: ../modules/turbo-cache-server.md
+x-okfit-bounds: ../modules/turbo-cache-server.md
 generated:
   by: okfit/claude-code
   at: 2026-11-22T05:18:42Z
@@ -24,7 +24,7 @@ tags:
   - caching
   - ci
   - github
-integrity:
+x-okfit-integrity:
   generated:
     body: 3548cf629c1883bc
 ---

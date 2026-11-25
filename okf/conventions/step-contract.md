@@ -17,7 +17,7 @@ sources:
     resource: ../../src/layers/app.ts
   - id: steps-shared-shape-test
     resource: ../../__test__/unit/steps/steps.test.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 3fd2b2f41d92650c
 ---

@@ -27,7 +27,7 @@ sources:
     resource: ../../src/schema/inputs.ts
   - id: outputs-src
     resource: ../../src/schema/outputs.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 33a93543e38641fb
 ---

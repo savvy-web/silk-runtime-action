@@ -16,7 +16,7 @@ sources:
 tags:
   - dx
   - testing
-integrity:
+x-okfit-integrity:
   generated:
     body: 338b6ecf5d678c76
 ---

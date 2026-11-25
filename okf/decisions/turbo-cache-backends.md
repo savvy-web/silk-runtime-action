@@ -3,10 +3,10 @@ title: A hosted cache signed in to by OIDC is tried first, and the embedded serv
 description: Why turbo-api selects a hosted remote cache the job signs in to with its GitHub OIDC token, why every sign-in failure falls back to the embedded detached server instead of failing the job, why the S3 backend and its stored keys are gone, and the choices about the embedded server that still stand.
 type: Decision
 status: draft
-supersedes: ./embedded-turbo-server.md
+x-okfit-supersedes: ./embedded-turbo-server.md
 generated:
   by: okfit/claude-code
-  at: 2026-11-22T05:18:42Z
+  at: 2026-11-25T23:19:09Z
 sources:
   - id: activation
     resource: ../../src/turbo-cache/activation.ts
@@ -26,8 +26,9 @@ sources:
     resource: ../../src/state.ts
   - id: post
     resource: ../../src/post.ts
-  - id: changeset
-    resource: ../../.changeset/hosted-turbo-cache-signin.md
+  - id: changelog
+    resource: ../../CHANGELOG.md
+    title: "CHANGELOG: 2.0.0"
   - id: e2e-workflow
     resource: ../../.github/workflows/test-turbo-cache.yml
   - id: remote-cache-design
@@ -45,9 +46,9 @@ tags:
   - caching
   - ci
   - security
-integrity:
+x-okfit-integrity:
   generated:
-    body: 5c1c6fc268244b97
+    body: 92125de0c06abf34
 ---
 
 # A hosted cache signed in to by OIDC is tried first, and the embedded server on the GitHub cache is the fallback
@@ -66,10 +67,9 @@ organization.[^remote-cache-design][^owner-approval][^cache-service] The design'
 anti-goal binds this action directly: a job must not fail, or get slower than an uncached
 build, because the cache is down or refuses it.[^remote-cache-design]
 
-As of 2026-11-22 this is on the local branch `feat/hosted-turbo-cache`: not pushed, not
-released, and the two integration jobs that exercise the hosted path
-(`hosted-double-build` and `hosted-fallback`) have never run.[^e2e-workflow] The changeset
-marks it a major version.[^changeset]
+This shipped as the 2.0.0 major (#577, released in #578).[^changelog] Both integration jobs
+that exercise the hosted path, `hosted-double-build` and `hosted-fallback`, passed on the
+release branch on 2026-11-22 (run 45030391663).[^e2e-workflow]
 
 ## Decision
 
@@ -117,7 +117,7 @@ of failing the input decode and the job with it.[^inputs][^remote-cache-design]
 **The S3 backend is removed.** The seven `turbo-s3-*` inputs are gone and
 `turbo-cache-backend` reports `hosted` where it once could report `s3`. The embedded
 server has one store, so `TurboServerConfig.backend` and `TurboServerState.backend` are the
-single literal `github`.[^server-config][^state][^changeset]
+single literal `github`.[^server-config][^state][^changelog]
 
 ### What still stands about the embedded server
 
@@ -185,7 +185,7 @@ that `post` reaps. The hosted path holds no server and no state, so `post` has n
 do for it.
 
 A workflow that still passes a `turbo-s3-*` input gets the runner's "unexpected input"
-warning and the embedded server.[^changeset] What the hosted path cannot do is in
+warning and the embedded server.[^changelog] What the hosted path cannot do is in
 [hosted-cache-reach](../limitations/hosted-cache-reach.md).
 
 [^activation]: activation
@@ -197,7 +197,7 @@ warning and the embedded server.[^changeset] What the hosted path cannot do is i
 [^inputs]: inputs
 [^state]: state
 [^post]: post
-[^changeset]: changeset
+[^changelog]: changelog
 [^e2e-workflow]: e2e-workflow
 [^remote-cache-design]: remote-cache-design
 [^owner-approval]: owner-approval

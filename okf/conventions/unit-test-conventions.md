@@ -39,7 +39,7 @@ sources:
     resource: ../../vitest.config.ts
   - id: root-claude-contributing
     resource: ../../CLAUDE.md
-integrity:
+x-okfit-integrity:
   generated:
     body: 007b3d2abf9505f8
 ---
