@@ -3,7 +3,7 @@ type: Module
 title: silk-runtime-action
 description: The compiled Node action itself — entries, layers, step order, error taxonomy.
 status: draft
-kind: action
+x-okfit-kind: action
 resource: ../../src
 generated:
   by: okfit/claude-code
@@ -27,7 +27,7 @@ sources:
     resource: ../../src/schema/outputs.ts
   - id: install-runtimes
     resource: ../../src/steps/install-runtimes.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: a3c7e6144535ad3b
 ---

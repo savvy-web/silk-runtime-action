@@ -22,7 +22,7 @@ sources:
     resource: ../../src/descriptors/bats.ts
   - id: kcov
     resource: ../../src/descriptors/kcov.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: deb264c46574d618
 ---

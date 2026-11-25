@@ -18,7 +18,7 @@ sources:
     resource: ../../src/steps/install-biome.ts
   - id: install-dependencies
     resource: ../../src/steps/install-dependencies.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 7c6ccb981f83ce86
 ---

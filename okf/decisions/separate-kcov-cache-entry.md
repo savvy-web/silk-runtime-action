@@ -18,7 +18,7 @@ sources:
 tags:
   - caching
   - architecture
-integrity:
+x-okfit-integrity:
   generated:
     body: 2a979818003019cc
 ---

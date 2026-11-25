@@ -16,7 +16,7 @@ sources:
     resource: ../../src/post.ts
   - id: state-test
     resource: ../../__test__/unit/state.test.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 685b27bd055d110b
 ---

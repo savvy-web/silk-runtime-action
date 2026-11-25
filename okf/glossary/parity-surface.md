@@ -22,7 +22,7 @@ sources:
 tags:
   - testing
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: 17c4ba67b7949d8c
 ---

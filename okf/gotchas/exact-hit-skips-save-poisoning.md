@@ -14,7 +14,7 @@ sources:
 tags:
   - caching
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: 1650adb2f3ae6c4d
 ---

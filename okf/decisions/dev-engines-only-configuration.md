@@ -12,7 +12,7 @@ sources:
     resource: ../../src/schema/domain.ts
   - id: setup-package-manager
     resource: ../../src/steps/setup-package-manager.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 18475db43fce83ac
 ---

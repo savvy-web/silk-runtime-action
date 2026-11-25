@@ -12,7 +12,7 @@ sources:
     resource: ../../src/schema/inputs.ts
   - id: program
     resource: ../../src/program.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 849b74cb2a74d510
 ---

@@ -21,7 +21,7 @@ sources:
     resource: ../../src/steps/install-kcov.ts
   - id: root-claude-deps
     resource: ../../CLAUDE.md
-integrity:
+x-okfit-integrity:
   generated:
     body: 9c005644fd71af3b
 ---

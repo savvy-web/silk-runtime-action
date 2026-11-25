@@ -19,7 +19,7 @@ sources:
     resource: ../src/turbo-server.ts
   - id: turbo-cache-step
     resource: ../src/steps/turbo-cache.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 9841ecc184c1b649
 ---

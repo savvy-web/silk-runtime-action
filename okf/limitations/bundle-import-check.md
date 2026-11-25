@@ -3,7 +3,7 @@ type: Limitation
 title: The turbo-server worker is exempt from the post-bundle import check because it refuses to load without its token
 description: The turbo-server worker exits at import without TURBOGHA_TOKEN, so its own effected.toml table sets importCheck = false; main and post keep the check, and only the worker's load is left to the fixture workflows.
 status: draft
-bounds: ../modules/silk-runtime-action.md
+x-okfit-bounds: ../modules/silk-runtime-action.md
 generated:
   by: okfit/claude-code
   at: 2026-11-11T16:39:59Z
@@ -21,7 +21,7 @@ tags:
   - bundle
   - ci
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: 52069262da68dc89
 ---

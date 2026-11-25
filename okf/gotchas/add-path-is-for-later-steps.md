@@ -14,7 +14,7 @@ sources:
 tags:
   - compat
   - dx
-integrity:
+x-okfit-integrity:
   generated:
     body: ea66eaabf6a3970d
 ---

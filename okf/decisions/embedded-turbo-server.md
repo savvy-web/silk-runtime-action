@@ -25,7 +25,7 @@ tags:
   - architecture
   - caching
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: a738ff03d72fc405
 ---

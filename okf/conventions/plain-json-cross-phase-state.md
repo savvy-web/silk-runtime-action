@@ -15,7 +15,7 @@ sources:
     resource: ../../src/turbo-cache/meta.ts
   - id: state-round-trip-test
     resource: ../../__test__/unit/state.test.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: c0d625dfc44e54cc
 ---

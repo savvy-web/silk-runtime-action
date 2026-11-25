@@ -13,7 +13,7 @@ sources:
     resource: ../../src/turbo-cache/server-config.ts
   - id: turbo-server-entry
     resource: ../../src/turbo-server.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: c0768db568baa695
 ---

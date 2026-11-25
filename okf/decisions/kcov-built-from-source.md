@@ -15,7 +15,7 @@ tags:
   - compat
   - caching
   - performance
-integrity:
+x-okfit-integrity:
   generated:
     body: e72a13b6b20ac064
 ---

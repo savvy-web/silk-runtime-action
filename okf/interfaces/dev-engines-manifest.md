@@ -3,7 +3,7 @@ title: devEngines manifest — the config shape consumers must satisfy
 description: What a consuming repository's package.json devEngines block must look like, and how it normalizes.
 status: draft
 type: Interface
-kind: config
+x-okfit-kind: config
 resource: ../../src/schema/domain.ts
 generated:
   by: okfit/claude-code
@@ -13,7 +13,7 @@ sources:
     resource: ../../src/schema/domain.ts
   - id: domain-test
     resource: ../../__test__/unit/schema/domain.test.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 97920d1b026aeb93
 ---

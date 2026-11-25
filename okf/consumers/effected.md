@@ -3,7 +3,7 @@ title: "spencerbeggs/effected"
 description: The reference consumer and the dogfood upstream — the repository whose fixture layout, dependency provenance, and one production incident have shaped this action's cache logic directly.
 type: Consumer
 status: draft
-repository: spencerbeggs/effected
+x-okfit-repository: spencerbeggs/effected
 generated:
   by: okfit/claude-code
   at: 2026-11-13T18:50:00Z
@@ -15,7 +15,7 @@ sources:
 tags:
   - deps
   - testing
-integrity:
+x-okfit-integrity:
   generated:
     body: f980781e5786c428
 ---

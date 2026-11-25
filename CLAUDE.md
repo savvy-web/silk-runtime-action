@@ -213,8 +213,8 @@ Limitations, DataModels, Interfaces, Runbooks, Modules, Consumers, and Glossary 
 Start at [`okf/index.md`](okf/index.md) (the project file plus every section index); each
 section's own `index.md` lists its concepts with a one-line summary. Browse with the
 `mcp__plugin_okfit_mcp__*` tools (`list_concepts`, `get_concept`, `concept_neighbors`,
-`stale_report`) rather than grepping the tree by hand; `pnpm exec okfit validate .` checks
-the bundle and `pnpm exec okfit sync .` regenerates the indexes and `generated.at` stamps.
+`stale_report`) rather than grepping the tree by hand; `pnpm exec okfit validate` checks
+the bundle and `pnpm exec okfit sync` regenerates the indexes and `generated.at` stamps.
 
 Where a topic lives:
 

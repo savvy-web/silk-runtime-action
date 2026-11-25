@@ -13,7 +13,7 @@ sources:
     resource: ../../.github/workflows/test.yml
 tags:
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: 5429cce0449be338
 ---

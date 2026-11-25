@@ -17,7 +17,7 @@ sources:
     resource: ../../src/turbo-cache/sign-in.ts
 tags:
   - security
-integrity:
+x-okfit-integrity:
   generated:
     body: cc9d578da519e85c
 ---

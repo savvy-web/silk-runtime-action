@@ -3,7 +3,7 @@ title: "spencerbeggs/vitest-bats"
 description: The consumer of the BATS and kcov toolchains this action provisions — what it reads, how it discovers helper libraries without reading the variable this action exports for them, and why bats detection needs two independent signals.
 type: Consumer
 status: draft
-repository: spencerbeggs/vitest-bats
+x-okfit-repository: spencerbeggs/vitest-bats
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
@@ -17,7 +17,7 @@ sources:
 tags:
   - testing
   - compat
-integrity:
+x-okfit-integrity:
   generated:
     body: f65e49a4088a2355
 ---

@@ -22,7 +22,7 @@ sources:
     resource: ../../src/main.ts
   - id: post
     resource: ../../src/post.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: b368f5c580be7a80
 ---

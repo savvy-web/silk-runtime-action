@@ -27,7 +27,7 @@ sources:
 tags:
   - dx
   - compat
-integrity:
+x-okfit-integrity:
   generated:
     body: b95830e940a5ea7d
 ---

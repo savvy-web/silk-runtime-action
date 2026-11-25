@@ -15,7 +15,7 @@ sources:
     resource: ../../vitest.config.ts
 tags:
   - testing
-integrity:
+x-okfit-integrity:
   generated:
     body: 7286ba00d4eb3adb
 ---

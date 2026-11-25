@@ -21,7 +21,7 @@ sources:
     resource: ../../src/steps/restore-cache.ts
   - id: format-src
     resource: ../../src/summary/format.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: dc5b2d27b33bd784
 ---

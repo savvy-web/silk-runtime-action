@@ -3,7 +3,7 @@ title: Turbo artifacts wire protocol — routes, auth, keys, and metadata
 description: The /v8/artifacts HTTP contract the embedded turbo remote-cache server implements, and the framing rules a client depends on.
 status: draft
 type: Interface
-kind: wire
+x-okfit-kind: wire
 resource: ../../src/turbo-cache/handler.ts
 generated:
   by: okfit/claude-code
@@ -13,7 +13,7 @@ sources:
     resource: ../../src/turbo-cache/handler.ts
   - id: meta
     resource: ../../src/turbo-cache/meta.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 7038a01a683d4669
 ---

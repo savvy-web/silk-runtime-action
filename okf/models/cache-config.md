@@ -19,7 +19,7 @@ sources:
   - id: issue-545
     title: Post step runs out of heap resolving a recursive cache glob
     resource: https://github.com/savvy-web/silk-runtime-action/issues/545
-integrity:
+x-okfit-integrity:
   generated:
     body: be6811593baf440f
 ---

@@ -19,7 +19,7 @@ sources:
     resource: ../../.github/actions/test-fixture/action.yml
 tags:
   - testing
-integrity:
+x-okfit-integrity:
   generated:
     body: e5ff55a0f696cc65
 ---

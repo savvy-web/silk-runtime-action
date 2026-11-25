@@ -15,7 +15,7 @@ sources:
     resource: ../../src/steps/install-dependencies.ts
   - id: program-path-joins
     resource: ../../src/program.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: 07b3621245ece011
 ---

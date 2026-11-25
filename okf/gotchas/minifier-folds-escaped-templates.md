@@ -14,7 +14,7 @@ sources:
 tags:
   - bundle
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: 3fcfaf894712f156
 ---

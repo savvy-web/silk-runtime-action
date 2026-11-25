@@ -15,7 +15,7 @@ sources:
     resource: ../../__fixtures__/bats-kcov
   - id: root-claude-build
     resource: ../../CLAUDE.md
-integrity:
+x-okfit-integrity:
   generated:
     body: 0fe1f30bafad4859
 ---

@@ -3,7 +3,7 @@ title: Turbo worker environment — the main-to-worker handoff contract
 description: The TURBOGHA_* environment variables the detached turbo cache server reads, and how they are assembled and consumed.
 status: draft
 type: Interface
-kind: runtime
+x-okfit-kind: runtime
 resource: ../../src/turbo-cache/server-config.ts
 generated:
   by: okfit/claude-code
@@ -13,7 +13,7 @@ sources:
     resource: ../../src/turbo-cache/server-config.ts
   - id: turbo-cache-step
     resource: ../../src/steps/turbo-cache.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: c138bb2e0d930797
 ---

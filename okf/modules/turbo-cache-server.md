@@ -3,7 +3,7 @@ type: Module
 title: turbo-cache-server
 description: How the action gives turbo a remote cache — the activation table, sign-in to a hosted cache, and the embedded server, a detached worker bundle spawned by main and reaped by post.
 status: draft
-kind: action
+x-okfit-kind: action
 resource: ../../src/turbo-cache
 generated:
   by: okfit/claude-code
@@ -25,7 +25,7 @@ sources:
     resource: ../../src/turbo-server.ts
   - id: state
     resource: ../../src/state.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: cf6f18ab0618e2c3
 ---

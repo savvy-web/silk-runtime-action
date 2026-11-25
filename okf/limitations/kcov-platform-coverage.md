@@ -3,7 +3,7 @@ type: Limitation
 title: kcov collects no coverage on macOS, and none at all on Windows
 description: kcov is installed on every supported platform, but SIP blocks the ptrace it needs on macOS, and it refuses to build at all on Windows before the cache is ever consulted.
 status: draft
-bounds: ../modules/silk-runtime-action.md
+x-okfit-bounds: ../modules/silk-runtime-action.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
@@ -14,7 +14,7 @@ sources:
     resource: "npm:vitest-bats"
 tags:
   - compat
-integrity:
+x-okfit-integrity:
   generated:
     body: 5a1819e9813cf45e
 ---

@@ -12,7 +12,7 @@ sources:
     resource: ../../package.json
   - id: layers-app
     resource: ../../src/layers/app.ts
-integrity:
+x-okfit-integrity:
   generated:
     body: e5b97f5725cc3d4c
 ---

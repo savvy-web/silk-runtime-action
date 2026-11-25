@@ -3,7 +3,7 @@ type: Limitation
 title: post can seal a half-populated dependency cache after a failed install
 description: post runs and saves the dependency cache even when main failed partway through the install, so a workflow that dies mid-install can seal an incomplete node_modules under the primary cache key.
 status: draft
-bounds: ../modules/silk-runtime-action.md
+x-okfit-bounds: ../modules/silk-runtime-action.md
 generated:
   by: okfit/claude-code
   at: 2026-09-13T20:36:06Z
@@ -12,7 +12,7 @@ sources:
     resource: ../../src/post.ts
 tags:
   - caching
-integrity:
+x-okfit-integrity:
   generated:
     body: 17e23768c0e008ec
 ---

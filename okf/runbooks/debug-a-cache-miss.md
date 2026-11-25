@@ -17,7 +17,7 @@ sources:
 tags:
   - caching
   - observability
-integrity:
+x-okfit-integrity:
   generated:
     body: 1ff0d9c739acb755
 ---

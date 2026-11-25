@@ -18,7 +18,7 @@ tags:
   - bundle
   - release
   - ci
-integrity:
+x-okfit-integrity:
   generated:
     body: d9146497dbc1373b
 ---

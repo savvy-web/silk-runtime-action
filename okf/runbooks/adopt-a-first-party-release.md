@@ -15,7 +15,7 @@ sources:
 tags:
   - deps
   - release
-integrity:
+x-okfit-integrity:
   generated:
     body: 47c81791a142537f
 ---
